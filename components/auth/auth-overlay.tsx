@@ -26,7 +26,7 @@ const CAMPOS_COPY: Record<Mode, { heading: string; submit: string }> = {
   recover: { heading: 'Restablecer contraseña', submit: 'Enviar instrucciones' },
 };
 
-export default function AuthOverlay() {
+export default function AuthOverlay({ banner }: { banner?: string }) {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
@@ -173,6 +173,15 @@ export default function AuthOverlay() {
             </div>
             <span className="text-xs font-bold uppercase tracking-[.2em] text-gold-soft">MOCAP 3D</span>
           </div>
+
+          {banner && (
+            <div
+              role="status"
+              className="mb-6 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2.5 text-xs leading-relaxed text-gold-soft"
+            >
+              {banner}
+            </div>
+          )}
 
           <div className="mb-6 flex items-start gap-2 rounded-xl border border-gold/25 bg-white/[.03] p-3">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />

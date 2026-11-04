@@ -14,16 +14,21 @@ import { Button } from '@/components/ui/button';
  * PRO → badge "PLAN PRO ✓" + menú de perfil (Perfil / Portal / Cerrar sesión).
  * Cerrar sesión SIEMPRE disponible: plan free/pro_grace lo accionan desde el
  * botón de la derecha (QA §7.1 no admite sesión sin salida).
+ * Ícono de Perfil SIEMPRE disponible (posición 2 del spec de registro: acceso
+ * al Panel desde la top bar; el header del taller MUESTRA su logo si cargó uno,
+ * ya que el white-label de salidas es otra cosa — matriz R2).
  */
 export default function TopBar({
   plan,
   baseName,
+  logoThumbUrl,
   graceDaysLeft,
   priceText,
   onUnlockRequest,
 }: {
   plan: Plan;
   baseName: string;
+  logoThumbUrl?: string | null;
   graceDaysLeft: number | null;
   priceText: string | null;
   onUnlockRequest: () => void;
@@ -48,9 +53,17 @@ export default function TopBar({
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-panel-soft/95 px-4 backdrop-blur">
       <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-gold/30 bg-white/5 text-xs font-bold text-gold-soft">
-          {initials || 'M'}
-        </div>
+        {logoThumbUrl ? (
+          <img
+            src={logoThumbUrl}
+            alt="Logo del taller"
+            className="h-8 w-8 rounded-lg border border-gold/30 object-cover"
+          />
+        ) : (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-gold/30 bg-white/5 text-xs font-bold text-gold-soft">
+            {initials || 'M'}
+          </div>
+        )}
         <div className="leading-tight">
           <div className="text-xs font-bold text-cream">{baseName}</div>
           <div className="text-[10px] text-stone-500">MOCAP 3D · Simulador</div>
@@ -98,10 +111,12 @@ export default function TopBar({
                   type="button"
                   role="menuitem"
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs text-stone-300 hover:bg-white/5"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    router.push('/perfil');
+                  }}
                 >
                   <UserRound className="h-3.5 w-3.5 text-stone-500" /> Perfil
-                  <span className="ml-auto text-[9px] text-stone-600">posición 2</span>
                 </button>
                 <button
                   type="button"
@@ -137,6 +152,16 @@ export default function TopBar({
             <LogOut className="h-4 w-4" />
           </Button>
         )}
+
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Perfil"
+          title="Perfil del taller"
+          onClick={() => router.push('/perfil')}
+        >
+          <UserRound className="h-4 w-4" />
+        </Button>
       </div>
     </header>
   );

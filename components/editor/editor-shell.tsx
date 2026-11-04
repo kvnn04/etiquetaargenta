@@ -25,8 +25,12 @@ import { Button } from '@/components/ui/button';
 export interface ShellProfile {
   exists: boolean;
   baseName: string;
+  /** Nombre comercial definido en el Perfil (posición 2). */
+  brandName: string | null;
   plan: Plan;
   graceExpiresAt: string | null;
+  /** URL firmada del thumb del logo (solo para el header del propio taller). */
+  logoThumbUrl?: string | null;
 }
 
 /** Acciones pay-gated visibles para probar el gating (posiciones 8–10 las implementan). */
@@ -90,7 +94,8 @@ export default function EditorShell({
       <PlanWatcher userId={userId} />
       <TopBar
         plan={profile.plan}
-        baseName={profile.baseName || 'MI TALLER'}
+        baseName={profile.brandName?.trim() || profile.baseName}
+        logoThumbUrl={profile.logoThumbUrl}
         graceDaysLeft={profile.plan === 'pro_grace' ? graceDaysLeft(profile.graceExpiresAt) : null}
         priceText={priceText}
         onUnlockRequest={() => setPaywallOpen(true)}

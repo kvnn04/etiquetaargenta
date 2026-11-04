@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   const path = request.nextUrl.pathname;
 
-  if (!user && path.startsWith('/editor')) {
+  if (!user && (path.startsWith('/editor') || path.startsWith('/perfil'))) {
     const url = request.nextUrl.clone();
     url.pathname = '/auth';
     url.search = '';
