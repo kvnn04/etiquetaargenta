@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
  * FREE → badge demo + botón verde "Desbloquear Plan PRO ({precio}/mes)".
  * PRO_GRACE → banner ámbar con días restantes (R7 dunning).
  * PRO → badge "PLAN PRO ✓" + menú de perfil (Perfil / Portal / Cerrar sesión).
+ * Cerrar sesión SIEMPRE disponible: plan free/pro_grace lo accionan desde el
+ * botón de la derecha (QA §7.1 no admite sesión sin salida).
  */
 export default function TopBar({
   plan,
@@ -122,6 +124,18 @@ export default function TopBar({
               </div>
             )}
           </div>
+        )}
+
+        {plan !== 'pro' && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Cerrar sesión"
+            title="Cerrar sesión"
+            onClick={handleLogout}
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
         )}
       </div>
     </header>
