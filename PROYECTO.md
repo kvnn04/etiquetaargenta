@@ -89,20 +89,20 @@ solo el shim de PowerShell).
 simulador-mates/
 ├── PROYECTO.md                    ← estás acá
 ├── README.md                      ← manual de setup operativo (Supabase, envs, scripts)
-├── middleware.ts                  ← gancho del gating de rutas (úsalo: session/supabase/middleware)
+├── middleware.ts                  ← gating de rutas: crea el client de sesión (lib/supabase/middleware)
 ├── next.config.mjs                ← alias @/* (webpack + turbopack)
 ├── tsconfig.json / postcss.config.mjs / vitest.config.ts
 ├── .env.local.example             ← plantilla de las 3 keys de Supabase (+ futuras MP)
 │
 ├── app/
 │   ├── layout.tsx · globals.css   ← shell + tokens de la paleta premium (oro/negro)
-│   ├── page.tsx                   ← "/" ⇒ /editor (el middleware envía al visitor a /auth)
+│   ├── page.tsx                   ← "/" ⇒ /editor (sin sesión, el server manda al visitante a /auth)
 │   ├── global.d.ts                ← declara los módulos *.css (TS ≥6)
 │   ├── setup/page.tsx             ← página amable cuando faltan env vars (NUNCA un 500 pelado)
 │   ├── auth/page.tsx              ← Auth Overlay (con sesión ⇒ /editor)
 │   ├── auth/callback/route.ts     ← PKCE: intercambia ?code= por sesión (OAuth/email-verify)
 │   ├── (editor)/editor/page.tsx   ← shell del editor: sesión + plan SIEMPRE desde el server
-│   └── api/config/pricing/route.ts ← GET precio del plan desde pricing_config (contenido te confirma)
+│   └── api/config/pricing/route.ts ← GET precio del plan desde pricing_config (200; 404 si no hay fila)
 │
 ├── components/
 │   ├── auth/auth-overlay.tsx      ← Google OAuth + email/contraseña + olvidaste tu contraseña
@@ -149,7 +149,7 @@ simulador-mates/
 | 5 | Registro de 2 campos, nombre derivado (`kevin.firma` ⇒ *"Kevin Firma"*; inutilizable ⇒ `"MI TALLER"`) | SQL función `derive_base_name` + trigger `handle_new_user` (ÚNICA implementación: en la DB; el cliente nunca re-deriva) | ✅ |
 | 6 | Matriz R2 única fuente citable por las demás specs | `lib/permissions.ts` + test unit | ✅ (8/8 tests) |
 | 7 | Gating de UI: 🔒 decorativo, cada intento abre el Paywall (nunca error técnico) | TopBar/EditorShell consultan `gate()`; locked ⇒ modal | ✅ |
-| 8 | Precio impreso desde el backend (`pricing_config`), nunca hardcodeado | `GET /api/config/pricing` con service-role | ✅ |
+| 8 | Precio impreso desde el backend (`pricing_config`), nunca hardcodeado | `GET /api/config/pricing` con service-role | ✅ (200 en runtime; antes requería el grant de `ops/0910`) |
 | 9 | PRO_GRACE (dunning) visible con cuenta regresiva de días | badge ámbar calculado en shell | ✅ (el ciclo real llega con pagos) |
 | 10 | Desbloqueo realtime en todas las pestañas sin reload | `plan-watcher` (canal `users`) | ✅ (se demostrará al pagar pos 8–10) |
 | 11 | Slot 1/1 del demo, watermark, 402 de export | 🔜 posiciones 8–10 | ⬜ |
@@ -194,12 +194,21 @@ TRIGGER DB al crear cuenta: users.base_name derivado del email / nombre de Googl
 | :--- | :--- |
 | `npm install` local | ✅ (106 paquetes) |
 | Proyecto Supabase (sa-east-1) | ✅ por el usuario |
-| Migración `0001_auth_skeleton.sql` | ✅ (versión sin DROPs; re-ejecutable) |
-| Google provider OFF/ON en dashboard | ⬜ configurar si se quiere OAuth (email+contraseña funciona sin esto) |
-| `Confirm email = OFF` en dashboard | ⬜ **importante**: si queda ON, el registro "gratis" pide confirmación y contradice la regla de fricción cero |
-| Replicación realtime de `public.users` | ⬜ (Dashboard → Database → Replication) |
-| `.env.local` con `URL + ANON + SERVICE_ROLE_KEY` | ✅ por el usuario |
-| Google Cloud OAuth client (para el provider) | ⬜ |
+| Migración `0001_auth_skeleton.sql` | ✅ ejecutada en el proyecto real (idempotente, sin DROP; los grants también quedaron embedidos en el archivo) |
+| Grants base (users / projects / pricing) | ✅ aplicados via `ops/0910_base_grants.sql` — el proyecto del usuario NO aplicaba GRANT automáticos |
+| Google provider en dashboard | ⬜ no configurado — el camino probado fue email+contraseña (funciona sin esto) |
+| `Confirm email = OFF` en dashboard | ✅ apagado 04-nov tras tropezar con el límite de emails (regla "fricción cero" R1) |
+| Replicación realtime de `public.users` | ⬜ (Dashboard → Database → Replication) — hace falta desde que existan cambios de plan (pos 8–10) |
+| `.env` con `URL + ANON + SERVICE_ROLE_KEY` | ✅ el usuario optó por archivo `.env` y Next declara "Environments: .env" — `.env` y `.env.local` valen ambos |
+
+### Incidentes reales vividos en el primer setup → cómo quedaron resueltos
+
+| Incidente observado | Causa real | Solución (dónde quedó) |
+| :--- | :--- | :--- |
+| `pricing_config read error: permission denied` (`GET /api/config/pricing 500`) | el proyecto no aplica los GRANT automáticos de Supabase sobre tablas creadas por SQL editor | `grant select on pricing_config to service_role` — embebido en `0001` y reproducible en `ops/0910_base_grants.sql` |
+| Cartel "No existe fila en public.users" persistente | `(a)` cuenta nacida ANTES del trigger (los triggers no se aplican retroactivamente) + `(b)` el editor tragaba el error de lectura | backfill `ops/0901_backfill_user_rows.sql`; además el editor ahora logea el error real en la terminal |
+| Re-crear un email ya borrado fallaba ("No pudimos crear la cuenta") | Confirm email ON ⇒ cada registro dispara email ⇒ tope de emails por hora en el plan free | Confirm email = OFF (estado correcto del producto según la spec — fricción cero) |
+| Sin botón de cerrar sesión con plan free | el logout solo existía dentro del menú visible para PRO | fix top-bar: icono de sesión siempre disponible (commit `c8edbcf`) |
 
 **Verificación SQL post-migración** (copiable en el SQL Editor):
 
@@ -221,10 +230,11 @@ select tablename, rowsecurity from pg_tables
 | `npm run test` (Vitest — matriz R2) | ✅ 8/8 passed |
 | `npm run build` (producción) | ✅ 7 rutas + middleware (95 kB) |
 | Smoke prod sin envs (server efímero) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
-| `git init` | ✅ repo inicializado (primer commit pendiente del usuario) |
+| **Smoke runtime real con `.env` del usuario** (04-nov) | Next carga el archivo ("Environments: .env") · `/` 307→`/editor` · sin sesión `/editor` ⇒ `/auth` · login con callback PKCE (`/auth/callback?code=` 307) → `/editor 200` · `/api/config/pricing` **200** tras grants · fila derivada en DB (`Kherrera` / `Kvnherrera` — el `.04` se descarta por diseño R1) · logout con ícono (free) |
+| Git | ✅ 4 commits: `1fa49e0` esqueleto auth · `c8edbcf` logout visible free · `e279f45` ops backfill · `c38c4ed` grants embebidos + log de error RLS |
 
-**Smoke con envs** (pendiente de probar por el usuario): registrar una cuenta y verificar que
-`users` crece con el nombre derivado y `plan=free`, y que el editor muestra la fila de "Matriz R2".
+**Smoke restante** (llega con posiciones 8–10): desbloqueo PRO en vivo + realtime multipestaña al
+cambiar el plan — hoy no había forma de probarlos sin cobros ni webhook.
 
 ---
 

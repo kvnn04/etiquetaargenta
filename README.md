@@ -2,9 +2,10 @@
 
 Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten con su
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
-`../simulador_Mates/` (9 specs + guie de stack + orden de construcción).
+`../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: 🚧 Posición 1 de 10 — *Esqueleto de Auth* (ver `../simulador_Mates/orden_de_implementacion.md`).
+**Estado**: ✅ Posición 1 de 10 — *Esqueleto de Auth* probada end-to-end (04-nov).
+Siguiente: **posición 2**, Perfil + `resolveBranding()` (ver `PROYECTO.md` para el mapa completo).
 
 ---
 
@@ -38,7 +39,9 @@ simulador-mates/
   lib/
     permissions.ts   → MATRIZ R2 (única fuente, alineada a spec_auth §3-R2)
     supabase/        → client / server / service / middleware
-  supabase/migrations/  → los cimientos de SQL (users, projects, pricing_config)
+  supabase/
+    migrations/         → esquema: 0001_auth_skeleton.sql (idempotente, sin DROP, grants incluidos)
+    ops/                → reparaciones re-ejecutables: 0901 backfill users · 0910 grants base
   tests/             → Vitest (unit); Playwright en la posición 8
   three/             → vacío hasta la posición 3 (ver three/README.md)
 ```
@@ -55,10 +58,24 @@ simulador-mates/
      real ocurre solo al pagar (R7, token 24 h — posición 8–10).
    - Database → Replication → activar **public.users** (desbloqueo realtime sin reload, R6 spec_auth).
 5. **Env**: `cp .env.local.example .env.local` y completar las 3 variables.
+   (un archivo llamado `.env` también vale — Next lo carga igual; `.env.local` únicamente gana
+   si existieran ambos)
 6. **Dev**: `npm run dev` → `http://localhost:3000/auth`.
 
 > ⚠️ Windows/PowerShell: si `npm` da *Execution Policy* error, usar `npm.cmd` (es el shim ps1
 > bloqueado, no el npm real).
+
+## Si algo falla (los cuatro síntomas que este setup ya vivió)
+
+| Síntoma | Motivo | Arreglo |
+| :--- | :--- | :--- |
+| En vez del login se ve la página `/setup` | falta una env var, o el server arrancó antes de crearse `.env` | completar las variables y **reiniciar** `npm run dev` (las envs se leen solo al boot) |
+| `permission denied for table pricing_config` (la top bar no muestra precio) | el proyecto no aplica los GRANT automáticos de Supabase | correr `supabase/ops/0910_base_grants.sql` |
+| Cartel "No existe fila en public.users" | cuenta registrada ANTES de ejecutar la migración (el trigger no va hacia atrás) | correr `supabase/ops/0901_backfill_user_rows.sql` |
+| Re-registrar un email ya borrado falla ("No pudimos crear la cuenta") | Confirm email ON ⇒ cada registro dispara un email ⇒ se agota el cupo por hora | Confirm email = **OFF** (regla R1: fricción cero) y reintentar |
+
+Extra: el editor logea en la terminal el error crudo de su SELECT (`[editor] public.users read
+error ...`) — si algo sigue fallando, esa es la línea exacta a mirar.
 
 ## ¿Qué quedó de la posición 1? (según `spec_autenticacion_...` §7)
 
@@ -71,7 +88,7 @@ simulador-mates/
 | Registro 2 campos + nombre derivado (`kevin.firma` ⇒ *"Kevin Firma"*) | ✅ trigger DB `handle_new_user` |
 | Matriz R2 declarada como única fuente citable | ✅ `lib/permissions.ts` + test unit |
 | Gating de UI (🔒 decorativo; Paywall en cada intento) | ✅ `TopBar`/`EditorShell` |
-| Precio dinámico desde `pricing_config` (backend) | ✅ `GET /api/config/pricing` |
+| Precio dinámico desde `pricing_config` (backend) | ✅ `GET /api/config/pricing` (200 verificado en runtime) |
 | `402` de export, watermark, links, MP | 🔜 posiciones 8–10 |
 
 **Smoke test del trigger**: `select public.derive_base_name('kevin.firma@correo.com');` → `Kevin Firma`.
@@ -87,7 +104,7 @@ npm run test        # Vitest (matriz R2)
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
 
-1. ✅ **Esqueleto Auth** (esta entrega)
+1. ✅ **Esqueleto Auth** — probada de punta a punta en el proyecto real de Supabase (04-nov)
 2. ⬜ Perfil + `resolveBranding()` — `spec_especificaci_n_...registro`
 3. ⬜ Catálogo de mates + `projects.state` — `spec_tipo_de_mate`
 4. ⬜ Medidas/guías + cascada — `spec_tecnica_geometrica...`
