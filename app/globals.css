@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  /* Paleta derivada del prototipo premium (Mate Studio) */
+  --background: #090a0d;
+  --panel: #131316;
+  --panel-soft: #0b0b0d;
+  --line: rgba(201, 170, 118, 0.18);
+  --gold: #c49a60;
+  --gold-strong: #b88a4e;
+  --gold-soft: #e7c58e;
+  --cream: #f3eee5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-panel: var(--panel);
+  --color-panel-soft: var(--panel-soft);
+  --color-line: var(--line);
+  --color-gold: var(--gold);
+  --color-gold-strong: var(--gold-strong);
+  --color-gold-soft: var(--gold-soft);
+  --color-cream: var(--cream);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--cream);
+  font-family: var(--font-sans);
+  letter-spacing: 0.005em;
+}
+
+/* Scroll fino alineado al prototipo */
+.thin-scroll::-webkit-scrollbar { width: 5px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(201, 170, 118, 0.25);
+  border-radius: 9999px;
+}
