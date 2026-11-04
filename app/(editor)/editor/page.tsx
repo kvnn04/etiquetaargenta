@@ -19,11 +19,20 @@ export default async function EditorPage() {
 
   if (!user) redirect('/auth');
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('users')
     .select('id, base_name, plan, grace_expires_at')
     .eq('id', user.id)
     .maybeSingle<UserRecord>();
+
+  if (error) {
+    // Nunca tragar el motivo: lo muestra la consola del dev server
+    // (un 'permission denied' debe verse, no confundirse con fila faltante).
+    console.error(
+      `[editor] public.users read error for user ${user.id}:`,
+      error.message,
+    );
+  }
 
   const rawPlan = data?.plan;
   const plan: Plan =

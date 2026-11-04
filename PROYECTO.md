@@ -126,7 +126,8 @@ simulador-mates/
 │   ├── migrations/
 │   │   └── 0001_auth_skeleton.sql     ← users + trigger nombre derivado + projects + pricing_config + RLS + Realtime
 │   └── ops/
-│       └── 0901_backfill_user_rows.sql ← reparación: fila faltema en public.users (cuenta nacida pre-migración)
+│       ├── 0901_backfill_user_rows.sql ← reparación: fila faltante en public.users (cuenta nacida pre-migración)
+│       └── 0910_base_grants.sql        ← reparación: 'permission denied' (proyectos sin grants automáticos)
 │
 ├── tests/unit/permissions.test.ts ← 8 tests: invariantes de la matriz R2
 ├── three/README.md                ← qué va a alojar el motor 3D cuando llegue (posiciones 3–7)

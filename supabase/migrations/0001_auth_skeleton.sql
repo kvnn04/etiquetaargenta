@@ -26,6 +26,12 @@ create table if not exists public.users (
 
 alter table public.users enable row level security;
 
+-- Grants base: algunos proyectos de Supabase NO aplican los grant automáticos
+-- a tablas creadas desde SQL editor (se ve 'permission denied for table users'
+-- aun con la RLS bien). Aclara privilegios; la política own_user_row sigue
+-- siendo quien decide qué filas alcanza.
+grant select on public.users to anon, authenticated;
+
 -- Solo el dueño lee/escribe su propia fila (las demás specs citan esta RLS).
 do $$
 begin
@@ -123,6 +129,10 @@ create table if not exists public.projects (
 
 alter table public.projects enable row level security;
 
+-- El dueño es el único que accede (RLS own_projects); el grant permita el paso
+-- por la puerta, el alcance lo fija la política.
+grant select, insert, update, delete on public.projects to authenticated;
+
 do $$
 begin
   create policy "own_projects" on public.projects
@@ -144,6 +154,9 @@ create table if not exists public.pricing_config (
 );
 
 alter table public.pricing_config enable row level security;
+
+-- Solo service role leerla (el server del precio). jamás anon/authenticated.
+grant select on public.pricing_config to service_role;
 
 -- Valor inicial de ejemplo: el responsable lo ajusta desde Supabase
 -- (el paywall SIEMPRE imprime el precio leído del backend, nunca hardcodeado).
