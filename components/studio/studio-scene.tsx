@@ -37,7 +37,7 @@ function cached(key: string, make: () => THREE.BufferGeometry, cache: GeometryCa
 }
 
 /* -------------------------------------------------------------------------- */
-/* Cuerpo: mesh de lathe del catálogo + crossfade de ~150 ms (§4).             */
+/* Cuerpo: mesh de lathe del catálogo (swap instantáneo, R3/QA2).             */
 /* -------------------------------------------------------------------------- */
 
 function MateBodyMesh() {
@@ -59,27 +59,9 @@ function MateBodyMesh() {
     [],
   );
 
-  // Crossfade: la malla nueva entra con opacidad baja y sube a 1 en ~150 ms
-  // (pseudo-fade perceptual; el swap es instantáneo — sin morph, QA2).
-  const fadeStart = useRef(0);
-  useEffect(() => {
-    fadeStart.current = performance.now();
-    material.transparent = true;
-    material.opacity = 0.55;
-    return undefined;
-  }, [geometry, material]);
-
-  useFrame(() => {
-    if (!material.transparent) return;
-    const elapsed = performance.now() - fadeStart.current;
-    const t = Math.min(1, elapsed / 150);
-    material.opacity = 0.55 + 0.45 * t;
-    if (t >= 1) {
-      material.transparent = false;
-      material.opacity = 1;
-      material.needsUpdate = true;
-    }
-  });
+  // Swap INSTANTÁNEO (R3 de spec_tipo_de_mate + QA2): cambia la geometría y
+  // nada más — sin morph ni fades que se leyeran como parpadeo. La banda
+  // metálica y las luces ni se enteran de la operación.
 
   // La geometría queda en mm (sin escalar): la cámara fija sus distancias en
   // el mismo rango para no mezclar unidades.

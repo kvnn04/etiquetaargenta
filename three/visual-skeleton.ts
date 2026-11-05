@@ -1,5 +1,5 @@
 /* ============================================================================
- * ESQUELETO VISUAL — constantes plica de la posición 3
+ * ESQUELETO VISUAL — constantes provisionales de la posición 3
  * ----------------------------------------------------------------------------
  * Ninguno de estos números es un contrato de negocio: son valores visuales
  * mínimos con los que la escena 3D existe ANTES de que su spec de origen
