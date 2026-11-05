@@ -36,7 +36,7 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 5 de 10 ✅
+## 2. Dónde estamos: posición 6 de 10 ✅
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
@@ -45,8 +45,9 @@ El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero
 2. ✅ Perfil + resolveBranding()
 3. ✅ Catálogo de mates + escena 3D
 4. ✅ Medidas de virola (3 mallas) + guías coplanares + cascada + auto-giro
-5. ✅ Editor 3D: color PBR + quemado adaptativo (cuerpo/virola #HEX)   ← ESTAMOS ACÁ
-6-7. ⬜ Editor 3D (rotación → escala/chorreo)
+5. ✅ Editor 3D: color PBR + quemado adaptativo (cuerpo/virola #HEX)
+6. ✅ Editor 3D: rotación del diseño SVG/PNG (imán ±4°, presets)           ← ESTAMOS ACÁ
+7. ⬜ Editor 3D: escala + alerta de chorreo
 8. ⬜ Protección (watermark cocida, bloqueo de rutas DOM, 402 export)
 9. ⬜ Ficha técnica export (PNG ≥2160px + PDF A4)
 10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
@@ -70,6 +71,22 @@ queda implementada y expuesta: luminancia $L = 0.2126R + 0.7152G + 0.0722B$ con 
 **0.55** — fondo claro ⇒ quemado oscuro `#2B2118@0.88`, fondo oscuro ⇒ plateado `#C9CCCF@0.92`
 (su consumidor natural es la capa de diseño de la posición 6). UI como **tarjeta "Materiales y
 Acabados"**, tercera del panel — decisión del titular: tarjetas apiladas, sin pestañas.
+
+La posición 6 graba el diseño en esa corona: la **rotación angular 360° del grabado SVG/PNG**
+(`spec_rotacion_archivo_svg_png.md`). Desde **Cargar Archivo / Edición del Vector** (SVG/PNG
+rasterizado en cliente al lienzo de trabajo 1024² de R8) el diseño gira con el **slider de
+paso 0.5° en $[0°, 360°)$** (R3: normalización por módulo — $370°⇒10°$, $-90°⇒270°$,
+$45.25°⇒45.5°$), el **campo numérico sincrónico** (texto/vacío restaura el último válido), los
+**4 presets exactos** ($0°$ Frente · $90°$ Der · $180°$ Dorso · $270°$ Izq) y el **imán
+configurable ±4°** (R4, checkbox ON por defecto que vive SOLO en el dispositivo, igual que el
+auto-giro — nunca en el jsonb). El ángulo **jamás reconstruye virola ni re-inicializa luces**:
+solo re-composita la CanvasTexture sobre `virolaTopMesh` (UV polar ya anclada en pos 4 a
+`LATHE_SEAM_PHI_START`), tinteada con el **tono de quemado adaptativo R4 de la posición 5**
+($L\,0.55$: quemado oscuro sobre metales claros, plateado destapado sobre oscuros). La rotación
+es **FREE (sin candado)**, deja estáticas las guías y respeta al auto-giro como subsistema
+ajeno, y `design.rotation` viaja en `projects.state` (legacy sin rotation ⇒ 0°, R8). El
+**archivo del diseño es de sesión**: se persiste SOLO la rotación — el ciclo de vida del
+archivo llega con las variantes (pos 7) y los links (pos 10).
 
 La posición 3 reemplazó el placeholder 3D por la **primera escena real**: el catálogo de
 productos (Camionero ⇄ Imperial) como **registro central solo-datos** (`lib/catalog.ts`), el
@@ -103,7 +120,7 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: 107 tests (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5) |
+| Test unit | Vitest | 4.1.12 | hoy: 132 tests (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + rotación pos 6) |
 | 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
 | Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
 | Se instalan SOLO al llegar su posición | `zod`, `pdf-lib`, `sharp`, `mercadopago`, Playwright | — | regla vigente: no adelantar deps |
@@ -155,10 +172,11 @@ simulador-mates/
 │   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans)
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado: pos 8–10)
 │   ├── session/plan-watcher.tsx   ← Realtime: UPDATE en users ⇒ router.refresh() (sin reload)
-│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 4–5: cuerpo lathe + virola 3 mallas PBR + guías coplanares + auto-giro
+│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 4–6: cuerpo lathe + virola 3 mallas PBR + grabado del diseño (rotación) + guías + auto-giro
 │   ├── studio/product-selector.tsx ← radio-cards (radiogroup) con siluetas SVG derivadas del catálogo
 │   ├── studio/dimensions-card.tsx ← TARJETA MEDIDAS pos 4: D_ext/D_int + steppers + sliders dinámicos + métricas + guías
 │   ├── studio/color-picker-card.tsx ← TARJETA COLOR pos 5: presets PBR + #HEX (dot nativo) + recientes + quemado
+│   ├── studio/design-card.tsx     ← TARJETA DESIGN pos 6: archivo SVG/PNG + slider 0.5° + campo ° + presets + imán + reset
 │   ├── studio/auto-giro-bar.tsx   ← BARRA AUTO-GIRO pos 4: 0.75 RPM + botón Girar/Pausar + pausa por interacción
 │   └── ui/{button,input}.tsx      ← primitivas mínimas (cva), patrimonio de shadcn/ui a futuro
 │
@@ -169,7 +187,8 @@ simulador-mates/
 │   ├── virola.ts                  ← ★ MEDIDAS VIROLA: clamps R1, rangos dinámicos, métricas R2, triada guías R6
 │   ├── virola/cascade.ts          ← ★ CASCADA ÚNICA virola.dimensionsChanged (<100 ms, bus de eventos)
 │   ├── color.ts                   ← ★ COLOR INTELIGENTE pos 5: tabla PBR R1 + exclusividad/recientes R3 + quemado R4 (L 0.55)
-│   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color: pos 5)
+│   ├── design.ts                  ← ★ ROTACIÓN pos 6: R3 canónico 0.5°, imán R4 ±4°, fit provisorio, imán de dispositivo
+│   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color/diseño: pos 5/6)
 │   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
 │   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
 │   ├── profile.ts                 ← completitud 5×20 % + copy dinámico del panel (cliente-only)
@@ -197,6 +216,7 @@ simulador-mates/
 │   ├── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
 │   ├── unit/catalog.test.ts       ← 13 tests: QA1 matemático, labio anti-fuga R4, R8, corrupción §6
 │   ├── unit/color.test.ts         ← 32 tests: tabla PBR R1, exclusividad/recientes R3, quemado R4 (luminancia), descriptores R5
+│   ├── unit/design.test.ts        ← 25 tests: R3 normalización/módulo, parseo del campo °, imán R4 ±4° (QA3), R7 persistencia/asset de sesión
 │   └── unit/virola.test.ts        ← 31 tests: R1 clamps/rangos dinámicos, R2 métricas, R3 cascada <100ms, R4/R5 guías coplanares, R6 triada, R7 auto-giro
 ├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
 ├── three/visual-skeleton.ts       ← constantes visuales pos 4 + LATHE_SEAM_PHI_START
@@ -318,6 +338,29 @@ protección de la posición 8.
 tono del GRABADO y su consumidor natural es la capa de diseño de la posición 6 (que lo leerá de
 `adaptiveLaserBurn()`); pos 5 solo fija y testa la regla.
 
+### Posición 6 — Rotación del grabado SVG/PNG (según `spec_rotacion_archivo_svg_png.md`)
+
+| Ref | Requisito | Implementación | Estado |
+| :--- | :--- | :--- | :--- |
+| R1 | Marco canónico único (0° = eje de costura; preset "0° Frente"; pivote centro del carril) para TODOS los productos | ancla compartida `LATHE_SEAM_PHI_START` + canvas polar de la corona (frente = borde superior); el grabado vive DENTRO del grupo que rota con auto-giro/guías | ✅ |
+| R2 | Orden de composite: escala(7) → espejo(7) → **rotación al final** | `composeEngravingCanvas` en `studio-scene.tsx`: rotar ÚLTIMO sobre el pivote exacto (QA1: pivote invariable) | ✅ (escala/espejo: pos 7) |
+| R3 | Ángulo canónico único [0°, 360°) paso 0.5°, sin bipolar −180/180 | `normalizeRotation` + `parseRotationInput` en `lib/design.ts` (370⇒10 · −90⇒270 · 45.25⇒45.5 · 360⇒0) | ✅ (testeado) |
+| R4 | Imán ±4° ON default (SOLO dispositivo) + 4 presets exactos + reset a 0° | `magnetSnappedPreset`/`applyMagnet` + localStorage `mocap:design-snap-magnet` (nunca jsonb — §5) | ✅ (QA3: 17.5° exacto) |
+| R6 | Re-chequeo de desborde al rotar (banner inmediato) | **Ajuste PROVISIONAL pos 6:** inscripción en el círculo del carril ⇒ NINGÚN ángulo desborda; banner + re-chequeo real engancha al motor de pos 7 | ✅ (provisional anotado) |
+| R7 | `design.rotation` en `projects.state` + nota ficha "45° / 45.5°" | clave `design` del snapshot + `normalizeState` tolerante (legacy ⇒ 0°) + `formatRotationLabel` | ✅ |
+| R8 | Re-muestreo: SVG/PNG raster en vivo 1024² (Ficha HD ≥2048² llega en pos 9) | `rasterizeDesignFile` en cliente (SVG vectorizado nativo; PNG smoothing 'high') + CanvasTexture viva | ✅ |
+| §4 | Tarjeta "Cargar Archivo / Edición del Vector" con slider/campo/presets/imán/reset | `components/studio/design-card.tsx` (cuarta del panel) | ✅ |
+| §6/§7 | Rotación FREE (sin candado); Modo Cliente sin controles | sin capability nueva en matriz R2; el MODO CLIENTE llega con pos 10 | ✅ |
+
+**Notas de implementación (05-nov):** (1) **mapeo de preset anotado** — en el canvas polar de la
+corona el borde superior es el Frente (+Z con cámara por defecto), así los presets caen con las
+etiquetas EXACTAS de la spec; la costura real de la lathe (ancla de guías pos 4) queda al dorso,
+da igual para la rotación del diseño que rota el receptor completo. (2) **Ajuste provisional del
+carril**: el diseño se inscribe en el círculo inscrito de la banda ($W_{banda}/\sqrt2$) — sin
+desborde posible hasta que la spec de escala (pos 7) define la regla exacta y el banner "chorreo".
+(3) **Fallo de raster** (SVG corrupto tras edición externa): se conserva la última textura válida
+con aviso inline (§6); reintentar reactiva el diseño.
+
 ---
 
 ## 6. Cómo fluye en runtime (recorrido de un usuario real)
@@ -422,17 +465,19 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–5 adentro) |
-| `npm run test` (Vitest) | ✅ **107/107** — 8 de matriz R2 + 23 de branding + 13 de catálogo + 31 de virola/guías/geometría pos 4 + **32 de color pos 5** |
-| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 17 kB; el motor 3D viaja en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–6 adentro) |
+| `npm run test` (Vitest) | ✅ **132/132** — 8 de matriz R2 + 23 de branding + 13 de catálogo + 31 de virola pos 4 + 32 de color pos 5 + **25 de rotación pos 6** |
+| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 19.8 kB; el motor 3D sigue en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
 | **Smoke gating pos 3** (server efímero 7435, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 — el guard de ruta sobrevive al nuevo canvas |
 | **Smoke gating pos 5** (server efímero 7436, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 · `/api/config/pricing` 200 — el guard y el precio sobreviven al color |
+| **Smoke gating pos 6** (server efímero 7437, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 · `/api/config/pricing` 200 — el guard sobrevive al grabado con rotación |
 | **QA Posición 4** (05-nov) | Corona superior plana con normales +Y ✅ · guías concéntricas coplanares en X-Z ✅ · cascada <100 ms ✅ · sliders dinámicos R1 ✅ · auto-giro 0.75 RPM + pausa/play ✅ · fix de loop React 19 memoizado ✅ |
 | **QA Posición 5** (05-nov) | Tabla PBR canónica ✅ · anodizado 0.10/0.45 y cuerpo libre 0.00/0.82 ✅ · exclusividad preset⇄hex ✅ · recientes máx 6 ✅ · quemado L 0.55 con ambas ramas ✅ |
-| Git | ✅ `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
+| **QA Posición 6** (05-nov, técnica) | R3 módulo/paso ✅ (370⇒10, −90⇒270, 45.25⇒45.5, 360⇒0) · imán ±4° con envolvente ✅ + 17.5° exacto imán OFF (QA3) ✅ · preset EXACTO con imán ON/OFF ✅ · persistencia legacy ⇒ 0° ✅ · asset de sesión fuera del snapshot ✅ · pivote central y clipping anular por máscara ✅ |
+| Git | ✅ `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
 · los 5 campos del panel ✅ (ambos flujos tras ampliar los grants de `ops/0910`) · autosave en
@@ -463,26 +508,31 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 6 — Rotación del diseño SVG/PNG** (fuente: `spec_rotacion_archivo_svg_png.md`):
+**Posición 7 — Escala fina + alerta de desborde ("chorreo")** (fuente:
+`spec_escala_y_alerta_de_desborde.md`):
 
-- **Marco canónico (R1):** 0° = eje de nacimiento de la costura UV de la chapa plana (pivote en el
-  **centro del carril**, anclado a `LATHE_SEAM_PHI_START`); presets **0° Frente · 90° Der ·
-  180° Dorso · 270° Izq** — un solo marco para TODOS los productos del catálogo.
-- **Orden de composite (R2):** escala y espejo (pos 7) → **rotación** actúa ÚLTIMA: gira exactamente
-  la imagen que el usuario ve en pantalla (incluido el espejo); cambiar el orden queda prohibido.
-- **Representación única (R3):** escalar en [0°, 360°) con paso 0.5° — 370°⇒10°, −90°⇒270°,
-  45.25°⇒45.5°; jamás −180°/180° bipolar en UI, ficha ni payload.
-- **Imán configurable (R4):** checkbox ON por defecto, atracción ±4° al arrastrar cerca de los
-  presets; presets fijan exacto siempre; botón de reset vuelve a 0° conservando escala/espejo/imán.
-- **Re-chequeo de desborde (R6):** cada ángulo re-evalúa el trazado contra R_ext/R_int con banner
-  inmediato incluso arrastrando — motor compartido con pos 7 (el gancho queda preparado).
-- **Persistencia (R7):** `design.rotation` en `projects.state`; el imán es **solo de dispositivo**
-  (localStorage, nunca jsonb — §5); legacy sin rotation ⇒ 0° (R8).
-- **Re-muestreo (R8):** vivo sobre canvas 1024²; la rotación es **FREE (sin candado)**, no reconstruye
-  la virola ni re-inicializa luces, y respeta el tono de quemado R4 de pos 5; guías estáticas y
-  auto-giro ajenos — ninguno pausa ni resetea al otro.
+- **Anclaje del 100 % (R1):** *fit inicial* fijo — al cargar, el envolvente del trazado toca el
+  anillo; ese tamaño queda congelado como 100 % y el rango **70–110 %** (paso 0.5 %) multiplica
+  esa base. Editar D_ext/D_int después NO reescala: solo re-chequea desborde.
+- **R2:** la escala es la PRIMERA capa del pipeline canónico (Escala → Espejo → Rotación): el
+  engranador de pos 6 ya reservó el orden con su pivote único en el centro del carril.
+- **R3 — motor único de desborde:** un solo evaluador con disparos escala/diámetros/carga del
+  diseño; **invariancia polar**: girar y espejar NO re-disparan el re-cálculo (la R6 de la
+  rotación vale como dependencia documental — ya anotada en la capa de pos 6).
+- **R4 — escaneo polar exacto:** máscara alfa 512², píxel activo α≥128 contra R_ext/R_int en mm,
+  tolerancia 0 mm estricta, medición del desvío en mm (1 decimal), chequeo ≤ 25 ms.
+- **R5:** estados deterministas Seguro/Desborde (banner con redacción exacta) + guías tocadas
+  en rojo con pulso 500 ms.
+- **R6:** exportación en desborde exige confirmación (*"Exportar de todas formas"*) y la ficha
+  imprime "Margen: con riesgo (excede X mm)".
+- **R7:** botón **Auto** (binaria descendente ≤ 110 %, mayor escala segura) + presets 85/90/100.
+- **R8 — contrato comercial:** `variants[n].scale` (0.92 ≡ 92 %) + `projects.state` por
+  variante A/B/C (la infraestructura de variantes llega acá — ahí también migran los campos de
+  diseño por variante: rotación y espejo) y link viejo sin scale ⇒ 100 %.
+- La posición 7 resuelve también el **ajuste provisional** de pos 6 (la inscripción en el carril
+  quedó anotada como nota, no contrato).
 
-Y después: escala/chorreo (7) → protecciones (8) → ficha (9) → links/pagos (10).
+Y después: protecciones (8) → ficha (9) → links/pagos (10).
 
 ---
 

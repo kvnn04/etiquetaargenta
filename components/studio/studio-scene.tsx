@@ -1,7 +1,8 @@
 'use client';
 
 /* ============================================================================
- * ESCENA 3D (posición 5) — spec_seleccion_de_color.md + spec_tecnica_geometrica
+ * ESCENA 3D (posiciones 4–6) — spec_seleccion_de_color + spec_tecnica_geometrica
+ * + spec_rotacion_archivo_svg_png (grabado)
  * ----------------------------------------------------------------------------
  * Sobre la base de la posición 3 (cuerpo lathe del catálogo + banda metálica):
  *  · La banda de virola ahora lee las D_ext/D_int VIGENTES del store (R8:
@@ -16,6 +17,10 @@
  *    instante; en el editor la reanudación exige el botón (R7).
  *  · La cascada R3 termina acá: un único setDiameters ⇒ cuerpo/banda/guías
  *    reconstruyen SOLO su geometría (memo por diámetros), luces intactas.
+ *  · Grabado del diseño (pos 6): CanvasTexture 1024² sobre la corona superior
+ *    con la rotación de spec_rotacion_archivo_svg_png.md — el ÁNGULO jamás
+ *    reconstruye geometría ni re-inicializa luces: solo re-composita el canvas
+ *    (DesignEngravingLayer más abajo: marco R1/R4, máscara anular y quemado).
  *
  * R5 (desborde): el flash rojo de desborde (pos 7) se superpone por ENCIMA de
  * esta capa de guías mientras dure el estado (prevalece visualmente).
@@ -27,8 +32,9 @@ import { Line, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { resolveMateModel } from '@/lib/catalog';
 import { useEditorStore } from '@/lib/store/editor';
-import { resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
+import { adaptiveLaserBurn, resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
 import { EDITOR_AUTO_SPIN_RPM, rpmToRadPerSec } from '@/lib/virola';
+import { inscribedFitSizePx } from '@/lib/design';
 import {
   BORDES_DASH_MM,
   CENTRO_DASH_MM,
@@ -285,6 +291,145 @@ function GuidesLayer() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Grabado del diseño (pos 6) — CanvasTexture viva 1024² sobre la corona.     */
+/* R1/R4 (marco canónico): el canvas de la corona proyecta UV polar centrada  */
+/* x/(2R)+0.5 (lathe-builder) ⇒ px = C+x·s / py = C−z·s con flipY del texture: */
+/* el +Z (Frente con la cámara por defecto) es el borde SUPERIOR del canvas y */
+/* por eso `rotate(+θ)` en canvas ≡ `rotateY(+θ)` en mundo ≡ giro visual      */
+/* horario: 0° Frente / 90° Der / 180° Dorso / 270° Izq (presets EXACTAMENTE   */
+/* como los nombra la spec R4). La costura lathe (ancla de guías pos 4) queda  */
+/* al DORSO — nota visual anotada: 0° del DISEÑO es el frente del canvas.     */
+/* R2: la rotación actúa ÚLTIMA (escala/espejo llegan con pos 7 y se aplican   */
+/* ANTES acá). R8: trabajo en vivo 1024² con smoothing 'high' (PNG bicúbico;  */
+/* el SVG llegó pre-rasterizado canalizando su vectorización); Ficha HD       */
+/* re-proyecta ≥2048² (pos 9).                                                */
+/* Clipping anular con máscara destination-in SOLO entre R_int y R_ext, y     */
+/* tinte ÚNICO con el tono del quemado adaptativo R4 (pos 5 → pos 6: el modo  */
+/* de quemado no altera el ángulo). Provisional pos 6: la imagen se inscribe  */
+/* en el círculo del carril ⇒ NINGÚN ángulo desborda (el fit exacto + banner  */
+/* "chorreo" llega con la pos 7); el re-chequeo R6 engancha ahí.              */
+/* -------------------------------------------------------------------------- */
+
+const ENGRAVING_CANVAS_PX = 1024; // R8: canvas de trabajo en vivo
+/** ε sobre la corona para no pelear Z con el metal (guías: +0.2). */
+const ENGRAVING_LIFT_MM = 0.02;
+
+function composeEngravingCanvas(
+  canvas: HTMLCanvasElement,
+  asset: HTMLCanvasElement | null,
+  rotationDeg: number,
+  burn: { color: string },
+  rInMm: number,
+  rOutMm: number,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const C = canvas.width / 2;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!asset || rOutMm <= 0 || rInMm >= rOutMm) return;
+
+  const pxPerMm = C / rOutMm; // UV polar: el borde del canvas ES R_ext
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high'; // R8: máxima interpolación del PNG
+
+  // 1) Capa de diseño rotada alrededor del CENTRO del carril — pivote exacto
+  //    (QA1): nunca se desliza. rotate(+θ) canvas ≡ rotateY(+θ) mundo.
+  ctx.save();
+  ctx.translate(C, C);
+  ctx.rotate((rotationDeg * Math.PI) / 180);
+  const side = inscribedFitSizePx(rOutMm - rInMm, pxPerMm);
+  ctx.drawImage(asset, -side / 2, -side / 2, side, side);
+  ctx.restore();
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // 2) Tinte ÚNICO con el tono de quemado (pos 5 R4 ⇒ grabado láser)
+  //    monótono: conserva la silueta del trazado, no el color de origen.
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = burn.color;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 3) Máscara anular: el grabado NO sale de la banda (R_int → R_ext).
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.beginPath();
+  ctx.arc(C, C, C, 0, Math.PI * 2); // exterior = R_ext
+  ctx.arc(C, C, (rInMm / rOutMm) * C, 0, Math.PI * 2, true); // agujero interior
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function DesignEngravingLayer() {
+  const int = useEditorStore((s) => s.intDiameter);
+  const ext = useEditorStore((s) => s.extDiameter);
+  const mateModel = useEditorStore((s) => s.mateModel);
+  const virolaColor = useEditorStore((s) => s.virolaColor);
+  const rotation = useEditorStore((s) => s.design.rotation);
+  const asset = useEditorStore((s) => s.designAsset);
+
+  const product = useMemo(() => resolveMateModel(mateModel), [mateModel]);
+  const topY = product.shape.totalHeightMm + product.shape.sealOverlapMm;
+
+  // MISMA geometría que VirolaGroup (misma cache ⇒ comparte buffers: el ángulo
+  // jamás reconstruye la virola — spec §3 comportamiento del sistema).
+  const geometry = useMemo(
+    () => cached(`virolaTop:${int}:${ext}`, () => buildVirolaTopGeometry(int, ext), virolaCache),
+    [int, ext],
+  );
+
+  // Tono/selector de quemado adaptativo (R4 pos 5): preset metálico ⇒ oscuro.
+  const burn = useMemo(() => adaptiveLaserBurn(virolaColor), [virolaColor]);
+
+  const { canvas, texture } = useMemo(() => {
+    const c = document.createElement('canvas');
+    c.width = ENGRAVING_CANVAS_PX;
+    c.height = ENGRAVING_CANVAS_PX;
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return { canvas: c, texture: tex };
+  }, []);
+
+  // (a)+(c) del flujo §3: cada cambio de ángulo normalizado re-composita y
+  // emite la textura — sin reconstruir virola ni re-inicializar luces.
+  useEffect(() => {
+    composeEngravingCanvas(canvas, asset?.canvas ?? null, rotation, burn, int / 2, ext / 2);
+    texture.needsUpdate = true;
+  }, [canvas, texture, asset, rotation, burn, int, ext]);
+
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: texture,
+        transparent: true,
+        opacity: burn.opacity,
+        metalness: 0.05,
+        roughness: 0.9,
+        polygonOffset: true,
+        polygonOffsetFactor: -2, // ε contra el metal (las guías viven con Line)
+        polygonOffsetUnits: -2,
+      }),
+    [texture],
+  );
+
+  useEffect(() => {
+    material.opacity = burn.opacity;
+  }, [material, burn.opacity]);
+
+  if (!asset) return null; // sin diseño: la corona sale lisa (nada que grabar)
+
+  return (
+    <mesh
+      geometry={geometry}
+      material={material}
+      position={[0, topY + ENGRAVING_LIFT_MM, 0]}
+      renderOrder={1} /* virola 0 < grabado 1 < guías 2 */
+    />
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Auto-giro (R7): rota el GRUPO producto a 0.75 RPM. Pausar ⇒ ángulo congelado*/
 /* en el valor actual (reanudación por botón sin reencuadrar nada).           */
 /* -------------------------------------------------------------------------- */
@@ -384,6 +529,7 @@ export default function StudioScene({ spinning = false, onUserInteracted }: Stud
       <group ref={groupRef}>
         <MateBodyMesh />
         <VirolaGroup />
+        <DesignEngravingLayer />
         <GuidesLayer />
       </group>
 

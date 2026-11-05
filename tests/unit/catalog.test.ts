@@ -88,6 +88,7 @@ describe('R8 — fallback a camionero', () => {
       bodyColor: null,
       virolaColor: null,
       recentColors: { body: [], virola: [] },
+      design: { rotation: 0 }, // pos 6 (R8: sin rotation ⇒ 0°)
     });
   });
 });

@@ -4,8 +4,8 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 5 de 10 — *Color PBR inteligente (cuerpo/virola #HEX) + quemado adaptativo del grabado* implementada sobre la posición 4 (medidas, 3 mallas, guías coplanares, cascada y auto-giro).
-107 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
+**Estado**: ✅ Posición 6 de 10 — *Rotación del diseño SVG/PNG (grabado sobre la corona, imán ±4°, presets 0/90/180/270)* implementada sobre la posición 5 (color PBR) y la 4 (medidas, 3 mallas, guías, cascada, auto-giro).
+132 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -18,8 +18,8 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Estilos | Tailwind CSS v4 (CSS-first, `@theme inline`) |
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
-| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + guías coplanares + auto-giro) |
-| Test unit | Vitest 4 (107 tests: matriz R2 + branding + catálogo + virola/guías pos 4 + color pos 5 en `tests/unit/`) |
+| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado/rotación pos 6 + guías + auto-giro) |
+| Test unit | Vitest 4 (132 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + rotación pos 6 en `tests/unit/`) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
 > `@supabase/ssr` y React 19; Next 16 puede migrar por su cuenta más adelante.
@@ -49,6 +49,7 @@ simulador-mates/
     catalog.ts       → REGISTRO CENTRAL DE PRODUCTOS R1 (+ validación §6 y fallback R8)
     virola.ts        → MEDIDAS DE VIROLA: clamps R1, rangos dinámicos, métricas R2, triada guías R6
     color.ts         → COLOR INTELIGENTE (pos 5): tabla PBR + exclusividad/recientes + quemado R4 (L 0.55)
+    design.ts        → ROTACIÓN DEL DISEÑO (pos 6): R3 canónico 0.5° + imán R4 ±4° + imán de dispositivo
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
@@ -188,13 +189,28 @@ red un momento para ver el banner del borrador local.
 | Tarjeta "Materiales y Acabados" en panel apilado (decisión del titular: sin pestañas) | ✅ `components/studio/color-picker-card.tsx` |
 | Todo el módulo de color 100% FREE (sin candado) | ✅ (matriz R2 sin capability nueva) |
 
+## ¿Qué quedó de la posición 6? (según `spec_rotacion_archivo_svg_png.md`)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Marco canónico único: 0° = eje de la costura UV, pivote en el centro del carril, presets "0° Frente / 90° Der / 180° Dorso / 270° Izq" | ✅ ancla `LATHE_SEAM_PHI_START` + canvas polar de la corona |
+| Ángulo canónico único en [0°, 360°) paso 0.5° (370°⇒10°, −90°⇒270°, 45.25°⇒45.5°, 360°⇒0) | ✅ `lib/design.ts` (25 tests) |
+| Imán configurable ±4° (ON por defecto, SOLO dispositivo — nunca jsonb) + presets exactos siempre + reset a 0° | ✅ `localStorage mocap:design-snap-magnet` ✓ QA3: 17.5° exacto con imán OFF |
+| Grabado sobre la corona superior con clipping anular y tinte de quemado adaptativo (R4 pos 5) | ✅ CanvasTexture 1024² en `studio-scene.tsx` — mismo caché de geometría de `virolaTopMesh` |
+| El ángulo JAMÁS reconstruye virola ni re-inicializa luces; guías estáticas; auto-giro ajeno | ✅ solo re-compone el canvas |
+| Carga SVG/PNG en cliente (raster 1024², R8) con la imagen SOLO de sesión (persiste la rotación) | ✅ `rasterizeDesignFile` + diseño fuera del snapshot |
+| Fallo de raster ⇒ conserva la última textura válida + aviso inline (§6) | ✅ |
+| Persistencia `design.rotation` en `projects.state` (legacy sin rotation ⇒ 0°) | ✅ normalize tolerante |
+| Rotación FREE (sin candado en la matriz R2) | ✅ |
+| Re-chequeo de desborde al rotar (R6) | ✅ desbordamiento imposible en pos 6: **ajuste provisional** (inscripción al carril) anotado — banner/motor exacto llegan en pos 7 |
+
 ## Scripts
 
 ```bash
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color, 107 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño, 132 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -204,8 +220,8 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color,
 3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); `0003` + grants aplicados (04-nov)
 4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (`feca766`, 05-nov)
 5. ✅ **Color PBR + quemado adaptativo** — commiteada (`940e69c`, 05-nov)
-6. ⬜ Rotación del diseño — `spec_rotacion_...` ← siguiente
-7. ⬜ Escala + alerta de chorreo — `spec_escala_y_alerta_...`
+6. ✅ **Rotación del diseño (grabado)** — implementada (05-nov)
+7. ⬜ Escala + alerta de chorreo — `spec_escala_y_alerta_...` ← siguiente
 8. ⬜ Protección (watermark, 402) — auth paso B
 9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha`
 10. ⬜ Links comerciales + pagos MP — links + `spec_pagos`

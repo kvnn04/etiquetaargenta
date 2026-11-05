@@ -21,6 +21,7 @@ import {
   type MetalPresetId,
   type BodyPresetId,
 } from '@/lib/color';
+import { normalizeDesignState } from '@/lib/design';
 
 const DRAFT_KEY = 'mocap:project-draft';
 
@@ -42,6 +43,7 @@ export function defaultSnapshot(): EditorStateSnapshot {
     bodyColor: null,
     virolaColor: null,
     recentColors: { body: [], virola: [] },
+    design: { rotation: 0 }, // pos 6 (R8): sin rotation ⇒ 0°
   };
 }
 
@@ -99,6 +101,10 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
         }
       : { body: [], virola: [] };
 
+  // Pos 6: design.rotation — normaliza a la representación canónica R3
+  // ([0°, 360°) paso 0.5°); proyecto viejo sin `design` ⇒ 0° (R8).
+  const design = normalizeDesignState((raw as Record<string, unknown>).design);
+
   return {
     mateModel: resolveMateModel(model)?.id ?? base.mateModel as MateModelId,
     extDiameter: reconciled.extDiameter,
@@ -109,6 +115,7 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
     bodyColor,
     virolaColor,
     recentColors,
+    design, // pos 6
   };
 }
 

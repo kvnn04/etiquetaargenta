@@ -20,6 +20,13 @@
  *   bodyColor    color libre del cuerpo en HEX; null ⇒ usa bodyPreset.
  *   virolaColor  color libre de la virola en HEX; null ⇒ usa metalPreset.
  *   recentColors colores recientes por zona (máx 6, deduplicados, prepend).
+ *
+ * claves pos 6 (spec_rotacion_archivo_svg_png.md):
+ *   design       { rotation } en grados [0°, 360°) paso 0.5° (R3/R7). El estado
+ *                del IMÁN es SOLO DE DISPOSITIVO (§5, localStorage — igual que
+ *                el auto-giro: nunca viaja al jsonb). El archivo del diseño
+ *                (designAsset) es de SESIÓN también: solo la ROTACIÓN persiste;
+ *                el ciclo de vida del archivo llega con pos 7/10.
  * ============================================================================ */
 
 import { create } from 'zustand';
@@ -32,6 +39,10 @@ import {
   type MetalPresetId,
   type BodyPresetId,
 } from '@/lib/color';
+import { normalizeRotation, DEFAULT_DESIGN_STATE, type DesignState, type DesignAsset } from '@/lib/design';
+
+/** Recurso del diseño cargado en sesión (canvas rasterizado 1024², R8). */
+export type { DesignAsset };
 
 export interface EditorStateSnapshot {
   mateModel: MateModelId;
@@ -43,6 +54,8 @@ export interface EditorStateSnapshot {
   bodyColor: string | null;    // null ⇒ usa preset
   virolaColor: string | null;  // null ⇒ usa preset
   recentColors: { body: string[]; virola: string[] };
+  /** pos 6 (R3/R7): rotación del grabado en grados canónicos [0°, 360°). */
+  design: DesignState;
 }
 
 export interface EditorStore extends EditorStateSnapshot {
@@ -54,6 +67,8 @@ export interface EditorStore extends EditorStateSnapshot {
   lastSavedAt: string | null;
   /** true ⇒ el autosave falló por red: el borrador vive en localStorage. */
   offlineDraft: boolean;
+  /** pos 6: asset de diseño de la SESIÓN (nunca persistido; restore ⇒ null). */
+  designAsset: DesignAsset | null;
 
   /** Restaura desde el backend (o del draft local más reciente). */
   restoreState: (s: EditorStateSnapshot, projectId: string | null) => void;
@@ -76,6 +91,13 @@ export interface EditorStore extends EditorStateSnapshot {
   setVirolaColor: (hex: string | null) => void;
   /** Agrega un color reciente a la zona indicada (prepend, dedup, máx 6). */
   addRecentColor: (zone: 'body' | 'virola', hex: string) => void;
+  /** pos 6: setea la rotación canónica del grabado (R3: normaliza por módulo). */
+  setDesignRotation: (angleDeg: number) => void;
+  /**
+   * pos 6: carga/limpia (null) el archivo de diseño en SESIÓN — el asset NO
+   * se persiste ni marca dirty: no cambia nada del estado contractual.
+   */
+  loadDesignAsset: (asset: DesignAsset | null) => void;
   /** Marca dirty de otro flujo (ej. restore desde draft local más nuevo). */
   markDirty: () => void;
   /** Confirmado de guardar (lo llama el autosave). */
@@ -93,10 +115,12 @@ export const useEditorStore = create<EditorStore>((set) => ({
   bodyColor: null,
   virolaColor: null,
   recentColors: { body: [], virola: [] },
+  design: { ...DEFAULT_DESIGN_STATE },
   projectId: null,
   dirty: false,
   lastSavedAt: null,
   offlineDraft: false,
+  designAsset: null,
 
   restoreState: (s, projectId) =>
     set((prev) => ({
@@ -108,9 +132,13 @@ export const useEditorStore = create<EditorStore>((set) => ({
       bodyColor: s.bodyColor ?? null,
       virolaColor: s.virolaColor ?? null,
       recentColors: s.recentColors ?? { body: [], virola: [] },
+      design: s.design ?? { ...DEFAULT_DESIGN_STATE },
       projectId,
       dirty: false,
       offlineDraft: false,
+      // pos 6: el archivo del diseño es de sesión — al restaurar NO revivimos
+      // la imagen (la rotación sí persiste; el asset se re-carga a mano).
+      designAsset: null,
     })),
 
   setMateModel: (id) => set((prev) => ({ ...prev, mateModel: id, dirty: true })),
@@ -145,6 +173,19 @@ export const useEditorStore = create<EditorStore>((set) => ({
 
   markDirty: () => set((prev) => ({ ...prev, dirty: true })),
 
+  // pos 6 (R3): guardar SIEMPRE la representación canónica [0°, 360°) —
+  // setDiameters-pattern: UN evento ⇒ un render del engranador.
+  setDesignRotation: (angleDeg) =>
+    set((prev) => ({
+      ...prev,
+      design: { ...prev.design, rotation: normalizeRotation(angleDeg) },
+      dirty: true,
+    })),
+
+  // pos 6: el asset no es contractual — no marca dirty (el autosave dedupea
+  // por payload igual; esto evita autosaves con payload idéntico).
+  loadDesignAsset: (asset) => set((prev) => ({ ...prev, designAsset: asset })),
+
   markSaved: (at, projectId) => set((prev) => ({ ...prev, dirty: false, lastSavedAt: at, projectId })),
   markOfflineDraft: (on) => set((prev) => ({ ...prev, offlineDraft: on })),
 }));
@@ -164,5 +205,6 @@ export function snapshotOf(store: EditorStore): EditorStateSnapshot {
       body: [...store.recentColors.body],
       virola: [...store.recentColors.virola],
     },
+    design: { ...store.design },
   };
 }

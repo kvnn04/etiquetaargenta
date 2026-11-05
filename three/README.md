@@ -22,5 +22,13 @@ threshold L 0.55, testeada): la escena consume `resolveVirolaPbr` / `resolveBody
 material memoizado y no hizo falta un módulo three/ extra. El **tono de quemado** se dibuja sobre la
 capa de grabado que llega con la posición 6 (corona superior, UV polar).
 
+**Ya implementado (posición 6):** la capa de grabado vive en `components/studio/studio-scene.tsx`
+(`DesignEngravingLayer` + `composeEngravingCanvas`) — CanvasTexture **viva 1024²** sobre la MISMA
+geometría cacheada de `buildVirolaTopGeometry` (comparte buffers; el ángulo jamás reconstruye la
+virola): máscara anular `destination-in` entre R_int y R_ext, tinte único con el tono de quemado de
+pos 5, `rotate(+θ)` canvas ≡ `rotateY(+θ)` mundo (presets 0° Frente / 90° Der / 180° Dorso / 270°
+Izq), y ajuste provisional de inscripción en el carril (la pos 7 reemplaza por el fit exacto +
+motor de desborde). La lógica angular pura está en **`lib/design.ts`** (testada).
+
 Dependencias (`three`, `@react-three/fiber`, `@react-three/drei` + `zustand` para el store)
 quedan instaladas desde la posición 3.
