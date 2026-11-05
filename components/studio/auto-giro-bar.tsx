@@ -1,0 +1,40 @@
+'use client';
+
+/* ============================================================================
+ * AUTO-GIRO (barra flotante de la pestaña Estudio 3D) — spec_tecnica_geometrica §4
+ * ----------------------------------------------------------------------------
+ * R7: botón alternante de giro — activo (girando) ⇒ "Pausar" con fondo
+ * discreto; inactivo ⇒ "Girar 360°" con fondo de acento. La pausa por
+ * interacción (pointer/drag/pinch/scroll) la dispara la escena (OrbitControls
+ * 'start') y aquí queda reflejada: en el EDITOR la reanudación exige pulsar
+ * el botón (control explícito — el auto-resume de 4 s es del Modo Cliente,
+ * pos 10). Velocidad: 0.75 RPM (EDITOR_AUTO_SPIN_RPM, R7).
+ * El estado es de dispositivo: NO se persiste en el proyecto (R6).
+ * ============================================================================ */
+
+import { Pause, RotateCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+export default function AutoGiroBar({
+  spinning,
+  onToggle,
+}: {
+  spinning: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center">
+      {/* El envoltorio no intercepta el puntero: la órbita sigue libre alrededor del botón */}
+      <Button
+        variant={spinning ? 'outline' : 'primary'}
+        size="sm"
+        className="pointer-events-auto bg-panel/80 backdrop-blur"
+        onClick={onToggle}
+        aria-pressed={spinning}
+      >
+        {spinning ? <Pause className="h-3.5 w-3.5" /> : <RotateCw className="h-3.5 w-3.5" />}
+        {spinning ? 'Pausar' : 'Girar 360°'}
+      </Button>
+    </div>
+  );
+}

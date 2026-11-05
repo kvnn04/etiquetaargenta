@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { EditorStateSnapshot } from '@/lib/store/editor';
 import { resolveMateModel, DEFAULT_MATE_MODEL, type MateModelId } from '@/lib/catalog';
+import { DEFAULT_GUIDES_STATE, normalizeGuidesState, reconcileDiameters } from '@/lib/virola';
 import { DEFAULT_EXT_DIAMETER_MM, DEFAULT_INT_DIAMETER_MM } from '@/three/visual-skeleton';
 
 const DRAFT_KEY = 'mocap:project-draft';
@@ -25,7 +26,12 @@ export interface LoadedProject {
 
 /** Estado por defecto de proyecto nuevo (producto default = R1: Camionero). */
 export function defaultSnapshot(): EditorStateSnapshot {
-  return { mateModel: DEFAULT_MATE_MODEL, extDiameter: DEFAULT_EXT_DIAMETER_MM, intDiameter: DEFAULT_INT_DIAMETER_MM };
+  return {
+    mateModel: DEFAULT_MATE_MODEL,
+    extDiameter: DEFAULT_EXT_DIAMETER_MM,
+    intDiameter: DEFAULT_INT_DIAMETER_MM,
+    guidesState: { ...DEFAULT_GUIDES_STATE },
+  };
 }
 
 /** Normaliza un jsonb del backend: claves faltantes ⇒ defaults; id raro ⇒ R8. */
@@ -34,10 +40,16 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
   if (typeof raw !== 'object' || raw === null) return base;
   const s = raw as Partial<EditorStateSnapshot>;
   const model = typeof s.mateModel === 'string' ? s.mateModel : null;
+  // Pos 4 (R1): diámetros con medidas imposibles ⇒ defaults; luego el régene
+  // único acota el par al dominio válido (chapa ≥ 4 mm) — jamás propaga basura.
+  const extRaw = typeof s.extDiameter === 'number' && s.extDiameter > 0 ? s.extDiameter : base.extDiameter;
+  const intRaw = typeof s.intDiameter === 'number' && s.intDiameter > 0 ? s.intDiameter : base.intDiameter;
+  const reconciled = reconcileDiameters({ extDiameter: extRaw, intDiameter: intRaw });
   return {
     mateModel: resolveMateModel(model)?.id ?? base.mateModel as MateModelId,
-    extDiameter: typeof s.extDiameter === 'number' && s.extDiameter > 0 ? s.extDiameter : base.extDiameter,
-    intDiameter: typeof s.intDiameter === 'number' && s.intDiameter > 0 ? s.intDiameter : base.intDiameter,
+    extDiameter: reconciled.extDiameter,
+    intDiameter: reconciled.intDiameter,
+    guidesState: normalizeGuidesState(s.guidesState), // R6: triada de guías (default true×3)
   };
 }
 

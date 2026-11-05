@@ -16,7 +16,7 @@
  * materiales viven en módulos aparte y no se tocan acá (aislamiento).
  * ============================================================================ */
 
-import { LatheGeometry, Vector2 } from 'three';
+import { BufferGeometry, Float32BufferAttribute, LatheGeometry, Vector2 } from 'three';
 import type { MateProduct, MateShape } from '@/lib/catalog';
 import {
   BODY_WALL_MM,
@@ -64,9 +64,105 @@ export function buildBodyGeometry(product: MateProduct, intDiameterMm: number): 
 }
 
 /**
- * Banda metálica (esqueleto visual de la virola, pos 3): sección rectangular
- * cerrada girada 360°. La posición 4 la reemplaza por su implementación con
- * métricas y guías; misma cola de constantes y mismo phiStart.
+ * 1. CORONA SUPERIOR ANULAR PLANA (spec_tecnica_geometrica §3-R1 / prototipo v1):
+ * Disco plano horizontal en el plano X-Z entre R_int y R_ext.
+ * ÚNICA superficie receptora de diseño vectorial (grabado) y de guías de simetría.
+ * Normales orientadas hacia +Y (arriba). Mapeo UV polar centrado en (0.5, 0.5)
+ * anclado a LATHE_SEAM_PHI_START.
+ */
+export function buildVirolaTopGeometry(
+  intDiameterMm: number,
+  extDiameterMm: number,
+  radialSegments = 128,
+): BufferGeometry {
+  const rOut = extDiameterMm / 2;
+  const rIn = intDiameterMm / 2;
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= radialSegments; i++) {
+    const phi = LATHE_SEAM_PHI_START + (i / radialSegments) * Math.PI * 2;
+    const sin = Math.sin(phi);
+    const cos = Math.cos(phi);
+
+    const outerX = rOut * sin;
+    const outerZ = rOut * cos;
+    const innerX = rIn * sin;
+    const innerZ = rIn * cos;
+
+    // Vértice exterior (índice 2*i)
+    positions.push(outerX, 0, outerZ);
+    normals.push(0, 1, 0);
+    uvs.push(outerX / (rOut * 2) + 0.5, outerZ / (rOut * 2) + 0.5);
+
+    // Vértice interior (índice 2*i + 1)
+    positions.push(innerX, 0, innerZ);
+    normals.push(0, 1, 0);
+    uvs.push(innerX / (rOut * 2) + 0.5, innerZ / (rOut * 2) + 0.5);
+  }
+
+  for (let i = 0; i < radialSegments; i++) {
+    const a = i * 2;
+    const b = a + 1;
+    const c = a + 2;
+    const d = a + 3;
+    // Winding counter-clockwise visto desde arriba (+Y)
+    indices.push(a, c, b);
+    indices.push(b, c, d);
+  }
+
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  return geo;
+}
+
+/**
+ * 2. FALDÓN EXTERIOR (spec_tecnica_geometrica §3-R1 / prototipo v1):
+ * Pared de caída cilíndrica/cónica que desciende desde R_ext cubriendo
+ * el labio anti-fuga del cuerpo del mate (sin grabado ni guías).
+ */
+export function buildVirolaOuterWallGeometry(
+  extDiameterMm: number,
+  topY: number,
+  bottomY: number,
+  segments = LATHE_SEGMENTS,
+): LatheGeometry {
+  const rOut = extDiameterMm / 2;
+  const profile = [
+    new Vector2(rOut * 0.985, bottomY),
+    new Vector2(rOut, topY),
+  ];
+  return new LatheGeometry(profile, segments, LATHE_SEAM_PHI_START);
+}
+
+/**
+ * 3. PARED INTERIOR / BOCA (spec_tecnica_geometrica §3-R1 / prototipo v1):
+ * Pared cilíndrica que desciende desde R_int hacia el interior del mate
+ * (sin grabado ni guías).
+ */
+export function buildVirolaInnerWallGeometry(
+  intDiameterMm: number,
+  topY: number,
+  bottomY: number,
+  segments = LATHE_SEGMENTS,
+): LatheGeometry {
+  const rIn = intDiameterMm / 2;
+  const profile = [
+    new Vector2(rIn, bottomY),
+    new Vector2(rIn, topY),
+  ];
+  return new LatheGeometry(profile, segments, LATHE_SEAM_PHI_START);
+}
+
+/**
+ * @deprecated Posición 4: Reemplazada por la anatomía de 3 mallas (buildVirolaTopGeometry,
+ * buildVirolaOuterWallGeometry, buildVirolaInnerWallGeometry). Se conserva por compatibilidad.
  */
 export function buildVirolaGeometry(
   intDiameterMm: number,
@@ -74,7 +170,7 @@ export function buildVirolaGeometry(
   bandHeightMm: number,
   fitGapMm = 0.15,
 ): LatheGeometry {
-  const rIn = intDiameterMm / 2 + fitGapMm; // holgura mínima: evita z-fighting
+  const rIn = intDiameterMm / 2 + fitGapMm;
   const rOut = Math.max(extDiameterMm / 2, rIn + BODY_WALL_MM);
   const cross = [
     new Vector2(rIn, 0),

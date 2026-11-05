@@ -36,19 +36,28 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 3 de 10 ✅
+## 2. Dónde estamos: posición 4 de 10 ✅
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
 ```
 1. ✅ ESQUELETO AUTH
 2. ✅ Perfil + resolveBranding()
-3. ✅ Catálogo de mates + escena 3D   ← ESTAMOS ACÁ
-4-7. ⬜ Editor 3D (medidas/guías → color → rotación → escala/chorreo)
+3. ✅ Catálogo de mates + escena 3D
+4. ✅ Medidas de virola (3 mallas) + guías coplanares + cascada + auto-giro   ← ESTAMOS ACÁ
+5-7. ⬜ Editor 3D (color → rotación → escala/chorreo)
 8. ⬜ Protección (watermark cocida, bloqueo de rutas DOM, 402 export)
 9. ⬜ Ficha técnica export (PNG ≥2160px + PDF A4)
 10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
 ```
+
+La posición 4 entregó la **edición milimétrica de virola**, la **anatomía formal en 3 mallas**
+(`virolaTopMesh` corona superior anular plana para grabado/guías, `virolaOuterWallMesh` faldón
+exterior liso anti-fuga y `virolaInnerWallMesh` pared interior de boca), las **guías de simetría
+coplanares** en la cara superior ($R_{int}$, $R_{ext}$, $R_{\text{centro}}$ y ejes radiales 12h/6h con ticks),
+la **cascada única** `virola.dimensionsChanged` (<100 ms), los **sliders con rangos dinámicos**
+sin puntos muertos en la tarjeta `DimensionsCard`, y el **auto-giro de 0.75 RPM** con pausa por
+interacción (OrbitControls) y botón de reanudación `AutoGiroBar`.
 
 La posición 3 reemplazó el placeholder 3D por la **primera escena real**: el catálogo de
 productos (Camionero ⇄ Imperial) como **registro central solo-datos** (`lib/catalog.ts`), el
@@ -82,7 +91,7 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: 44 tests (matriz R2 + branding + catálogo/motor) |
+| Test unit | Vitest | 4.1.12 | hoy: 75 tests (matriz R2 + branding + catálogo + virola/geometría pos 4) |
 | 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
 | Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
 | Se instalan SOLO al llegar su posición | `zod`, `pdf-lib`, `sharp`, `mercadopago`, Playwright | — | regla vigente: no adelantar deps |
@@ -134,14 +143,18 @@ simulador-mates/
 │   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans)
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado: pos 8–10)
 │   ├── session/plan-watcher.tsx   ← Realtime: UPDATE en users ⇒ router.refresh() (sin reload)
-│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 3: cuerpo lathe + banda de virola + refit de cámara
+│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 4: cuerpo lathe + virola 3 mallas + guías coplanares + auto-giro
 │   ├── studio/product-selector.tsx ← radio-cards (radiogroup) con siluetas SVG derivadas del catálogo
+│   ├── studio/dimensions-card.tsx ← TARJETA MEDIDAS pos 4: D_ext/D_int + steppers + sliders dinámicos + métricas + guías
+│   ├── studio/auto-giro-bar.tsx   ← BARRA AUTO-GIRO pos 4: 0.75 RPM + botón Girar/Pausar + pausa por interacción
 │   └── ui/{button,input}.tsx      ← primitivas mínimas (cva), patrimonio de shadcn/ui a futuro
 │
 ├── lib/
 │   ├── permissions.ts             ← ★ MATRIZ R2 como ÚNICA FUENTE implementada (gate/isLockedFor)
 │   ├── branding.ts                ← ★ resolveBranding() + approvalCode() + normalizadores (R3/R5)
 │   ├── catalog.ts                 ← ★ REGISTRO CENTRAL DE PRODUCTOS (R1) + validación §6 + fallback R8
+│   ├── virola.ts                  ← ★ MEDIDAS VIROLA: clamps R1, rangos dinámicos, métricas R2, triada guías R6
+│   ├── virola/cascade.ts          ← ★ CASCADA ÚNICA virola.dimensionsChanged (<100 ms, bus de eventos)
 │   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state
 │   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
 │   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
@@ -158,19 +171,22 @@ simulador-mates/
 ├── supabase/
 │   ├── migrations/
 │   │   ├── 0001_auth_skeleton.sql     ← users + trigger nombre derivado + projects + pricing_config + RLS + Realtime
-│   │   └── 0002_profile_fields.sql    ← ⬜ POR CORRER: columnas de branding + CHECKs + deleted_at (sin DROP)
+│   │   └── 0002_profile_fields.sql    ← columnas de branding + CHECKs + deleted_at (aplicada 04-nov)
+│   │   └── 0003_projects_owner_default.sql ← default auth.uid() en projects (aplicada 04-nov)
 │   └── ops/
 │       ├── 0901_backfill_user_rows.sql ← reparación: fila faltante en public.users (cuenta nacida pre-migración)
-│       ├── 0910_base_grants.sql        ← reparación: 'permission denied' (proyectos sin grants automáticos)
+│       ├── 0910_base_grants.sql        ← grants ampliados users/projects/pricing (aplicada 04-nov)
 │       └── 0920_purge_deleted_accounts.sql ← R8: restauración manual + purga a 30 días (soporte / pg_cron)
 │
 ├── tests/
 │   ├── unit/permissions.test.ts   ← 8 tests: invariantes de la matriz R2
 │   ├── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
-│   └── unit/catalog.test.ts       ← 13 tests: QA1 matemático, labio anti-fuga R4, R8, corrupción §6
+│   ├── unit/catalog.test.ts       ← 13 tests: QA1 matemático, labio anti-fuga R4, R8, corrupción §6
+│   └── unit/virola.test.ts        ← 31 tests: R1 clamps/rangos dinámicos, R2 métricas, R3 cascada <100ms, R4/R5 guías coplanares, R6 triada, R7 auto-giro
 ├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
-├── three/visual-skeleton.ts       ← constantes provisionales de pos 3 + LATHE_SEAM_PHI_START
-├── three/lathe-builder.ts         ← LatheGeometry del cuerpo y de la banda (anclaje anti-fuga R4)
+├── three/visual-skeleton.ts       ← constantes visuales pos 4 + LATHE_SEAM_PHI_START
+├── three/guides.ts                ← GUÍAS DE SIMETRÍA pos 4: coplanares en corona superior plana (círculos + ejes radiales + ticks)
+├── three/lathe-builder.ts         ← CUERPO + VIROLA 3 MALLAS: corona superior plana + faldón exterior + pared interior boca
 └── (node_modules / .next / package-lock…)
 ```
 
@@ -243,6 +259,21 @@ ve su logo en el workspace y header SIEMPRE, pero la ficha/visor solo lo imprime
 | QA4 | Escalabilidad solo-datos: un 3.er producto funciona con su entrada JSON y 0 líneas extra | el test agrega un producto más a la validación; selector y siluetas derivan del mismo array | ✅ (estructural) |
 | §6 | Entrada corrupta jamás deja la escena vacía | `validateCatalog()` descarta (<3 puntos, alturas no positivas, ids duplicados) con aviso en consola | ✅ |
 | §6 | Corte de internet durante el autosave no pierde trabajo | borrador local con timestamp + banner en pantalla + backoff 1s→30s + flush al reconectar | ✅ código |
+
+### Posición 4 — Medidas de la virola + anatomía 3 mallas + guías coplanares + auto-giro (según `spec_tecnica_geometrica_guias_y_rotacion_360.md`)
+
+| Ref | Requisito | Implementación | Estado |
+| :--- | :--- | :--- | :--- |
+| R1 | Anatomía de 3 mallas: corona superior anular plana (grabado/guías) + faldón exterior liso + pared interior boca | `buildVirolaTopGeometry`, `buildVirolaOuterWallGeometry`, `buildVirolaInnerWallGeometry` en `three/lathe-builder.ts` | ✅ (tests + build) |
+| R1 | Restricciones duras D_ext [70..180], D_int [50..150], paso 0.5 y W ≥ 4.0 mm con rangos dinámicos | `lib/virola.ts` (`reconcileDiameters`, `intRangeFor`, `extRangeFor`) con clamps sin puntos muertos y aviso inline | ✅ (testeado) |
+| R2 | Métricas auto-calculadas: D_centro y W_banda (1 decimal, mm) | `virolaMetrics()` en `lib/virola.ts` | ✅ |
+| R3 | Cascada única `virola.dimensionsChanged` (<100 ms): valida → métricas → redraw guías → re-anclaje cuerpo → desborde | `runDimensionsCascade()` en `lib/virola/cascade.ts` con bus de suscriptores para pos 7 | ✅ (QA2: <0.1 ms/corrida) |
+| R4 | Guías coplanares en corona superior plana (plano X-Z con offset Y + ε) ancladas al UV 0° | `three/guides.ts` (`guideCirclePoints`, `guideRadialAxisPoints`, `guideRadialAxisTicks`) | ✅ |
+| R5 | Catálogo visual de guías: bordes (4-3 #4FC3F7), centro (6-4 #FFC84A), ejes radiales 12h/6h con ticks (#FF7043) | `GuidesLayer` en `components/studio/studio-scene.tsx` con doble trazo oscuro bajo color | ✅ |
+| R6 | Persistencia del estado de guías (`guidesState: { bordes, centro, ejes }`) | store del editor + `projects.state` (default true×3, normalize tolerante) | ✅ |
+| R7 | Auto-giro del editor a 0.75 RPM con pausa por interacción (OrbitControls) y botón de reanudación | `AutoSpin` en escena + `components/studio/auto-giro-bar.tsx` | ✅ |
+| §4 | Tarjeta "Medidas de la Virola" con inputs, steppers ±0.5, sliders dinámicos, métricas y checkboxes | `components/studio/dimensions-card.tsx` | ✅ |
+| §5 | Selector memoizado en store para prevenir bucles de re-render en React 19 (`getSnapshot`) | selectores primitivos + derivación `useMemo` en `studio-scene.tsx` | ✅ |
 
 **Constantes con origen anotado** (`three/visual-skeleton.ts`): los defaults `D_ext = 123.0` /
 `D_int = 95.0 mm` salen de la spec geométrica §2 ("proyecto nuevo arranca con esos valores"), y
@@ -360,13 +391,14 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ 0 errores (con la posición 3 adentro) |
-| `npm run test` (Vitest) | ✅ **44/44** — 8 de matriz R2 + 23 de branding + **13 de catálogo/motor pos 3** (QA1 matemático, labio R4 del torno, R8 fallback, corrupción §6, siluetas SVG, store) |
-| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 10.8 kB; el motor 3D viaja en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con la posición 4 y selector memoizado adentro) |
+| `npm run test` (Vitest) | ✅ **75/75** — 8 de matriz R2 + 23 de branding + 13 de catálogo + **31 de virola/guías/geometría pos 4** |
+| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 14.1 kB; el motor 3D viaja en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
 | **Smoke gating pos 3** (server efímero 7435, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 — el guard de ruta sobrevive al nuevo canvas |
+| **QA Posición 4** (05-nov) | Corona superior plana con normales +Y ✅ · guías concéntricas coplanares en X-Z ✅ · cascada <100 ms ✅ · sliders dinámicos R1 ✅ · auto-giro 0.75 RPM + pausa/play ✅ · fix de loop React 19 memoizado ✅ |
 | Git | ✅ `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
@@ -398,23 +430,22 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 4 — Medidas de la virola + guías + auto-giro** (fuente:
-`spec_tecnica_geometrica_guias_y_rotacion_360.md`):
+**Posición 5 — Selección de Color (cuerpo + virola PBR + quemado adaptativo)** (fuente:
+`spec_seleccion_de_color.md`):
 
-- Tarjeta **Medidas**: `D_ext` / `D_int` editables con rangos dinámicos R1 ([70..180] /
-  [50..150] mm, paso 0.5) y la restricción dura `D_int ≤ D_ext − 8.0 mm` (clamp del campo,
-  no un error rojo).
-- Cascada única `virola.dimensionsChanged` ≤ 100 ms: métricas de grabado + guías + re-anclaje
-  anti-fuga del cuerpo + re-chequeo de desborde — aquí `buildVirolaGeometry()` deja de ser
-  esqueleto y se vuelve la implementación de esa spec.
-- Catálogo visual de guías de simetría ancladas al UV de la costura (`LATHE_SEAM_PHI_START`
-  ya fija ese ancla compartida), con colores legibles sobre virolas teñidas.
-- Auto-giro 360: **0.75 RPM** en el editor (el de Modo Cliente, 0.5 RPM, llega con la ficha).
-- Persistencia del estado de guías dentro del mismo snapshot del editor.
-- Las constantes provisionales de `visual-skeleton.ts` (altura de banda, cubierta bajo la
-  costura) se re-fijan acá citando la spec y dejan de ser provisionales.
+- **Tabla PBR canónica de materiales (R1):** acabados de cuerpo (Algarrobo, Calabaza, Cuero Negro
+  y color libre `#HEX`) y presets metálicos de virola (Alpaca `#D8DADC`, Acero Mate `#A9ABAD`,
+  Bronce Cálido `#B08344` y anodizado libre `#HEX` con metalness 0.10, roughness 0.45).
+- **Cobertura integral de virola (R2):** el color `#HEX` tiñe las 3 mallas del grupo virola
+  (`virolaTopMesh`, `virolaOuterWallMesh`, `virolaInnerWallMesh`), preservando guías y desborde como overlays.
+- **Quemado adaptativo del grabado (R4):** cálculo determinista de luminancia $L = 0.2126R + 0.7152G + 0.0722B$:
+  - $L \ge 0.55$ (fondo claro) ⇒ grabado en tono quemado oscuro `#2B2118` (opacidad 0.88).
+  - $L < 0.55$ (fondo oscuro) ⇒ grabado en tono plateado `#C9CCCF` (opacidad 0.92, láser destapando anodizado).
+- **Contrato con payload y Ficha (R5/R6):** incorporación de `virolaColor` en `mateConfig`
+  (compatibilidad con `topFaceColor` legado) y persistencia en `projects.state` (R7).
+- Todo el módulo de color es **100% FREE** (sin paywall).
 
-Y después: color (5) → rotación del diseño (6) → escala/chorreo (7) → protecciones (8) →
+Y después: rotación del diseño (6) → escala/chorreo (7) → protecciones (8) →
 ficha (9) → links/pagos (10).
 
 ---

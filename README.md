@@ -4,15 +4,13 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 3 de 10 — *Catálogo de mates + escena 3D + autosave* implementada y
-commiteada. Migraciones `0002` + `0003` **aplicadas** y grants de `ops/0910` ampliados
-(04-nov): `/perfil` y el autosave operan de punta a punta en el proyecto real. Pendiente
-menor: QA visual fino de la escena (swap/refit, unión metal-cuerpo, banner offline).
+**Estado**: ✅ Posición 4 de 10 — *Medidas de la virola + anatomía 3 mallas (corona superior plana) + guías coplanares + cascada + auto-giro* implementada.
+75 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
 
-## Stack (posiciones 1–3)
+## Stack (posiciones 1–4)
 
 | Capa | Hoy |
 | :--- | :--- |
@@ -20,8 +18,8 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Estilos | Tailwind CSS v4 (CSS-first, `@theme inline`) |
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
-| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (instalados al llegar la posición 3, como manda el orden) |
-| Test unit | Vitest 4 (44 tests: matriz R2 + branding + catálogo/motor en `tests/unit/`) |
+| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + guías coplanares + auto-giro) |
+| Test unit | Vitest 4 (75 tests: matriz R2 + branding + catálogo + virola/guías pos 4 en `tests/unit/`) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
 > `@supabase/ssr` y React 19; Next 16 puede migrar por su cuenta más adelante.
@@ -161,13 +159,27 @@ cuando prefieras (no bloquea): eliminar la cuenta de prueba y ver el bloqueo neu
 parpadeo, órbita intacta), mirar la unión metal/cuerpo en la panza del Imperial y cortar la
 red un momento para ver el banner del borrador local.
 
+## ¿Qué quedó de la posición 4? (según `spec_tecnica_geometrica_guias_y_rotacion_360.md`)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Anatomía 3 mallas: corona superior plana (grabado/guías) + faldón exterior liso + pared interior boca | ✅ `three/lathe-builder.ts` (`buildVirolaTopGeometry`, `buildVirolaOuterWallGeometry`, `buildVirolaInnerWallGeometry`) |
+| Guías coplanares en corona superior plana (plano X-Z): bordes concéntricos R_int/R_ext, centro R_centro y ejes 12h/6h radiales con ticks | ✅ `three/guides.ts` + `studio-scene.tsx` |
+| Restricciones duras D_ext [70..180], D_int [50..150], paso 0.5 y W ≥ 4.0 mm con rangos dinámicos | ✅ `lib/virola.ts` (reconcileDiameters, intRangeFor, extRangeFor) |
+| Métricas auto-calculadas D_centro y W_banda (1 decimal, mm) | ✅ `virolaMetrics()` |
+| Cascada única `virola.dimensionsChanged` (<100 ms) | ✅ `lib/virola/cascade.ts` (latencia QA2 <0.1 ms/corrida) |
+| Persistencia del estado de guías (`guidesState: { bordes, centro, ejes }`) | ✅ store del editor + `projects.state` |
+| Tarjeta "Medidas de la Virola" en panel apilado (inputs, steppers ±0.5, sliders dinámicos, métricas y checkboxes) | ✅ `components/studio/dimensions-card.tsx` |
+| Auto-giro del editor a 0.75 RPM con pausa por interacción (OrbitControls) y botón Girar/Pausar | ✅ `AutoSpin` + `components/studio/auto-giro-bar.tsx` |
+| Fix de bucle infinito en React 19 / Zustand (selectores memoizados) | ✅ `components/studio/studio-scene.tsx` |
+
 ## Scripts
 
 ```bash
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo, 44 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola, 75 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -175,8 +187,8 @@ npm run test        # Vitest (matriz R2 + branding + catálogo, 44 tests)
 1. ✅ **Esqueleto Auth** — probada de punta a punta en el proyecto real de Supabase (04-nov)
 2. ✅ **Perfil + `resolveBranding()`** — commiteada (`3cf09d0`); `0002` aplicada y QA del panel OK (04-nov)
 3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); `0003` + grants aplicados (04-nov)
-4. ⬜ Medidas/guías + cascada — `spec_tecnica_geometrica...` ← siguiente
-5. ⬜ Color PBR + quemado adaptativo — `spec_seleccion_de_color`
+4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (05-nov)
+5. ⬜ **Color PBR + quemado adaptativo** — `spec_seleccion_de_color` ← siguiente
 6. ⬜ Rotación del diseño — `spec_rotacion_...`
 7. ⬜ Escala + alerta de chorreo — `spec_escala_y_alerta_...`
 8. ⬜ Protección (watermark, 402) — auth paso B

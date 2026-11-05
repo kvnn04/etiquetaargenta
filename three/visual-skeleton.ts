@@ -17,9 +17,18 @@ export const DEFAULT_EXT_DIAMETER_MM = 123.0;
 /** Diámetro de la boca por defecto (spec geométrica §2). */
 export const DEFAULT_INT_DIAMETER_MM = 95.0;
 
-/** Altura de la banda metálica (virola) — PENDIENTE definirse en pos 4. */
-export const VIROLA_BAND_HEIGHT_MM = 24;
-/** Cuánto desciende el borde inferior de la banda por DEBAJO de la costura. */
+/**
+ * Altura VISUAL del faldón exterior de la virola (caída hacia abajo).
+ * La spec geométrica define diámetros y corona superior plana (R1); la caída
+ * exterior cubre el labio anti-fuga del mate con acabado metálico liso.
+ */
+export const VIROLA_SKIRT_HEIGHT_MM = 16;
+export const VIROLA_BAND_HEIGHT_MM = 24; // retrocompatibilidad
+
+/** Profundidad de la pared interior que desciende hacia la boca (mm). */
+export const VIROLA_INNER_DROP_MM = 10;
+
+/** Cuánto desciende el borde inferior de la banda por DEBAJO de la costura — misma nota visual. */
 export const VIROLA_COVER_BELOW_SEAM_MM = 3;
 /** Grosor visual de la pared del cuerpo (labio de la boca) — pendiente pos 5. */
 export const BODY_WALL_MM = 3;

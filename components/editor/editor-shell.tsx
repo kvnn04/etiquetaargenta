@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Box,
@@ -22,6 +22,8 @@ import TopBar from '@/components/editor/top-bar';
 import PaywallModal, { type PriceInfo } from '@/components/paywall/paywall-modal';
 import PlanWatcher from '@/components/session/plan-watcher';
 import ProductSelector from '@/components/studio/product-selector';
+import DimensionsCard from '@/components/studio/dimensions-card';
+import AutoGiroBar from '@/components/studio/auto-giro-bar';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
 import { useProjectPersistence } from '@/lib/projects/use-autosave';
@@ -101,6 +103,11 @@ export default function EditorShell({
   const [priceError, setPriceError] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [actionHint, setActionHint] = useState<string | null>(null);
+  /* R7: estado del auto-giro — dispositivo solamente, NO se persiste. La
+   * interacción sobre el lienzo (OrbitControls 'start') pausa el giro y queda
+   * en pausa hasta que el tallerista lo reactive con el botón. */
+  const [spinning, setSpinning] = useState(false);
+  const pauseSpin = useCallback(() => setSpinning(false), []);
 
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const mateModel = useEditorStore((s) => s.mateModel);
@@ -179,12 +186,14 @@ export default function EditorShell({
       />
 
       <main className="mx-auto grid w-full max-w-6xl flex-1 gap-6 px-4 py-6 lg:grid-cols-[1fr_340px]">
-        {/* Estudio 3D (posición 3: catálogo Camionero ⇄ Imperial con virola esqueleto) */}
+        {/* Estudio 3D (posición 4: catálogo + medidas de virola + guías + auto-giro) */}
         <section className="relative min-h-[420px] overflow-hidden rounded-2xl border border-line lg:min-h-0">
-          <StudioScene />
+          <StudioScene spinning={spinning} onUserInteracted={pauseSpin} />
           <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 backdrop-blur">
             Estudio 3D
           </div>
+          {/* R7: barra flotante de la pestaña Estudio 3D — "Girar 360°"/"Pausar" */}
+          <AutoGiroBar spinning={spinning} onToggle={() => setSpinning((v) => !v)} />
         </section>
 
         {/* Panel derecho */}
@@ -225,6 +234,9 @@ export default function EditorShell({
               </p>
             )}
           </div>
+
+          {/* SEGUNDA tarjeta (§4 spec_tecnica_geometrica): Medidas y Geometría */}
+          <DimensionsCard />
 
           {actionHint && (
             <div className="rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold-soft">
@@ -298,10 +310,9 @@ export default function EditorShell({
       </main>
 
       <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
-        Posición 3 del plan: catálogo de mates + escena 3D (schema de{' '}
-        <span className="font-mono">projects.state</span> en autosave · fuente única:{' '}
-        <span className="font-mono">spec_tipo_de_mate.md</span>) · matriz R2:{' '}
-        <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span>
+        Posición 4 del plan: medidas de la virola + guías + auto-giro (fuente única:{' '}
+        <span className="font-mono">spec_tecnica_geometrica_guias_y_rotacion_360.md</span>) · matriz
+        R2: <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span>
       </footer>
 
       <PaywallModal

@@ -81,6 +81,7 @@ describe('R8 — fallback a camionero', () => {
       mateModel: DEFAULT_MATE_MODEL,
       extDiameter: DEFAULT_EXT_DIAMETER_MM,
       intDiameter: DEFAULT_INT_DIAMETER_MM,
+      guidesState: { bordes: true, centro: true, ejes: true }, // R6 pos 4
     });
   });
 });
