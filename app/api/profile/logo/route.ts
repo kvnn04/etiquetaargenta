@@ -126,6 +126,9 @@ export async function POST(request: NextRequest) {
   const service = createSupabaseServiceClient();
   const storage = service.storage.from(BRANDING_BUCKET);
 
+  let logoUrl: string;
+  let logoThumbUrl: string;
+
   try {
     const [up1, up2] = await Promise.all([
       storage.upload(bucketPath(`logo.${ext}`), mainBytes, {
@@ -150,20 +153,26 @@ export async function POST(request: NextRequest) {
       await storage.remove(stale.map((o) => `${user.id}/${o.name}`));
     }
 
-    const logoUrl = `branding/${bucketPath(`logo.${ext}`)}`;
-    const logoThumbUrl = `branding/${bucketPath(`logo_thumb.${ext}`)}`;
-
-    const { error: updateError } = await service
-      .from('users')
-      .update({ logo_url: logoUrl, logo_thumb_url: logoThumbUrl })
-      .eq('id', user.id);
-    if (updateError) throw new Error(`users update: ${updateError.message}`);
-
-    return NextResponse.json({ ok: true, logoUrl, logoThumbUrl });
+    logoUrl = `branding/${bucketPath(`logo.${ext}`)}`;
+    logoThumbUrl = `branding/${bucketPath(`logo_thumb.${ext}`)}`;
   } catch (err) {
-    console.error('[profile/logo]:', err instanceof Error ? err.message : err);
+    console.error('[profile/logo storage]:', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'STORAGE_INDISPONIBLE' }, { status: 503 });
   }
+
+  // Persistencia de los PATHS en la fila — falla DISTINTA de Storage: el asset
+  // ya está en el bucket y el logo anterior de la fila queda a salvo (un
+  // reintento re-listaría y depuraría). 500 GUARDADO_FALLIDO no es "caído".
+  const { error: updateError } = await service
+    .from('users')
+    .update({ logo_url: logoUrl, logo_thumb_url: logoThumbUrl })
+    .eq('id', user.id);
+  if (updateError) {
+    console.error('[profile/logo users update]:', updateError.message);
+    return NextResponse.json({ error: 'GUARDADO_FALLIDO' }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, logoUrl, logoThumbUrl });
 }
 
 /** DELETE: quita assets + columnas (view del panel regresa al fallback). */

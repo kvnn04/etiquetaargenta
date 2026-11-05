@@ -70,6 +70,7 @@ function splitE164(e164: string): { prefix: string; local: string } {
 /** Motivos del API (server) → el mismo mensaje inline del codificador. */
 function reasonToMessage(status: number, payload: { error?: string; reason?: string }): string {
   if (status === 503) return 'El Storage estaba caído: no se guardó nada y tu logo anterior sigue a salvo.';
+  if (status === 500) return 'El archivo quedó en tu espacio del workspace, pero no pudimos anotarlo en tu perfil — probá de nuevo.';
   if (status === 401) return 'Tu sesión expiró — refrescá la página e iniciá sesión otra vez.';
   switch (payload.reason) {
     case 'format':
