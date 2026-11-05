@@ -23,6 +23,7 @@ import PaywallModal, { type PriceInfo } from '@/components/paywall/paywall-modal
 import PlanWatcher from '@/components/session/plan-watcher';
 import ProductSelector from '@/components/studio/product-selector';
 import DimensionsCard from '@/components/studio/dimensions-card';
+import ColorPickerCard from '@/components/studio/color-picker-card';
 import AutoGiroBar from '@/components/studio/auto-giro-bar';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
@@ -238,6 +239,9 @@ export default function EditorShell({
           {/* SEGUNDA tarjeta (§4 spec_tecnica_geometrica): Medidas y Geometría */}
           <DimensionsCard />
 
+          {/* TERCERA tarjeta (§5 spec_seleccion_de_color): Materiales y Acabados */}
+          <ColorPickerCard />
+
           {actionHint && (
             <div className="rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold-soft">
               {actionHint}
@@ -310,9 +314,9 @@ export default function EditorShell({
       </main>
 
       <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
-        Posición 4 del plan: medidas de la virola + guías + auto-giro (fuente única:{' '}
-        <span className="font-mono">spec_tecnica_geometrica_guias_y_rotacion_360.md</span>) · matriz
-        R2: <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span>
+        Posición 5 del plan: sistema de color inteligente — cuerpo y virola #HEX (fuente única:{' '}
+        <span className="font-mono">spec_seleccion_de_color.md</span>) · posición 4:{' '}
+        <span className="font-mono">spec_tecnica_geometrica_guias_y_rotacion_360.md</span>
       </footer>
 
       <PaywallModal

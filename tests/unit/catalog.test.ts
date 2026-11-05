@@ -77,11 +77,17 @@ describe('R8 — fallback a camionero', () => {
     // estado válido se conserva
     expect(normalizeState({ mateModel: 'imperial' }).mateModel).toBe('imperial');
     // diámetros injustificados (<= 0) ⇒ defaults de la spec geométrica
+    // pos 5: el snapshot incluye los campos de color con sus defaults
     expect(normalizeState({ extDiameter: 0, intDiameter: -5 })).toEqual({
       mateModel: DEFAULT_MATE_MODEL,
       extDiameter: DEFAULT_EXT_DIAMETER_MM,
       intDiameter: DEFAULT_INT_DIAMETER_MM,
       guidesState: { bordes: true, centro: true, ejes: true }, // R6 pos 4
+      bodyPreset: 'algarrobo',
+      metalPreset: 'alpaca',
+      bodyColor: null,
+      virolaColor: null,
+      recentColors: { body: [], virola: [] },
     });
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 /* ============================================================================
- * ESCENA 3D (posición 4) — spec_tecnica_geometrica_guias_y_rotacion_360.md
+ * ESCENA 3D (posición 5) — spec_seleccion_de_color.md + spec_tecnica_geometrica
  * ----------------------------------------------------------------------------
  * Sobre la base de la posición 3 (cuerpo lathe del catálogo + banda metálica):
  *  · La banda de virola ahora lee las D_ext/D_int VIGENTES del store (R8:
@@ -27,6 +27,7 @@ import { Line, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { resolveMateModel } from '@/lib/catalog';
 import { useEditorStore } from '@/lib/store/editor';
+import { resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
 import { EDITOR_AUTO_SPIN_RPM, rpmToRadPerSec } from '@/lib/virola';
 import {
   BORDES_DASH_MM,
@@ -78,21 +79,22 @@ function cached(key: string, make: () => THREE.BufferGeometry, cache: GeometryCa
 function MateBodyMesh() {
   const mateModel = useEditorStore((s) => s.mateModel);
   const intDiameter = useEditorStore((s) => s.intDiameter);
+  const bodyPreset = useEditorStore((s) => s.bodyPreset);
+  const bodyColor = useEditorStore((s) => s.bodyColor);
 
   const geometry = useMemo(() => {
     const product = resolveMateModel(mateModel);
     return cached(`body:${product.id}:${intDiameter}`, () => buildBodyGeometry(product, intDiameter), bodyCache);
   }, [mateModel, intDiameter]);
 
-  const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#8a5a33'), // esqueleto: madera algarrobo base (pos 5 = PBR real)
-        roughness: 0.72,
-        metalness: 0.05,
-      }),
-    [],
-  );
+  const material = useMemo(() => {
+    const pbr = resolveBodyPbr(bodyPreset, bodyColor);
+    return new THREE.MeshStandardMaterial({
+      color: new THREE.Color(pbr.color),
+      roughness: pbr.roughness,
+      metalness: pbr.metalness,
+    });
+  }, [bodyPreset, bodyColor]);
 
   return <mesh geometry={geometry} material={material} castShadow={false} receiveShadow={false} />;
 }
@@ -108,6 +110,8 @@ function VirolaGroup() {
   const intDiameter = useEditorStore((s) => s.intDiameter);
   const extDiameter = useEditorStore((s) => s.extDiameter);
   const mateModel = useEditorStore((s) => s.mateModel);
+  const metalPreset = useEditorStore((s) => s.metalPreset);
+  const virolaColor = useEditorStore((s) => s.virolaColor);
 
   const product = useMemo(() => resolveMateModel(mateModel), [mateModel]);
   const totalHeightMm = product.shape.totalHeightMm;
@@ -150,36 +154,25 @@ function VirolaGroup() {
     [intDiameter, topY, innerBottomY],
   );
 
-  const topMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#d8dadc'), // Alpaca / Plata base según tabla PBR R1 spec_color
-        metalness: 0.9,
-        roughness: 0.28,
-        side: THREE.DoubleSide,
-      }),
-    [],
-  );
-
-  const sideMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#b5b2ac'), // Plateado satinado para paredes interior y exterior
-        metalness: 0.82,
-        roughness: 0.27,
-        side: THREE.DoubleSide,
-      }),
-    [],
-  );
+  // R1/R2: material PBR único para las 3 mallas — cobertura integral de virola
+  const virolaMaterial = useMemo(() => {
+    const pbr = resolveVirolaPbr(metalPreset, virolaColor);
+    return new THREE.MeshStandardMaterial({
+      color: new THREE.Color(pbr.color),
+      metalness: pbr.metalness,
+      roughness: pbr.roughness,
+      side: THREE.DoubleSide,
+    });
+  }, [metalPreset, virolaColor]);
 
   return (
     <group>
       {/* 1. Corona superior plana: única que recibe grabado y guías */}
-      <mesh geometry={topGeometry} material={topMaterial} position={[0, topY, 0]} castShadow receiveShadow />
+      <mesh geometry={topGeometry} material={virolaMaterial} position={[0, topY, 0]} castShadow receiveShadow />
       {/* 2. Faldón exterior: acabado metálico liso sin diseño ni guías */}
-      <mesh geometry={outerWallGeometry} material={sideMaterial} castShadow receiveShadow />
+      <mesh geometry={outerWallGeometry} material={virolaMaterial} castShadow receiveShadow />
       {/* 3. Pared interior: bajada hacia la boca */}
-      <mesh geometry={innerWallGeometry} material={sideMaterial} />
+      <mesh geometry={innerWallGeometry} material={virolaMaterial} />
     </group>
   );
 }

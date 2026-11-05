@@ -15,6 +15,12 @@ import type { EditorStateSnapshot } from '@/lib/store/editor';
 import { resolveMateModel, DEFAULT_MATE_MODEL, type MateModelId } from '@/lib/catalog';
 import { DEFAULT_GUIDES_STATE, normalizeGuidesState, reconcileDiameters } from '@/lib/virola';
 import { DEFAULT_EXT_DIAMETER_MM, DEFAULT_INT_DIAMETER_MM } from '@/three/visual-skeleton';
+import {
+  DEFAULT_METAL_PRESET,
+  DEFAULT_BODY_PRESET,
+  type MetalPresetId,
+  type BodyPresetId,
+} from '@/lib/color';
 
 const DRAFT_KEY = 'mocap:project-draft';
 
@@ -31,6 +37,11 @@ export function defaultSnapshot(): EditorStateSnapshot {
     extDiameter: DEFAULT_EXT_DIAMETER_MM,
     intDiameter: DEFAULT_INT_DIAMETER_MM,
     guidesState: { ...DEFAULT_GUIDES_STATE },
+    bodyPreset: DEFAULT_BODY_PRESET,
+    metalPreset: DEFAULT_METAL_PRESET,
+    bodyColor: null,
+    virolaColor: null,
+    recentColors: { body: [], virola: [] },
   };
 }
 
@@ -45,11 +56,59 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
   const extRaw = typeof s.extDiameter === 'number' && s.extDiameter > 0 ? s.extDiameter : base.extDiameter;
   const intRaw = typeof s.intDiameter === 'number' && s.intDiameter > 0 ? s.intDiameter : base.intDiameter;
   const reconciled = reconcileDiameters({ extDiameter: extRaw, intDiameter: intRaw });
+
+  // Pos 5: validación de bodyPreset
+  const VALID_BODY_PRESETS: BodyPresetId[] = ['algarrobo', 'calabaza', 'cuero_negro'];
+  const bodyPreset: BodyPresetId =
+    typeof s.bodyPreset === 'string' && VALID_BODY_PRESETS.includes(s.bodyPreset as BodyPresetId)
+      ? (s.bodyPreset as BodyPresetId)
+      : DEFAULT_BODY_PRESET;
+
+  // Pos 5: validación de metalPreset
+  const VALID_METAL_PRESETS: MetalPresetId[] = ['alpaca', 'acero', 'bronce'];
+  const metalPreset: MetalPresetId =
+    typeof s.metalPreset === 'string' && VALID_METAL_PRESETS.includes(s.metalPreset as MetalPresetId)
+      ? (s.metalPreset as MetalPresetId)
+      : DEFAULT_METAL_PRESET;
+
+  // Pos 5: bodyColor — conservar si es string que empiece por '#', sino null
+  const bodyColor: string | null =
+    typeof s.bodyColor === 'string' && s.bodyColor.startsWith('#') ? s.bodyColor : null;
+
+  // Pos 5: virolaColor — conservar si es string que empiece por '#', sino null
+  // R6 legado: si virolaColor es null pero existe topFaceColor válido, usarlo
+  let virolaColor: string | null =
+    typeof s.virolaColor === 'string' && s.virolaColor.startsWith('#') ? s.virolaColor : null;
+  if (virolaColor === null) {
+    const legacy = (raw as Record<string, unknown>).topFaceColor;
+    if (typeof legacy === 'string' && legacy.startsWith('#')) {
+      virolaColor = legacy;
+    }
+  }
+
+  // Pos 5: recentColors — conservar si es objeto con arrays válidos, sino vacío
+  const rawRecent = s.recentColors;
+  const recentColors: { body: string[]; virola: string[] } =
+    rawRecent !== null &&
+    typeof rawRecent === 'object' &&
+    Array.isArray((rawRecent as { body?: unknown }).body) &&
+    Array.isArray((rawRecent as { virola?: unknown }).virola)
+      ? {
+          body: (rawRecent as { body: unknown[] }).body.filter((c): c is string => typeof c === 'string'),
+          virola: (rawRecent as { virola: unknown[] }).virola.filter((c): c is string => typeof c === 'string'),
+        }
+      : { body: [], virola: [] };
+
   return {
     mateModel: resolveMateModel(model)?.id ?? base.mateModel as MateModelId,
     extDiameter: reconciled.extDiameter,
     intDiameter: reconciled.intDiameter,
     guidesState: normalizeGuidesState(s.guidesState), // R6: triada de guías (default true×3)
+    bodyPreset,
+    metalPreset,
+    bodyColor,
+    virolaColor,
+    recentColors,
   };
 }
 
