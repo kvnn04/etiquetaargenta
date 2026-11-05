@@ -36,24 +36,31 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 1 de 10 ✅
+## 2. Dónde estamos: posición 2 de 10 ✅
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
 ```
-1. ✅ ESQUELETO AUTH   ← ESTAMOS ACÁ
-2. ⬜ Perfil + resolveBranding()
+1. ✅ ESQUELETO AUTH
+2. ✅ Perfil + resolveBranding()   ← ESTAMOS ACÁ
 3-7. ⬜ Editor 3D (catálogo → medidas/guías → color → rotación → escala/chorreo)
 8. ⬜ Protección (watermark cocida, bloqueo de rutas DOM, 402 export)
 9. ⬜ Ficha técnica export (PNG ≥2160px + PDF A4)
 10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
 ```
 
-Se eligió empezar por 1 porque **toda la plataforma vive detrás del login** y la matriz de
-permisos (R2) es el contrato que las otras 8 specs citan; sin ella no hay a qué engancharse.
+La posición 2 entregó el **Panel de Perfil** (`/perfil`), la **librería única de branding**
+(`resolveBranding()` — fallbacks canónicos que consumirán ficha/visor/CTA desde las posiciones
+6–10) y la **Zona de peligro** (eliminar cuenta, R8). Único pendiente operativo: correr la
+migración `0002_profile_fields.sql` en el SQL Editor (checklist §7) — hasta entonces las páginas
+que leen las columnas nuevas fallan en el proyecto real con *"column does not exist"*.
 
-**Fuente de verdad de esta entrega:** `../simulador_Mates/spec_autenticacion_y_modelo_freemium.md`
-(secundaria para registro: `spec_especificaci_n_tecnica_datos_de_usuario_y_registro.md` §3-R1).
+Se empezó por las posiciones 1–2 (y no por el editor) porque toda la plataforma vive detrás del
+login y la identidad del taller es la **materia prima** del editor y de los links futuros: de acá
+sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 engancha a `projects`.
+
+**Fuente de verdad de esta entrega:** `../simulador_Mates/spec_especificaci_n_tecnica_datos_de_usuario_y_registro.md`
+(la matriz R2 sigue implementada en `lib/permissions.ts` y citada desde `spec_autenticacion_y_modelo_freemium.md`).
 
 ---
 
@@ -67,7 +74,7 @@ permisos (R2) es el contrato que las otras 8 specs citan; sin ella no hay a qué
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: invariantes de la matriz R2 |
+| Test unit | Vitest | 4.1.12 | hoy: 31 tests (matriz R2 + branding) |
 | Se instalan SOLO al llegar su posición | `three`, `@react-three/fiber`, `@react-three/drei`, `zod`, `pdf-lib`, `sharp`, `mercadopago`, Playwright | — | no adelantar deps |
 
 **Decisión de alias:** TS ≥6 eliminó `baseUrl`, y Next 15.5 no translada `paths` de tsconfig sin
@@ -99,44 +106,58 @@ simulador-mates/
 │   ├── page.tsx                   ← "/" ⇒ /editor (sin sesión, el server manda al visitante a /auth)
 │   ├── global.d.ts                ← declara los módulos *.css (TS ≥6)
 │   ├── setup/page.tsx             ← página amable cuando faltan env vars (NUNCA un 500 pelado)
-│   ├── auth/page.tsx              ← Auth Overlay (con sesión ⇒ /editor)
+│   ├── auth/page.tsx              ← Auth Overlay (con sesión ⇒ /editor; `?cuenta=…` ⇒ banner neutro R8)
 │   ├── auth/callback/route.ts     ← PKCE: intercambia ?code= por sesión (OAuth/email-verify)
-│   ├── (editor)/editor/page.tsx   ← shell del editor: sesión + plan SIEMPRE desde el server
-│   └── api/config/pricing/route.ts ← GET precio del plan desde pricing_config (200; 404 si no hay fila)
+│   ├── perfil/page.tsx            ← PANEL DE PERFIL: 5 campos + completitud + logo + zona de peligro
+│   ├── (editor)/editor/page.tsx   ← shell del editor: sesión + plan + guard `deleted_at`, SIEMPRE server
+│   └── api/
+│       ├── config/pricing/route.ts ← GET precio del plan desde pricing_config (200; 404 si no hay fila)
+│       ├── profile/logo/route.ts   ← POST subida (server revalida por magia de bytes) / DELETE quita logo
+│       ├── profile/delete/route.ts ← POST eliminar cuenta: soft-delete + hard-delete proyectos + signOut
+│       └── auth/exit/route.ts      ← GET signOut server + redirect /auth?cuenta=inhabilitada
 │
 ├── components/
 │   ├── auth/auth-overlay.tsx      ← Google OAuth + email/contraseña + olvidaste tu contraseña
+│   ├── profile/profile-panel.tsx  ← tarjetas con guardado inline, indicador 5×20 %, drag&drop del logo
+│   ├── profile/danger-confirm.tsx ← doble confirmación R8 (palabra ELIMINAR + botón final)
 │   ├── editor/editor-shell.tsx    ← top bar + placeholder 3D + panel "Matriz R2" + acciones gated
-│   ├── editor/top-bar.tsx         ← badge según plan: DEMO(1/1) / GRACIA(con días) / PRO✓ + menú
+│   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans)
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado: pos 8–10)
 │   ├── session/plan-watcher.tsx   ← Realtime: UPDATE en users ⇒ router.refresh() (sin reload)
 │   └── ui/{button,input}.tsx      ← primitivas mínimas (cva), patrimonio de shadcn/ui a futuro
 │
 ├── lib/
 │   ├── permissions.ts             ← ★ MATRIZ R2 como ÚNICA FUENTE implementada (gate/isLockedFor)
+│   ├── branding.ts                ← ★ resolveBranding() + approvalCode() + normalizadores (R3/R5)
+│   ├── profile.ts                 ← completitud 5×20 % + copy dinámico del panel (cliente-only)
+│   ├── encode-logo.ts             ← pipeline del logo EN CLIENTE: webp ≤512 + thumb 144 (R4)
 │   ├── cn.ts                      ← clsx + tailwind-merge
 │   ├── types/db.ts                ← tipos mínimos de filas (users / pricing_config)
 │   └── supabase/
 │       ├── middleware.ts          ← updateSession: refresh de token + redirects (visitor⇒/auth, con sesión⇒/editor)
 │       ├── server.ts              ← client server-side (cookies)
 │       ├── client.ts              ← client de navegador
-│       └── service.ts             ← client SERVICE ROLE (saltea RLS — solo API routes) 
+│       └── service.ts             ← SERVICE ROLE + Storage: bucket branding lazy + URLs firmadas
 │
 ├── supabase/
 │   ├── migrations/
-│   │   └── 0001_auth_skeleton.sql     ← users + trigger nombre derivado + projects + pricing_config + RLS + Realtime
+│   │   ├── 0001_auth_skeleton.sql     ← users + trigger nombre derivado + projects + pricing_config + RLS + Realtime
+│   │   └── 0002_profile_fields.sql    ← ⬜ POR CORRER: columnas de branding + CHECKs + deleted_at (sin DROP)
 │   └── ops/
 │       ├── 0901_backfill_user_rows.sql ← reparación: fila faltante en public.users (cuenta nacida pre-migración)
-│       └── 0910_base_grants.sql        ← reparación: 'permission denied' (proyectos sin grants automáticos)
+│       ├── 0910_base_grants.sql        ← reparación: 'permission denied' (proyectos sin grants automáticos)
+│       └── 0920_purge_deleted_accounts.sql ← R8: restauración manual + purga a 30 días (soporte / pg_cron)
 │
-├── tests/unit/permissions.test.ts ← 8 tests: invariantes de la matriz R2
+├── tests/
+│   ├── unit/permissions.test.ts   ← 8 tests: invariantes de la matriz R2
+│   └── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
 ├── three/README.md                ← qué va a alojar el motor 3D cuando llegue (posiciones 3–7)
 └── (node_modules / .next / package-lock…)
 ```
 
 ---
 
-## 5. Lo que quedó implementado (posición 1) — con su criterio QA
+## 5. Lo que quedó implementado (posiciones 1–2) — con su criterio QA
 
 **Fuente:** `spec_autenticacion_y_modelo_freemium.md` §7 (aceptación) + spec registro §3-R1.
 
@@ -163,6 +184,29 @@ simulador-mates/
 - Trigger `on_auth_user_created` en `auth.users` (convierte email/Google ⇒ nombre).
 - Realtime: `public.users` agregada a la publicación `supabase_realtime`.
 
+### Posición 2 — Perfil + branding + R8 (según `spec_..._datos_de_usuario_y_registro.md`)
+
+| Ref | Requisito | Implementación | Estado |
+| :--- | :--- | :--- | :--- |
+| R3 | Degradación canónica con fallbacks ÚNICOS | `resolveBranding()` en `lib/branding.ts`: título (comercial → derivado → plataforma), iniciales, fila de Instagram oculta si falta | ✅ (23 tests) |
+| R4 | Logo webp/png ≤512 px + thumb 144 · original jamás persistido | encode en cliente (canvas, `lib/encode-logo.ts`) + server revalida magia de bytes/dims/peso; solo PATHS en la fila; bucket privado `branding` (lazy) + URL firmada 1 h al render | ✅ |
+| R5 | CTA: WhatsApp (E.164) o código `APROBADA-{VARIANTE}-{LINKID}` — jamás un `wa.me` inválido | `approvalCode()` + campo `cta` del resolver | ✅ su CONSUMO en ficha/visor llega con pos 6–10 |
+| R2 | Ubicación jamás impresa en outputs | `resolveBranding` ni siquiera la devuelve (`ResolvedBranding` no la contiene); el panel la rotula "solo para tu perfil" | ✅ (testeado) |
+| R7 | `email_verified` | derivado de `auth.users.email_confirmed_at` (sin columna SQL — decidido 04-nov); el panel muestra el flag; el gate "verificado para pagar" intercepta la compra en pos 8–10 | ✅ / ⬜ intercept |
+| R8 | Baja de cuenta con doble confirmación | modal en pantalla (palabra `ELIMINAR` + botón final) → `users.deleted_at` + hard-delete de proyectos (RLS) + signOut; re-login bloqueado con mensaje neutro; restauración/purga 30 días vía `ops/0920` | ✅ variante en pantalla (el LINK por email llega con el mailer, pos 8–10) |
+| §4 | Indicador "Perfil al X %" = 5 campos × 20 % con copy | `lib/profile.ts` (cálculo cliente; ninguna regla de negocio depende de él) | ✅ |
+| R6 | Aviso "links desactualizados" al cambiar el perfil | exige links vivos (pos 10); el contrato ya está fijado en la regla inmutable #5 (§9) | ⬜ diferido |
+
+**Decisiones recordadas de la entrega** (preguntas respondidas por el titular 04-nov):
+encode del logo en **cliente** (canvas — `sharp` sigue reservado para la posición 9), R8 sin mailer
+con **doble confirmación en pantalla** (traerá link por email el mailer de 8–10, que además suma
+los Emails de sistema de §5: confirmación de email, confirmación de borrado y aviso 7 días
+antes de la purga si la cuenta tenía proyectos), y `email_verified` **derivado de auth**
+por la fuente única de Supabase.
+
+El logo en outputs es **white-label PRO** (matriz R2, capa `brand.output.white-label`): el taller
+ve su logo en el workspace y header SIEMPRE, pero la ficha/visor solo lo imprimen con plan PRO.
+
 ---
 
 ## 6. Cómo fluye en runtime (recorrido de un usuario real)
@@ -186,6 +230,20 @@ middleware: ¿user?               middleware: refresh token + ¿user?
 TRIGGER DB al crear cuenta: users.base_name derivado del email / nombre de Google.
 ```
 
+El **Panel de Perfil** (`/perfil`) suma su propio flujo (posición 2):
+
+```
+ícono Perfil de la top bar (todas las plans) / menú PRO
+│
+/perfil (server): fila users + URLs firmadas de los logos (1 h)
+├─ deleted_at activo ⇒ /api/auth/exit ⇒ /auth?cuenta=inhabilitada (R8)
+└─ panel: guardado inline por RLS (UPDATE en users) + logo vía /api/profile/logo
+   ├─ CLIENTE: canvas re-encodea webp ≤512 px + thumb 144 (el original NUNCA sube)
+   └─ SERVER: revalida bytes/dims/peso ⇒ bucket privado branding + PATHS en la fila
+Zona de peligro: ELIMINAR ⇒ soft-delete cuenta + hard-delete proyectos + signOut
+             ⇒ re-login bloqueado con mensaje neutro (restore vía ops/0920, 30 días)
+```
+
 ---
 
 ## 7. Estado de configuración externa (checklist operativo)
@@ -195,6 +253,8 @@ TRIGGER DB al crear cuenta: users.base_name derivado del email / nombre de Googl
 | `npm install` local | ✅ (106 paquetes) |
 | Proyecto Supabase (sa-east-1) | ✅ por el usuario |
 | Migración `0001_auth_skeleton.sql` | ✅ ejecutada en el proyecto real (idempotente, sin DROP; los grants también quedaron embedidos en el archivo) |
+| **Migración `0002_profile_fields.sql`** | ⬜ **pendiente de correr por el usuario en el SQL Editor** — idempotente y sin DROP; hasta entonces `/perfil` y las páginas que leen las columnas nuevas fallan (`column does not exist`) |
+| Bucket Storage `branding` | ➖ no requiere acción: se crea SOLO (lazy) en la primera subida de logo, con service role (privado — las URLs a las vistas se firman 1 h) |
 | Grants base (users / projects / pricing) | ✅ aplicados via `ops/0910_base_grants.sql` — el proyecto del usuario NO aplicaba GRANT automáticos |
 | Google provider en dashboard | ⬜ no configurado — el camino probado fue email+contraseña (funciona sin esto) |
 | `Confirm email = OFF` en dashboard | ✅ apagado 04-nov tras tropezar con el límite de emails (regla "fricción cero" R1) |
@@ -220,21 +280,34 @@ select tablename, rowsecurity from pg_tables
  where schemaname = 'public' and tablename in ('users','projects');  -- 2 filas rowsecurity=true
 ```
 
+Tras correr `0002_profile_fields.sql` (posición 2), verificar con:
+
+```sql
+select column_name from information_schema.columns
+ where table_schema = 'public' and table_name = 'users'
+   and column_name in ('brand_name','logo_url','logo_thumb_url',
+                       'whatsapp_e164','instagram_handle','location','deleted_at');
+-- esperado: 7 filas
+```
+
 ---
 
 ## 8. Verificación técnica de esta entrega (evidencia)
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ 0 errores |
-| `npm run test` (Vitest — matriz R2) | ✅ 8/8 passed |
-| `npm run build` (producción) | ✅ 7 rutas + middleware (95 kB) |
-| Smoke prod sin envs (server efímero) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
-| **Smoke runtime real con `.env` del usuario** (04-nov) | Next carga el archivo ("Environments: .env") · `/` 307→`/editor` · sin sesión `/editor` ⇒ `/auth` · login con callback PKCE (`/auth/callback?code=` 307) → `/editor 200` · `/api/config/pricing` **200** tras grants · fila derivada en DB (`Kherrera` / `Kvnherrera` — el `.04` se descarta por diseño R1) · logout con ícono (free) |
-| Git | ✅ 4 commits: `1fa49e0` esqueleto auth · `c8edbcf` logout visible free · `e279f45` ops backfill · `c38c4ed` grants embebidos + log de error RLS |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ 0 errores (con la posición 2 adentro) |
+| `npm run test` (Vitest) | ✅ **31/31** — 8 de matriz R2 + 23 de branding (fallbacks R3, E.164 §6, Instagram, CTA R5, completitud) |
+| `npm run build` (producción) | ✅ **11 rutas** — las 7 de pos 1 + `/perfil` + 3 API (logo / delete / auth-exit) |
+| Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
+| Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
+| **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
+| Git | ✅ `3cf09d0` **posición 2** (20 archivos) · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
-**Smoke restante** (llega con posiciones 8–10): desbloqueo PRO en vivo + realtime multipestaña al
-cambiar el plan — hoy no había forma de probarlos sin cobros ni webhook.
+**Pendiente de verificación con sesión real** (necesita 0002 corrida): subida del logo con el
+pipeline completo (indicador %, preview, reemplazo webp→png), guardado inline de los 5 campos y
+eliminar la cuenta de prueba comprobando el bloqueo neutro del re-login. El smoke restante de
+pos 1 (desbloqueo PRO live + realtime) sigue esperando a posiciones 8–10.
 
 ---
 
@@ -248,21 +321,27 @@ cambiar el plan — hoy no había forma de probarlos sin cobros ni webhook.
 5. **Brand congelado por versión de link** (falta llegar) — los cambios de perfil no mutan links vivos.
 6. **El precio del plan NUNCA se hardcodea**: vive en `pricing_config` y se imprime desde el backend.
 7. **Guías/watermark jamás salen en outputs** ni en el visor de cliente (contrato compartido entre specs).
+8. **`location` nunca se imprime** y el **logo original jamás se persiste**: solo el re-encoded
+   (≤512 px / thumb 144) sube al bucket privado (spec registro R2/R4).
+9. **Sin datos de marca ⇒ neutralidad elegante**: los fallbacks de `resolveBranding()` son la ÚNICA
+   implementación (título de plataforma, iniciales, CTA de código `APROBADA-…`) — las pantallas
+   consumen la librería, nunca parchean degradaciones propias.
 
 ---
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 2 — Perfil + `resolveBranding()`** (`spec_especificaci_n_tecnica_datos_de_usuario_y_registro.md`):
+**Posición 3 — Catálogo de mates + `projects.state`** (fuente: `spec_tipo_de_mate` §5):
 
-- Panel de Perfil: logo (pipeline webp ≤512px + thumb 144), nombre comercial, WhatsApp E.164
-  (`+54` default), Instagram, ubicación (interna, nunca impresa).
-- Indicador "Perfil al X%" = 5 campos × 20 %.
-- **Librería única de fallbacks** (`resolveBranding(profile)`) — la van a consumir ficha/visor/CTA
-  desde ahora, para no parchear después (razón por la que va ANTES del editor).
-- Zona de peligro: eliminación de cuenta con borrado en cascada + 30 días restauración.
+- Primera aparición de las deps de render: `three` + `@react-three/fiber` + `@react-three/drei`
+  (regla §3: NO se adelantan deps — se instalan recién cuando su posición llega, que es ahora).
+- Catálogo de modelos (selección de tipo de mate) que escribe el snapshot inicial en
+  `projects.state` (jsonb, autosave debounce 2 s, last-write-wins — la tabla ya existe desde 0001).
+- El placeholder 3D del editor se reemplaza por la primera escena real con la estética premium
+  del prototipo como inspiración (sin copiar su código).
 
-Y después, el motor del editor (posiciones 3–7) — ver `three/README.md` para el plan de archivos.
+Y después: medidas/guías (4) → color (5) → rotación (6) → escala/chorreo (7) → protecciones (8) →
+ficha (9) → links/pagos (10).
 
 ---
 
@@ -274,5 +353,5 @@ Y después, el motor del editor (posiciones 3–7) — ver `three/README.md` par
 4. Código: `lib/permissions.ts` → `middleware.ts` → `app/` → `components/` (orden de dependencia).
 
 > Regla práctica: si dos documentos parecen contradecirse, gana la spec citada como única fuente
-> en `documentación/README.md §5`. Todos los números comprometidos se cambian ALLÍ y se re-verifican
+> en `../simulador_Mates/README.md §5`. Todos los números comprometidos se cambian ALLÍ y se re-verifican
 > los consumidores.
