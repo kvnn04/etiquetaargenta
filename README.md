@@ -220,7 +220,7 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); `0003` + grants aplicados (04-nov)
 4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (`feca766`, 05-nov)
 5. ✅ **Color PBR + quemado adaptativo** — commiteada (`940e69c`, 05-nov)
-6. ✅ **Rotación del diseño (grabado)** — implementada (05-nov)
+6. ✅ **Rotación del diseño (grabado)** — commiteada (`f31fa32`, 05-nov)
 7. ⬜ Escala + alerta de chorreo — `spec_escala_y_alerta_...` ← siguiente
 8. ⬜ Protección (watermark, 402) — auth paso B
 9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha`
