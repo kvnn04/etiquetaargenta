@@ -36,18 +36,27 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 2 de 10 ✅
+## 2. Dónde estamos: posición 3 de 10 ✅
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
 ```
 1. ✅ ESQUELETO AUTH
-2. ✅ Perfil + resolveBranding()   ← ESTAMOS ACÁ
-3-7. ⬜ Editor 3D (catálogo → medidas/guías → color → rotación → escala/chorreo)
+2. ✅ Perfil + resolveBranding()
+3. ✅ Catálogo de mates + escena 3D   ← ESTAMOS ACÁ
+4-7. ⬜ Editor 3D (medidas/guías → color → rotación → escala/chorreo)
 8. ⬜ Protección (watermark cocida, bloqueo de rutas DOM, 402 export)
 9. ⬜ Ficha técnica export (PNG ≥2160px + PDF A4)
 10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
 ```
+
+La posición 3 reemplazó el placeholder 3D por la **primera escena real**: el catálogo de
+productos (Camionero ⇄ Imperial) como **registro central solo-datos** (`lib/catalog.ts`), el
+motor de torno (`three/lathe-builder.ts`) con el **contrato de costura UV** anclado para las
+posiciones 4–6, el autosave en `projects.state` (debounce 2 s, last-write-wins) con borrador
+local si se corta la red, y la tarjeta **"Configuración del Producto"** como primera sección
+del panel (§4 de la spec). **Sin migración nueva**: la tabla `projects` ya existía desde `0001`
+y el autosave la consume tal cual.
 
 La posición 2 entregó el **Panel de Perfil** (`/perfil`), la **librería única de branding**
 (`resolveBranding()` — fallbacks canónicos que consumirán ficha/visor/CTA desde las posiciones
@@ -69,13 +78,15 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Capa | Tecnología | Versión | Nota |
 | :--- | :--- | :--- | :--- |
 | Framework | Next.js App Router | **15.5.29** | línea estable; Next 16 requiere re-validar middleware/TS |
-| Runtime UI | React | 19.1.10 | futura base de R3F v9 (posiciones 3–7) |
+| Runtime UI | React | 19.1.10 | base de R3F v9 (activo desde la posición 3) |
 | Lenguaje | TypeScript strict | **6.x** | TS 7 nativo aún NO soportado por Next 15.5 |
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: 31 tests (matriz R2 + branding) |
-| Se instalan SOLO al llegar su posición | `three`, `@react-three/fiber`, `@react-three/drei`, `zod`, `pdf-lib`, `sharp`, `mercadopago`, Playwright | — | no adelantar deps |
+| Test unit | Vitest | 4.1.12 | hoy: 44 tests (matriz R2 + branding + catálogo/motor) |
+| 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
+| Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
+| Se instalan SOLO al llegar su posición | `zod`, `pdf-lib`, `sharp`, `mercadopago`, Playwright | — | regla vigente: no adelantar deps |
 
 **Decisión de alias:** TS ≥6 eliminó `baseUrl`, y Next 15.5 no translada `paths` de tsconfig sin
 ese prefijo: el alias `@/*` está declarado explícitamente en `next.config.mjs` (webpack +
@@ -120,15 +131,21 @@ simulador-mates/
 │   ├── auth/auth-overlay.tsx      ← Google OAuth + email/contraseña + olvidaste tu contraseña
 │   ├── profile/profile-panel.tsx  ← tarjetas con guardado inline, indicador 5×20 %, drag&drop del logo
 │   ├── profile/danger-confirm.tsx ← doble confirmación R8 (palabra ELIMINAR + botón final)
-│   ├── editor/editor-shell.tsx    ← top bar + placeholder 3D + panel "Matriz R2" + acciones gated
+│   ├── editor/editor-shell.tsx    ← top bar + escena 3D (dynamic ssr:false) + restore + panel gated
 │   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans)
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado: pos 8–10)
 │   ├── session/plan-watcher.tsx   ← Realtime: UPDATE en users ⇒ router.refresh() (sin reload)
+│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 3: cuerpo lathe + banda de virola + refit de cámara
+│   ├── studio/product-selector.tsx ← radio-cards (radiogroup) con siluetas SVG derivadas del catálogo
 │   └── ui/{button,input}.tsx      ← primitivas mínimas (cva), patrimonio de shadcn/ui a futuro
 │
 ├── lib/
 │   ├── permissions.ts             ← ★ MATRIZ R2 como ÚNICA FUENTE implementada (gate/isLockedFor)
 │   ├── branding.ts                ← ★ resolveBranding() + approvalCode() + normalizadores (R3/R5)
+│   ├── catalog.ts                 ← ★ REGISTRO CENTRAL DE PRODUCTOS (R1) + validación §6 + fallback R8
+│   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state
+│   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
+│   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
 │   ├── profile.ts                 ← completitud 5×20 % + copy dinámico del panel (cliente-only)
 │   ├── encode-logo.ts             ← pipeline del logo EN CLIENTE: webp ≤512 + thumb 144 (R4)
 │   ├── cn.ts                      ← clsx + tailwind-merge
@@ -150,14 +167,17 @@ simulador-mates/
 │
 ├── tests/
 │   ├── unit/permissions.test.ts   ← 8 tests: invariantes de la matriz R2
-│   └── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
-├── three/README.md                ← qué va a alojar el motor 3D cuando llegue (posiciones 3–7)
+│   ├── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
+│   └── unit/catalog.test.ts       ← 13 tests: QA1 matemático, labio anti-fuga R4, R8, corrupción §6
+├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
+├── three/visual-skeleton.ts       ← constantes provisionales de pos 3 + LATHE_SEAM_PHI_START
+├── three/lathe-builder.ts         ← LatheGeometry del cuerpo y de la banda (anclaje anti-fuga R4)
 └── (node_modules / .next / package-lock…)
 ```
 
 ---
 
-## 5. Lo que quedó implementado (posiciones 1–2) — con su criterio QA
+## 5. Lo que quedó implementado (posiciones 1–3) — con su criterio QA
 
 **Fuente:** `spec_autenticacion_y_modelo_freemium.md` §7 (aceptación) + spec registro §3-R1.
 
@@ -207,6 +227,36 @@ por la fuente única de Supabase.
 El logo en outputs es **white-label PRO** (matriz R2, capa `brand.output.white-label`): el taller
 ve su logo en el workspace y header SIEMPRE, pero la ficha/visor solo lo imprimen con plan PRO.
 
+### Posición 3 — Catálogo + escena 3D + `projects.state` (según `spec_tipo_de_mate.md`)
+
+| Ref | Requisito | Implementación | Estado |
+| :--- | :--- | :--- | :--- |
+| R1 | Catálogo = registro central solo-datos: un producto nuevo es UNA entrada, el motor no ramifica por modelo | `lib/catalog.ts` con Camionero/Imperial (coordenadas verbatim de la spec); componente y escena consumen el array | ✅ |
+| R2 | Perfil de puntos `(x, y)`: la boca escala con la D_int vigente (x=1.00 ⇒ R_boca = D_int/2) | el builder del torno multiplica `x · D_int/2` y el labio hereda ese radio | ✅ |
+| R3 | Aislamiento de la virola (inviolable): el swap afecta SOLO la malla del cuerpo — sin morph, sin parpadeo de iluminación | geometría memoizada por `(producto, D_int)`; la banda, las luces y la órbita no se re-inicializan | ✅ |
+| R4 | Anclaje boca-cuerpo anti-fuga: `sealOverlapMm = 1.0` oculto bajo la virola para D_int 50–150 | el perfil termina en un labio que sube 1 mm sobre la costura; la banda lo tapa | ✅ |
+| R5 | Cada producto define su altura y contorno propios, sin reglas globales | `totalHeightMm`/`points` leen del JSON; la cámara encuadra por producto | ✅ |
+| R7 | Contrato de salida: `mateModel` guarda el id (`"camionero"` \| `"imperial"`) | clave del store y de `projects.state` (la Ficha solicitará este contrato en pos 9) | ✅ |
+| R8 | Enlaces o estados con id desconocido ⇒ fallback `camionero`, sin abortar la carga | `resolveMateModel()` + `normalizeState()` | ✅ |
+| QA1 | Fidelidad distinguible: panza Imperial ≥ 1.25× el radio del Camionero a media altura | test matemático: Imperial 1.30·R_boca (a 55 mm) vs 1.02·R_boca del Camionero ⇒ ratio ≈ 1.27 ≥ 1.25 | ✅ |
+| QA2 | Swap < 300 ms, sin resetear órbita ni iluminación | swap instantáneo de geometría + refit de cámara SOLO si excede encuadre (~300 ms, easeOut) | ⬜ visual |
+| QA3 | Al reabrir se restaura el producto activo | restore del proyecto más reciente con prioridad del borrador local más nuevo | ⬜ visual (la mitad de ficha/links: pos 9–10) |
+| QA4 | Escalabilidad solo-datos: un 3.er producto funciona con su entrada JSON y 0 líneas extra | el test agrega un producto más a la validación; selector y siluetas derivan del mismo array | ✅ (estructural) |
+| §6 | Entrada corrupta jamás deja la escena vacía | `validateCatalog()` descarta (<3 puntos, alturas no positivas, ids duplicados) con aviso en consola | ✅ |
+| §6 | Corte de internet durante el autosave no pierde trabajo | borrador local con timestamp + banner en pantalla + backoff 1s→30s + flush al reconectar | ✅ código |
+
+**Constantes con origen anotado** (`three/visual-skeleton.ts`): los defaults `D_ext = 123.0` /
+`D_int = 95.0 mm` salen de la spec geométrica §2 ("proyecto nuevo arranca con esos valores"), y
+el **contrato de costura UV** `LATHE_SEAM_PHI_START = Math.PI` es el ancla compartida de guías
+(pos 4) y rotación (pos 6). El resto (altura de banda 24 mm, cubierta 3 mm bajo costura, pared
+3 mm) son **constantes provisionales del esqueleto visual**: se re-fijan citando la spec cuando
+lleguen las posiciones 4–5, hoy ninguna es contrato.
+
+**Desvío consciente documentado**: la spec §6 pide borrador local *"cifrado"*; se guarda **sin
+cifrar** (es la copia del propio estado del editor, sin secretos, y localStorage del navegador
+ya limita el acceso al mismo origen). Si el titular quiere cifrarlo, va junto con la capa de
+protección de la posición 8.
+
 ---
 
 ## 6. Cómo fluye en runtime (recorrido de un usuario real)
@@ -244,16 +294,29 @@ Zona de peligro: ELIMINAR ⇒ soft-delete cuenta + hard-delete proyectos + signO
              ⇒ re-login bloqueado con mensaje neutro (restore vía ops/0920, 30 días)
 ```
 
+El **editor** suma su recorrido de datos desde la posición 3 (spec tipo de mate §5):
+
+```
+/editor: al abrir restaura el proyecto más reciente (RLS own_projects, last-write-wins)
+│
+├─ borrador local más nuevo que el backend ⇒ manda él + el autosave lo lleva a la base
+└─ escena 3D: elegir otro producto reconstruye SOLO la geometría del cuerpo
+     autosave: cambio de estado (dirty) ⇒ debounce 2 s ⇒ upsert idempotente en projects
+     └─ fallo de red ⇒ borrador local + banner "quedó en este dispositivo"
+        + reintentos con backoff (1 s → 30 s) y flush al volver la conexión
+```
+
 ---
 
 ## 7. Estado de configuración externa (checklist operativo)
 
 | Ítem | Estado |
 | :--- | :--- |
-| `npm install` local | ✅ (106 paquetes) |
+| `npm install` local | ✅ 168 paquetes (las deps 3D de la posición 3 ya están adentro) |
 | Proyecto Supabase (sa-east-1) | ✅ por el usuario |
 | Migración `0001_auth_skeleton.sql` | ✅ ejecutada en el proyecto real (idempotente, sin DROP; los grants también quedaron embedidos en el archivo) |
 | **Migración `0002_profile_fields.sql`** | ⬜ **pendiente de correr por el usuario en el SQL Editor** — idempotente y sin DROP; hasta entonces `/perfil` y las páginas que leen las columnas nuevas fallan (`column does not exist`) |
+| Migraciones para la posición 3 | ➖ ninguna: `projects` (con `state jsonb`, RLS `own_projects` y trigger de `updated_at`) ya existe desde `0001` — el autosave la consume tal cual |
 | Bucket Storage `branding` | ➖ no requiere acción: se crea SOLO (lazy) en la primera subida de logo, con service role (privado — las URLs a las vistas se firman 1 h) |
 | Grants base (users / projects / pricing) | ✅ aplicados via `ops/0910_base_grants.sql` — el proyecto del usuario NO aplicaba GRANT automáticos |
 | Google provider en dashboard | ⬜ no configurado — el camino probado fue email+contraseña (funciona sin esto) |
@@ -296,18 +359,25 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ 0 errores (con la posición 2 adentro) |
-| `npm run test` (Vitest) | ✅ **31/31** — 8 de matriz R2 + 23 de branding (fallbacks R3, E.164 §6, Instagram, CTA R5, completitud) |
-| `npm run build` (producción) | ✅ **11 rutas** — las 7 de pos 1 + `/perfil` + 3 API (logo / delete / auth-exit) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ 0 errores (con la posición 3 adentro) |
+| `npm run test` (Vitest) | ✅ **44/44** — 8 de matriz R2 + 23 de branding + **13 de catálogo/motor pos 3** (QA1 matemático, labio R4 del torno, R8 fallback, corrupción §6, siluetas SVG, store) |
+| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 10.8 kB; el motor 3D viaja en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
-| Git | ✅ `3cf09d0` **posición 2** (20 archivos) · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
+| **Smoke gating pos 3** (server efímero 7435, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 — el guard de ruta sobrevive al nuevo canvas |
+| Git | ✅ `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
-**Pendiente de verificación con sesión real** (necesita 0002 corrida): subida del logo con el
-pipeline completo (indicador %, preview, reemplazo webp→png), guardado inline de los 5 campos y
-eliminar la cuenta de prueba comprobando el bloqueo neutro del re-login. El smoke restante de
-pos 1 (desbloqueo PRO live + realtime) sigue esperando a posiciones 8–10.
+**Pendiente de verificación con sesión real:**
+
+- **pos 3** (no requiere migración): con `npm run dev` + login, mirar la escena — el swap
+  Camionero ⇄ Imperial (¡y una y otra vez! < 300 ms, sin parpadeo), el refit de cámara al
+  mostrar el panzudo, la unión metal/cuerpo sin ranura visible, el chip "Guardado HH:MM" y el
+  banner offline cortando la red un momento.
+- **pos 2** (requiere `0002` corrida): subida del logo con pipeline completo (indicador %,
+  preview, reemplazo), guardado inline de los 5 campos y eliminar la cuenta de prueba
+  comprobando el bloqueo neutro del re-login.
+- El smoke restante de pos 1 (desbloqueo PRO live + realtime) sigue esperando a posiciones 8–10.
 
 ---
 
@@ -331,16 +401,23 @@ pos 1 (desbloqueo PRO live + realtime) sigue esperando a posiciones 8–10.
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 3 — Catálogo de mates + `projects.state`** (fuente: `spec_tipo_de_mate` §5):
+**Posición 4 — Medidas de la virola + guías + auto-giro** (fuente:
+`spec_tecnica_geometrica_guias_y_rotacion_360.md`):
 
-- Primera aparición de las deps de render: `three` + `@react-three/fiber` + `@react-three/drei`
-  (regla §3: NO se adelantan deps — se instalan recién cuando su posición llega, que es ahora).
-- Catálogo de modelos (selección de tipo de mate) que escribe el snapshot inicial en
-  `projects.state` (jsonb, autosave debounce 2 s, last-write-wins — la tabla ya existe desde 0001).
-- El placeholder 3D del editor se reemplaza por la primera escena real con la estética premium
-  del prototipo como inspiración (sin copiar su código).
+- Tarjeta **Medidas**: `D_ext` / `D_int` editables con rangos dinámicos R1 ([70..180] /
+  [50..150] mm, paso 0.5) y la restricción dura `D_int ≤ D_ext − 8.0 mm` (clamp del campo,
+  no un error rojo).
+- Cascada única `virola.dimensionsChanged` ≤ 100 ms: métricas de grabado + guías + re-anclaje
+  anti-fuga del cuerpo + re-chequeo de desborde — aquí `buildVirolaGeometry()` deja de ser
+  esqueleto y se vuelve la implementación de esa spec.
+- Catálogo visual de guías de simetría ancladas al UV de la costura (`LATHE_SEAM_PHI_START`
+  ya fija ese ancla compartida), con colores legibles sobre virolas teñidas.
+- Auto-giro 360: **0.75 RPM** en el editor (el de Modo Cliente, 0.5 RPM, llega con la ficha).
+- Persistencia del estado de guías dentro del mismo snapshot del editor.
+- Las constantes provisionales de `visual-skeleton.ts` (altura de banda, cubierta bajo la
+  costura) se re-fijan acá citando la spec y dejan de ser provisionales.
 
-Y después: medidas/guías (4) → color (5) → rotación (6) → escala/chorreo (7) → protecciones (8) →
+Y después: color (5) → rotación del diseño (6) → escala/chorreo (7) → protecciones (8) →
 ficha (9) → links/pagos (10).
 
 ---

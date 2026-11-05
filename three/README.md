@@ -9,5 +9,9 @@ Este directorio alojará el motor Three.js según `guia_de_tecnologias.md §4`:
 - `overflowScan.ts` — escaneo polar 512² α≥128 ≤25 ms (compartido; `spec_escala_...` R3/R4).
 - `makeQuoteCanvas.ts` — compositor 2D ≥2160 px (posición 9).
 
-Dependencias (`three`, `@react-three/fiber`, `@react-three/drei`) se instalan
-al abrir la posición 3.
+**Ya implementado (posición 3):** `latheBuilder` y el esqueleto visual viven como
+`lathe-builder.ts` (cuerpo + banda, phiStart de la costura) y `visual-skeleton.ts`
+(constantes provisionales + `LATHE_SEAM_PHI_START`). El resto llega con su posición.
+
+Dependencias (`three`, `@react-three/fiber`, `@react-three/drei` + `zustand` para el store)
+quedan instaladas desde la posición 3.

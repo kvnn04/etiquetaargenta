@@ -4,22 +4,24 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 2 de 10 — *Perfil + `resolveBranding()`* implementada y commiteada
-(`3cf09d0`, 20 archivos). ⚠️ Pendiente operativo: **correr `supabase/migrations/0002_profile_fields.sql`
-en el SQL Editor** — hasta entonces `/perfil` falla en el proyecto real ("column does not exist").
-Mapa completo y evidencia: `PROYECTO.md`.
+**Estado**: ✅ Posición 3 de 10 — *Catálogo de mates + escena 3D + autosave* implementada y
+commiteada (`db31c08` + fix `f54e359`). ⚠️ Pendiente operativo (arrastrado de la posición 2):
+**correr `supabase/migrations/0002_profile_fields.sql` en el SQL Editor** — hasta entonces
+`/perfil` falla en el proyecto real ("column does not exist"). Mapa completo y evidencia:
+`PROYECTO.md`.
 
 ---
 
-## Stack (posiciones 1–2)
+## Stack (posiciones 1–3)
 
 | Capa | Hoy |
 | :--- | :--- |
 | Framework | Next.js **15.5** (App Router) + React 19 + TypeScript strict |
 | Estilos | Tailwind CSS v4 (CSS-first, `@theme inline`) |
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
-| Estado/3D | Zustand + R3F/drei → se instalan en la posición 3 |
-| Test unit | Vitest 4 (31 tests: matriz R2 + branding en `tests/unit/`) |
+| Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
+| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (instalados al llegar la posición 3, como manda el orden) |
+| Test unit | Vitest 4 (44 tests: matriz R2 + branding + catálogo/motor en `tests/unit/`) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
 > `@supabase/ssr` y React 19; Next 16 puede migrar por su cuenta más adelante.
@@ -35,17 +37,20 @@ simulador-mates/
   app/
     auth/            → Auth Overlay + callback OAuth (PKCE) + banner neutro de cuenta baja (R8)
     perfil/          → PANEL DE PERFIL (posición 2): 5 campos + indicador 5×20 % + zona de peligro
-    (editor)/editor/ → shell del editor con gating R2 (guard deleted_at; escena 3D: posiciones 3–7)
+    (editor)/editor/ → shell del editor con gating R2 (guard deleted_at; escena 3D real desde la posición 3)
     api/
       config/pricing/ → GET pricing (patrón: backend como única fuente del precio)
       profile/logo/   → POST/DELETE del logo (server revalida por magia de bytes)
       profile/delete/ → POST eliminar cuenta (soft + hard delete + signOut)
       auth/exit/      → GET signOut server + redirect con mensaje neutro
     setup/            → página amable si faltan env vars
-  components/        → auth / profile / editor / paywall / session / ui
+  components/        → auth / profile / editor / studio / paywall / session / ui
   lib/
     permissions.ts   → MATRIZ R2 (única fuente, alineada a spec_auth §3-R2)
     branding.ts      → resolveBranding() + approvalCode() (fallbacks canónicos R3/R5)
+    catalog.ts       → REGISTRO CENTRAL DE PRODUCTOS R1 (+ validación §6 y fallback R8)
+    store/editor.ts  → zustand: estado del editor = snapshot de projects.state
+    projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
     encode-logo.ts   → pipeline del logo en CLIENTE (webp ≤512 + thumb 144)
     supabase/        → client / server / service (+ Storage branding) / middleware
@@ -53,7 +58,7 @@ simulador-mates/
     migrations/  → esquema: 0001_auth_skeleton.sql · 0002_profile_fields.sql (idempotentes, sin DROP)
     ops/         → reparaciones re-ejecutables: 0901 backfill · 0910 grants · 0920 purga R8
   tests/         → Vitest (unit); Playwright en la posición 8
-  three/         → vacío hasta la posición 3 (ver three/README.md)
+  three/         → motor 3D (pos 3): lathe-builder.ts · visual-skeleton.ts (+ three/README.md)
 ```
 
 ## Setup desde cero
@@ -132,21 +137,41 @@ error ...`) — si algo sigue fallando, esa es la línea exacta a mirar.
 (observá el indicador % y la vista previa), guardar los 5 campos con sesión real y eliminar la
 cuenta de prueba para ver el bloqueo neutro del re-login.
 
+## ¿Qué quedó de la posición 3? (según `spec_tipo_de_mate.md`)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Catálogo R1 solo-datos: Camionero/Imperial con coordenadas verbatim; producto nuevo = 1 entrada | ✅ `lib/catalog.ts` |
+| Selector segmentado (radio-cards) con siluetas SVG derivadas del perfil (sin mini-renders 3D) | ✅ |
+| Escena 3D real: cuerpo de torno desde el catálogo + banda metálica de virola (esqueleto de pos 4) | ✅ |
+| R4 anti-fuga: labio del cuerpo 1 mm bajo la virola — sin ranura visible para D_int 50–150 | ✅ (test del labio) |
+| QA1 panza distinguible: ratio de radios ≥ 1.25 | ✅ test matemático |
+| R8 fallback a Camionero ante id desconocido + descarte de entradas corruptas (§6) | ✅ tests |
+| Autosave 2 s en `projects.state` con borrador local, banner offline y backoff al reconectar | ✅ código |
+| QA2 swap < 300 ms y QA3 restore al reabrir | ⬜ tu QA visual (con dev server) |
+
+**Smoke**: `/editor` sin sesión 307→`/auth` · `/auth` 200. Builds con el motor 3D en chunk lazy
+(`dynamic`, `ssr:false`).
+
+**Tu QA visual** (`npm run dev` + login): alternar los dos productos varias veces (sin
+parpadeo, órbita intacta), mirar la unión metal/cuerpo en la panza del Imperial y cortar la
+red un momento para ver el banner del borrador local.
+
 ## Scripts
 
 ```bash
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding, 31 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo, 44 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
 
 1. ✅ **Esqueleto Auth** — probada de punta a punta en el proyecto real de Supabase (04-nov)
 2. ✅ **Perfil + `resolveBranding()`** — commiteada (`3cf09d0`); pendiente correr `0002` en el proyecto real
-3. ⬜ Catálogo de mates + `projects.state` — `spec_tipo_de_mate` ← siguiente
-4. ⬜ Medidas/guías + cascada — `spec_tecnica_geometrica...`
+3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); QA visual con dev server pendiente
+4. ⬜ Medidas/guías + cascada — `spec_tecnica_geometrica...` ← siguiente
 5. ⬜ Color PBR + quemado adaptativo — `spec_seleccion_de_color`
 6. ⬜ Rotación del diseño — `spec_rotacion_...`
 7. ⬜ Escala + alerta de chorreo — `spec_escala_y_alerta_...`
