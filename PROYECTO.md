@@ -315,8 +315,8 @@ El **editor** suma su recorrido de datos desde la posición 3 (spec tipo de mate
 | `npm install` local | ✅ 168 paquetes (las deps 3D de la posición 3 ya están adentro) |
 | Proyecto Supabase (sa-east-1) | ✅ por el usuario |
 | Migración `0001_auth_skeleton.sql` | ✅ ejecutada en el proyecto real (idempotente, sin DROP; los grants también quedaron embedidos en el archivo) |
+| Migraciones para la posición 3 | ✅ `0003_projects_owner_default.sql` (**⬜ pendiente de correr por el usuario**) — el QA real destapó que `projects.user_id` no tenía `default auth.uid()` y el INSERT del autosave moría en RLS (`new row violates row-level security policy`); el SELECT del restore nunca lo mostró |
 | **Migración `0002_profile_fields.sql`** | ⬜ **pendiente de correr por el usuario en el SQL Editor** — idempotente y sin DROP; hasta entonces `/perfil` y las páginas que leen las columnas nuevas fallan (`column does not exist`) |
-| Migraciones para la posición 3 | ➖ ninguna: `projects` (con `state jsonb`, RLS `own_projects` y trigger de `updated_at`) ya existe desde `0001` — el autosave la consume tal cual |
 | Bucket Storage `branding` | ➖ no requiere acción: se crea SOLO (lazy) en la primera subida de logo, con service role (privado — las URLs a las vistas se firman 1 h) |
 | Grants base (users / projects / pricing) | ✅ aplicados via `ops/0910_base_grants.sql` — el proyecto del usuario NO aplicaba GRANT automáticos |
 | Google provider en dashboard | ⬜ no configurado — el camino probado fue email+contraseña (funciona sin esto) |
@@ -332,6 +332,7 @@ El **editor** suma su recorrido de datos desde la posición 3 (spec tipo de mate
 | Cartel "No existe fila en public.users" persistente | `(a)` cuenta nacida ANTES del trigger (los triggers no se aplican retroactivamente) + `(b)` el editor tragaba el error de lectura | backfill `ops/0901_backfill_user_rows.sql`; además el editor ahora logea el error real en la terminal |
 | Re-crear un email ya borrado fallaba ("No pudimos crear la cuenta") | Confirm email ON ⇒ cada registro dispara email ⇒ tope de emails por hora en el plan free | Confirm email = OFF (estado correcto del producto según la spec — fricción cero) |
 | Sin botón de cerrar sesión con plan free | el logout solo existía dentro del menú visible para PRO | fix top-bar: icono de sesión siempre disponible (commit `c8edbcf`) |
+| `[projects] save: "new row violates row-level security policy"` al autosave (QA pos 3, 04-nov) | `projects.user_id` sin `default auth.uid()` (migración 0001): el INSERT del autosave llegaba con `user_id = NULL` y el `with check` de `own_projects` lo rechazaba | migración `0003_projects_owner_default.sql` — aditiva (solo SET DEFAULT); en fresh setups el patrón ya arranca acá |
 
 **Verificación SQL post-migración** (copiable en el SQL Editor):
 

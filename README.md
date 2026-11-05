@@ -5,10 +5,9 @@ cliente por enlace y cierran la venta. Implementación del paquete de especifica
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
 **Estado**: ✅ Posición 3 de 10 — *Catálogo de mates + escena 3D + autosave* implementada y
-commiteada (`db31c08` + fix `f54e359`). ⚠️ Pendiente operativo (arrastrado de la posición 2):
-**correr `supabase/migrations/0002_profile_fields.sql` en el SQL Editor** — hasta entonces
-`/perfil` falla en el proyecto real ("column does not exist"). Mapa completo y evidencia:
-`PROYECTO.md`.
+commiteada (`db31c08` + fix `f54e359`). ⚠️ Pendiente operativo (del QA real): **correr
+`0003_projects_owner_default.sql` en el SQL Editor** (RLS del autosave) y, después,
+`0002_profile_fields.sql` para desbloquear `/perfil`. Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
 
@@ -55,7 +54,7 @@ simulador-mates/
     encode-logo.ts   → pipeline del logo en CLIENTE (webp ≤512 + thumb 144)
     supabase/        → client / server / service (+ Storage branding) / middleware
   supabase/
-    migrations/  → esquema: 0001_auth_skeleton.sql · 0002_profile_fields.sql (idempotentes, sin DROP)
+    migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default (idempotentes, sin DROP)
     ops/         → reparaciones re-ejecutables: 0901 backfill · 0910 grants · 0920 purga R8
   tests/         → Vitest (unit); Playwright en la posición 8
   three/         → motor 3D (pos 3): lathe-builder.ts · visual-skeleton.ts (+ three/README.md)
@@ -65,10 +64,12 @@ simulador-mates/
 
 1. **Paquetes**: `npm install` (Node ≥ 20; probado con Node 24 / npm 12).
 2. **Supabase** → crear proyecto en [supabase.com] con región **sa-east-1** (latencia regional, §6 de la guía).
-3. **Migraciones** (SQL Editor, en orden — ambas idempotentes, sin DROP):
+3. **Migraciones** (SQL Editor, en orden — las tres idempotentes, sin DROP):
    1. `supabase/migrations/0001_auth_skeleton.sql` — users/projects/pricing + trigger + RLS.
    2. `supabase/migrations/0002_profile_fields.sql` — columnas de perfil (brand_name, logo_url,
       logo_thumb_url, whatsapp_e164, instagram_handle, location, deleted_at) + CHECKs.
+   3. `supabase/migrations/0003_projects_owner_default.sql` — default de `user_id` en `projects`
+      (logra que el INSERT del autosave tome la sesión vigente; posición 3).
       > El bucket de Storage `branding` **no se crea a mano**: la app lo crea sola en la primera
       > subida de logo (service role). Es **privado**: en la base solo quedan PATHS; las vistas
       > usan URLs firmadas de 1 h.
@@ -92,6 +93,7 @@ simulador-mates/
 | :--- | :--- | :--- |
 | En vez del login se ve la página `/setup` | falta una env var, o el server arrancó antes de crearse `.env` | completar las variables y **reiniciar** `npm run dev` (las envs se leen solo al boot) |
 | `/perfil` rompe con `column users.whatsapp_e164 does not exist` (u otra de las nuevas) | la posición 2 quedó en el código **antes** de correr `0002` en el proyecto | correr `supabase/migrations/0002_profile_fields.sql` (idempotente) |
+| Consola del editor: `[projects] save: "new row violates row-level security policy"` | `projects.user_id` sin default (fila nacida con la 0001 previa a `0003`): el INSERT del autosave no sabe de quién es | correr `supabase/migrations/0003_projects_owner_default.sql` (re-ejecutable) y cambiar algo en el editor para re-disparar el autosave |
 | `STORAGE_INDISPONIBLE` al subir el logo | falta `SUPABASE_SERVICE_ROLE_KEY` en `.env`: sin ella no se puede crear el bucket privado | completar la env y **reiniciar** el server |
 | `permission denied for table pricing_config` (la top bar no muestra precio) | el proyecto no aplica los GRANT automáticos de Supabase | correr `supabase/ops/0910_base_grants.sql` |
 | Cartel "No existe fila en public.users" | cuenta registrada ANTES de ejecutar la migración (el trigger no va hacia atrás) | correr `supabase/ops/0901_backfill_user_rows.sql` |
@@ -170,7 +172,7 @@ npm run test        # Vitest (matriz R2 + branding + catálogo, 44 tests)
 
 1. ✅ **Esqueleto Auth** — probada de punta a punta en el proyecto real de Supabase (04-nov)
 2. ✅ **Perfil + `resolveBranding()`** — commiteada (`3cf09d0`); pendiente correr `0002` en el proyecto real
-3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); QA visual con dev server pendiente
+3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); QA visual en curso — requiere correr `0003` (RLS del autosave)
 4. ⬜ Medidas/guías + cascada — `spec_tecnica_geometrica...` ← siguiente
 5. ⬜ Color PBR + quemado adaptativo — `spec_seleccion_de_color`
 6. ⬜ Rotación del diseño — `spec_rotacion_...`
