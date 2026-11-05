@@ -9,7 +9,6 @@ import {
   angularDistance,
   applyMagnet,
   formatRotationLabel,
-  inscribedFitSizePx,
   loadSnapMagnetDefault,
   magnetSnappedPreset,
   MAGNET_THRESHOLD_DEG,
@@ -22,8 +21,13 @@ import {
   saveSnapMagnet,
   snapMagnetToStorage,
 } from '@/lib/design';
-import { useEditorStore, snapshotOf } from '@/lib/store/editor';
+import { useEditorStore, snapshotOf, type EditorStateSnapshot } from '@/lib/store/editor';
 import { defaultSnapshot, normalizeState } from '@/lib/projects/persistence';
+
+/** Asset de sesión de prueba (R8 pos 7: con la base mm congelada R1). */
+function fakeAsset(): { canvas: HTMLCanvasElement; name: string; kind: 'svg' | 'png'; baseSideMm: number } {
+  return { canvas: {} as HTMLCanvasElement, name: 'logo.svg', kind: 'svg', baseSideMm: 123 };
+}
 
 beforeEach(() => {
   useEditorStore.getState().restoreState(defaultSnapshot(), null);
@@ -163,45 +167,43 @@ describe('R7 — formato "Rotación: 45° / 45.5°"', () => {
   });
 });
 
-describe('ajuste provisional pos 6 (inscripción en el carril — nota, no contrato)', () => {
-  it('side/pxPerMm = W_banda/√2 y la semidiagonal del cuadrado no excede el semiancho del carril', () => {
-    const band = 14; // W_banda mm (ej: 123/95 ⇒ 14)
-    const ppm = 10;
-    const side = inscribedFitSizePx(band, ppm);
-    expect(side).toBeCloseTo((band / Math.SQRT2) * ppm, 9);
-    // peor punto del cuadrado (esquina) contra el semiancho del anillo
-    expect((side / ppm) * (Math.SQRT2 / 2)).toBeLessThanOrEqual(band / 2 + 1e-9);
-  });
-
-  it('entradas degeneradas ⇒ 0 (nada que dibujar)', () => {
-    expect(inscribedFitSizePx(0, 10)).toBe(0);
-    expect(inscribedFitSizePx(-1, 10)).toBe(0);
-    expect(inscribedFitSizePx(14, 0)).toBe(0);
-    expect(inscribedFitSizePx(NaN, 10)).toBe(0);
-  });
-});
-
 /* ------------------------------------------------------------------ */
 /* §5/R7/R8 — persistencia en projects.state                          */
 /* ------------------------------------------------------------------ */
 
 describe('design en projects.state (§5)', () => {
-  it('default: { rotation: 0 } — proyecto viejo sin design ⇒ 0° (R8)', () => {
-    expect(defaultSnapshot().design).toEqual({ rotation: 0 });
-    expect(normalizeState({}).design).toEqual({ rotation: 0 });
-    expect(normalizeState(null).design).toEqual({ rotation: 0 });
+  it('default: { rotation: 0, scale: 100, mirror: false } — proyecto viejo sin design ⇒ defaults (R8)', () => {
+    expect(defaultSnapshot().design).toEqual({ rotation: 0, scale: 100, mirror: false });
+    expect(normalizeState({}).design).toEqual({ rotation: 0, scale: 100, mirror: false });
+    expect(normalizeState(null).design).toEqual({ rotation: 0, scale: 100, mirror: false });
   });
 
   it('normalizeDesignState tolera basura del jsonb y nunca rompe el rango', () => {
     expect(normalizeDesignState({ rotation: 370 }).rotation).toBe(10);
     expect(normalizeDesignState({ rotation: 'x' }).rotation).toBe(0);
     expect(normalizeDesignState({ rotation: null }).rotation).toBe(0);
-    expect(normalizeDesignState('basura')).toEqual({ rotation: 0 });
-    expect(normalizeDesignState(Array(3))).toEqual({ rotation: 0 });
+    expect(normalizeDesignState('basura')).toEqual({ rotation: 0, scale: 100, mirror: false });
+    expect(normalizeDesignState(Array(3))).toEqual({ rotation: 0, scale: 100, mirror: false });
   });
 
   it('normalizeState aplica R3 completo al valor guardado', () => {
-    expect(normalizeState({ design: { rotation: -47.75 } }).design).toEqual({ rotation: 312.5 });
+    expect(normalizeState({ design: { rotation: -47.75 } }).design).toEqual({
+      rotation: 312.5,
+      scale: 100,
+      mirror: false,
+    });
+  });
+
+  it('proyecto pos-6 (solo rotation) ⇒ escala 100% y espejo OFF (R8 pos 7)', () => {
+    const pos6 = normalizeState({ design: { rotation: 45.5 } });
+    expect(pos6.design).toEqual({ rotation: 45.5, scale: 100, mirror: false });
+  });
+
+  it('escala fuera de rango / con basura ⇒ clamp al extremo + paso 0.5% (§6)', () => {
+    expect(normalizeState({ design: { scale: 115 } }).design.scale).toBe(110);
+    expect(normalizeState({ design: { scale: 65 } }).design.scale).toBe(70);
+    expect(normalizeState({ design: { scale: 92.25 } }).design.scale).toBe(92.5);
+    expect(normalizeState({ design: { scale: 'x' } }).design.scale).toBe(100);
   });
 });
 
@@ -209,7 +211,7 @@ describe('design en projects.state (§5)', () => {
 /* Store — acciones de la posición 6                                  */
 /* ------------------------------------------------------------------ */
 
-describe('store del editor (pos 6)', () => {
+describe('store del editor (pos 6 + 7)', () => {
   it('setDesignRotation normaliza por módulo y marca dirty (R7: pendiente de guardado)', () => {
     useEditorStore.getState().setDesignRotation(370.2);
     const s = useEditorStore.getState();
@@ -217,16 +219,35 @@ describe('store del editor (pos 6)', () => {
     expect(s.dirty).toBe(true);
   });
 
-  it('snapshotOf incluye design y JAMÁS el asset de sesión', () => {
+  it('setDesignScale normaliza al rango [70,110] paso 0.5% y marca dirty (R8)', () => {
+    useEditorStore.getState().setDesignScale(115); // clamp al extremo (§6)
+    expect(useEditorStore.getState().design.scale).toBe(110);
+    expect(useEditorStore.getState().dirty).toBe(true);
+    useEditorStore.getState().setDesignScale(92.25); // paso 0.5%: redondea a 92.5
+    expect(useEditorStore.getState().design.scale).toBe(92.5);
+    useEditorStore.getState().restoreState(defaultSnapshot(), null);
+  });
+
+  it('setDesignMirror alterna el espejo del pipeline (R2) y marca dirty', () => {
+    useEditorStore.getState().setDesignMirror(true);
+    expect(useEditorStore.getState().design.mirror).toBe(true);
+    expect(useEditorStore.getState().dirty).toBe(true);
+    useEditorStore.getState().restoreState(defaultSnapshot(), null);
+    expect(useEditorStore.getState().design.mirror).toBe(false);
+  });
+
+  it('snapshotOf incluye design (rotación + escala + espejo) y JAMÁS el asset de sesión', () => {
     useEditorStore.getState().setDesignRotation(45.5);
+    useEditorStore.getState().setDesignScale(92.5);
+    useEditorStore.getState().setDesignMirror(true);
     const snap = snapshotOf(useEditorStore.getState());
-    expect(snap.design).toEqual({ rotation: 45.5 });
+    expect(snap.design).toEqual({ rotation: 45.5, scale: 92.5, mirror: true });
     expect('designAsset' in snap).toBe(false);
   });
 
   it('asset de sesión: se carga sin marcar dirty y restoreState lo limpia (§5)', () => {
     const dirtyBefore = useEditorStore.getState().dirty;
-    const fake = { canvas: {} as HTMLCanvasElement, name: 'logo.svg', kind: 'svg' as const };
+    const fake = fakeAsset();
     useEditorStore.getState().loadDesignAsset(fake);
     expect(useEditorStore.getState().designAsset).toBe(fake);
     expect(useEditorStore.getState().dirty).toBe(dirtyBefore); // no es contractual
@@ -234,10 +255,23 @@ describe('store del editor (pos 6)', () => {
     expect(useEditorStore.getState().designAsset).toBeNull();
   });
 
-  it('restoreState con snapshot legacy (sin design) ⇒ design 0°', () => {
-    const legacy = { ...defaultSnapshot(), design: undefined as unknown as { rotation: number } };
+  it('envolvente de tinta: derivada de sesión, sin dirty; restore la limpia (R8)', () => {
+    useEditorStore.getState().setInkEnvelope({ inkMaxMm: 61, inkMinMm: 48 });
+    expect(useEditorStore.getState().inkEnvelope).toEqual({ inkMaxMm: 61, inkMinMm: 48 });
+    expect(useEditorStore.getState().dirty).toBe(false);
+    useEditorStore.getState().restoreState(defaultSnapshot(), null);
+    expect(useEditorStore.getState().inkEnvelope).toBeNull();
+    expect(useEditorStore.getState().inkScanDegraded).toBe(false);
+  });
+
+  it('restoreState con snapshot legacy (sin design) ⇒ design por defecto', () => {
+    // legacy pos-6: el jsonb viejo trae `design` ausente o parcial — el
+    // normalizador debe completar con los defaults contractuales (R8).
+    const legacy = { ...defaultSnapshot(), design: undefined } as unknown as EditorStateSnapshot;
     useEditorStore.getState().restoreState(legacy, null);
     expect(useEditorStore.getState().design.rotation).toBe(0);
+    expect(useEditorStore.getState().design.scale).toBe(100);
+    expect(useEditorStore.getState().design.mirror).toBe(false);
   });
 });
 

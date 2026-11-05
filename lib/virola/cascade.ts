@@ -9,9 +9,12 @@
  *   (c) redraw de guías R5         → GuidesLayer (reactivo al store)
  *   (d) re-anclaje anti-fuga R4    → MateBodyMesh (reactivo, lathe-builder)
  *   (e) re-chequeo de desborde con escala/rotación/espejo vigentes
- *       (R3 de spec_escala_y_alerta_de_desborde) → SUSCRIPCIÓN: la posición 7
- *       se conecta con onVirolaDimensionsChanged(); hoy no hay suscriptores
- *       porque el diseño/grabado no existe aún (llega con pos 6–7).
+ *       (R3 de spec_escala_y_alerta_de_desborde) — RESUELTO en la posición 7:
+ *       los consumidores (DesignCard, escena 3D) re-evalúan el chequeo de
+ *       manera REACTIVA a los mismos disparadores (escala, D_ext/D_int y
+ *       carga/cambio de diseño) — jamás al ángulo/espejo (invariancia polar
+ *       R3). El bus de esta posición queda para consumidores NO-React
+ *       (ficha/export, pos 8–10).
  *   (f) marca de guardado pendiente → setDiameters deja dirty (autosave 2 s)
  * QA2: latencia total ≤ 100 ms — la emisión es sincrónica y no depende de React.
  * ============================================================================ */

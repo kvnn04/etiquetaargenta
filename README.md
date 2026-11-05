@@ -4,8 +4,8 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 6 de 10 — *Rotación del diseño SVG/PNG (grabado sobre la corona, imán ±4°, presets 0/90/180/270)* implementada sobre la posición 5 (color PBR) y la 4 (medidas, 3 mallas, guías, cascada, auto-giro).
-132 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
+**Estado**: ✅ Posición 7 de 10 — *Escala fina 70–110 % (paso 0.5 %) + motor de desborde "chorreo", espejo y botón Auto* implementadas sobre la 6 (rotación del grabado), la 5 (color PBR) y la 4 (medidas, 3 mallas, guías, cascada, auto-giro). **El editor queda completo**; siguen protección (8), ficha (9) y links/pagos (10).
+162 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -18,8 +18,8 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Estilos | Tailwind CSS v4 (CSS-first, `@theme inline`) |
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
-| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado/rotación pos 6 + guías + auto-giro) |
-| Test unit | Vitest 4 (132 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + rotación pos 6 en `tests/unit/`) |
+| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
+| Test unit | Vitest 4 (162 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6–7 + desborde pos 7 en `tests/unit/`) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
 > `@supabase/ssr` y React 19; Next 16 puede migrar por su cuenta más adelante.
@@ -49,7 +49,8 @@ simulador-mates/
     catalog.ts       → REGISTRO CENTRAL DE PRODUCTOS R1 (+ validación §6 y fallback R8)
     virola.ts        → MEDIDAS DE VIROLA: clamps R1, rangos dinámicos, métricas R2, triada guías R6
     color.ts         → COLOR INTELIGENTE (pos 5): tabla PBR + exclusividad/recientes + quemado R4 (L 0.55)
-    design.ts        → ROTACIÓN DEL DISEÑO (pos 6): R3 canónico 0.5° + imán R4 ±4° + imán de dispositivo
+    design.ts        → DISEÑO DEL GRABADO (pos 6–7): rotación R3 0.5° + imán ±4° + design {rotation, scale, mirror} + asset con base mm congelada
+    overflow.ts      → MOTOR DESBORDE (pos 7): envolvente de tinta 512² α≥128 + chequeo 0 mm estricto + Auto R7 + textos banner/ficha
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
@@ -202,7 +203,28 @@ red un momento para ver el banner del borrador local.
 | Fallo de raster ⇒ conserva la última textura válida + aviso inline (§6) | ✅ |
 | Persistencia `design.rotation` en `projects.state` (legacy sin rotation ⇒ 0°) | ✅ normalize tolerante |
 | Rotación FREE (sin candado en la matriz R2) | ✅ |
-| Re-chequeo de desborde al rotar (R6) | ✅ desbordamiento imposible en pos 6: **ajuste provisional** (inscripción al carril) anotado — banner/motor exacto llegan en pos 7 |
+| Re-chequeo de desborde al rotar (R6) | ✅ sustituido por el anclaje real R1 en pos 7 (el ajuste provisional de inscripción era el bug del "SVG invisible") |
+
+## ¿Qué quedó de la posición 7? (según `spec_escala_y_alerta_de_desborde.md`)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Anclaje del 100 % (R1): el contain-fit del diseño de pos 6 ya toca el anillo al cargar; la base queda congelada en mm (`baseSideMm` = D_ext vigente) y el % multiplica SOLO esa base — editar medidas NO re-escala, solo re-chequea | ✅ `DesignAsset.baseSideMm` + compose FULL-canvas |
+| Pipeline canónico Escala → Espejo → Rotación al mismo pivote (espejo aplazado por pos 6) | ✅ `composeEngravingCanvas` (checkbox "Espejo del grabado" en la tarjeta) |
+| Escala fina [70, 110] paso 0.5 % con slider/campo WYSIWYG (`.` y `,`, sufijo %) y presets 85/90/100 (sin "Máx") | ✅ sección C "Tamaño / Escala del Grabado" |
+| Motor de desborde: escaneo polar exacto de la envolvente de tinta (512², α≥128, R4), tolerancia 0 mm ESTRICTA, desvío en mm (1 decimal), chequeo ≤ 25 ms | ✅ `lib/overflow.ts` (27 tests + QA2 del barrido en test) |
+| Disparadores: escala, D_ext/D_int y carga de diseño — girar/espejar JAMÁS re-chequean (invariancia polar R3) | ✅ chequeo O(1) por estado |
+| Banner con redacción EXACTA (R5) + guías afectadas con pulso rojo 500 ms | ✅ banner ámbar→rojo (@2 mm anotado) + `PulseGuideLine` `#FF3B30` en la escena |
+| Botón Auto (R7): mayor escala segura ≤ 110 %, forma cerrada exacta; hover "Auto 96.5 %" pre-calcula; slider animado 250 ms; sin escala segura ⇒ disabled | ✅ `largestSafeScalePct` |
+| Ficha: "Margen: seguro" / "con riesgo (excede X mm)" (R6) | ✅ `marginSheetLine()` — consumo en la ficha, pos 9 |
+| §6 modo degradado: raster del chequeo falla ⇒ envolvente (bbox) conservadora + aviso "Detección aproximada" | ✅ `evaluateOverflowBBox` |
+| Persistencia: `design.scale`/`design.mirror` en `projects.state` (legacy ⇒ 100 %/OFF; 115⇒110 · 65⇒70 con aviso); el margen JAMÁS se persiste (R8) | ✅ normalize tolerante + envolvente derivada de sesión |
+| Escala/espejo/Auto/banner/confirmación 100 % FREE (sin candado) | ✅ matriz R2 sin capability nueva |
+
+> **Bug resuelto con la entrega**: el reporte *"el SVG cargado no se visualiza en la virola"* —
+> el compositor provisional de pos 6 inscribía el diseño en el hueco (centrado en el eje), la
+> máscara anular lo borraba íntegro. El anclaje real R1 de pos 7 (full-canvas, envolvente
+> tocando el anillo) lo corrige de raíz.
 
 ## Scripts
 
@@ -210,7 +232,7 @@ red un momento para ver el banner del borrador local.
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño, 132 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde, 162 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -221,8 +243,8 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (`feca766`, 05-nov)
 5. ✅ **Color PBR + quemado adaptativo** — commiteada (`940e69c`, 05-nov)
 6. ✅ **Rotación del diseño (grabado)** — commiteada (`f31fa32`, 05-nov)
-7. ⬜ Escala + alerta de chorreo — `spec_escala_y_alerta_...` ← siguiente
-8. ⬜ Protección (watermark, 402) — auth paso B
+7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo/Auto** — commiteada (05-nov)
+8. ⬜ Protección (watermark cocida, 402) — auth paso B ← siguiente
 9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha`
 10. ⬜ Links comerciales + pagos MP — links + `spec_pagos`
 

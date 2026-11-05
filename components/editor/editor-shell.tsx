@@ -188,8 +188,8 @@ export default function EditorShell({
       />
 
       <main className="mx-auto grid w-full max-w-6xl flex-1 gap-6 px-4 py-6 lg:grid-cols-[1fr_340px]">
-        {/* Estudio 3D (posiciones 4–6: catálogo + medidas + color + grabado con rotación
-            + guías + auto-giro) */}
+        {/* Estudio 3D (posiciones 4–7: catálogo + medidas + color + grabado con rotación/
+            escala + guías + auto-giro + pulso de desborde) */}
         <section className="relative min-h-[420px] overflow-hidden rounded-2xl border border-line lg:min-h-0">
           <StudioScene spinning={spinning} onUserInteracted={pauseSpin} />
           <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 backdrop-blur">
@@ -244,7 +244,7 @@ export default function EditorShell({
           {/* TERCERA tarjeta (§5 spec_seleccion_de_color): Materiales y Acabados */}
           <ColorPickerCard />
 
-          {/* CUARTA tarjeta (§4 spec_rotacion): Cargar Archivo / Edición del Vector */}
+          {/* CUARTA tarjeta (§4 spec_rotacion + spec_escala): Cargar Archivo / Edición del Vector */}
           <DesignCard />
 
           {actionHint && (
@@ -319,10 +319,10 @@ export default function EditorShell({
       </main>
 
       <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
-        Posición 6 del plan: rotación del diseño SVG/PNG (fuente única:{' '}
-        <span className="font-mono">spec_rotacion_archivo_svg_png.md</span>) · posición 5:{' '}
-        <span className="font-mono">spec_seleccion_de_color.md</span> · posición 4:{' '}
-        <span className="font-mono">spec_tecnica_geometrica_guias_y_rotacion_360.md</span>
+        Posición 7 del plan: escala fina + alerta de chorreo (fuente única:{' '}
+        <span className="font-mono">spec_escala_y_alerta_de_desborde.md</span>) · posición 6:{' '}
+        <span className="font-mono">spec_rotacion_archivo_svg_png.md</span> · posición 5:{' '}
+        <span className="font-mono">spec_seleccion_de_color.md</span>
       </footer>
 
       <PaywallModal

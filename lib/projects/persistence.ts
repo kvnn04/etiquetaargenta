@@ -43,7 +43,8 @@ export function defaultSnapshot(): EditorStateSnapshot {
     bodyColor: null,
     virolaColor: null,
     recentColors: { body: [], virola: [] },
-    design: { rotation: 0 }, // pos 6 (R8): sin rotation ⇒ 0°
+    // pos 6 (R8) + pos 7 (R8): sin design en el jsonb ⇒ 0° / 100% / espejo OFF
+    design: { rotation: 0, scale: 100, mirror: false },
   };
 }
 
@@ -101,8 +102,9 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
         }
       : { body: [], virola: [] };
 
-  // Pos 6: design.rotation — normaliza a la representación canónica R3
-  // ([0°, 360°) paso 0.5°); proyecto viejo sin `design` ⇒ 0° (R8).
+  // Pos 6 + 7: design.rotation/scale/mirror — rotación a la R3 (módulo 360°,
+  // 0.5°), escala R8 de spec_escala ([70,110] paso 0.5%) y espejo bool; el
+  // normalizador tolerante aplica defaults contractuales a los faltantes.
   const design = normalizeDesignState((raw as Record<string, unknown>).design);
 
   return {

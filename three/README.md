@@ -6,7 +6,7 @@ Este directorio alojará el motor Three.js según `guia_de_tecnologias.md §4`:
 - `guides.ts` — capas de guías `#4FC3F7 / #FFC84A / #FF7043` con doble contorno (`spec_tecnica_geometrica_...` R5).
 - `materials.ts` — tabla PBR única + tinte `virolaColor` (`spec_seleccion_de_color.md` R1).
 - `adaptiveBurn.ts` — patch `onBeforeCompile` threshold luminancia 0.55 (R4).
-- `overflowScan.ts` — escaneo polar 512² α≥128 ≤25 ms (compartido; `spec_escala_...` R3/R4).
+- `overflowScan.ts` — escaneo polar 512² α≥128 ≤25 ms (compartido; `spec_escala_...` R3/R4) — **absorbido por `lib/overflow.ts` en la pos 7**.
 - `makeQuoteCanvas.ts` — compositor 2D ≥2160 px (posición 9).
 
 **Ya implementado (posiciones 3, 4 y 5):**
@@ -27,8 +27,16 @@ capa de grabado que llega con la posición 6 (corona superior, UV polar).
 geometría cacheada de `buildVirolaTopGeometry` (comparte buffers; el ángulo jamás reconstruye la
 virola): máscara anular `destination-in` entre R_int y R_ext, tinte único con el tono de quemado de
 pos 5, `rotate(+θ)` canvas ≡ `rotateY(+θ)` mundo (presets 0° Frente / 90° Der / 180° Dorso / 270°
-Izq), y ajuste provisional de inscripción en el carril (la pos 7 reemplaza por el fit exacto +
-motor de desborde). La lógica angular pura está en **`lib/design.ts`** (testada).
+Izq). La lógica angular pura está en **`lib/design.ts`** (testada).
+
+**Ya implementado (posición 7):** el motor de desborde quedó FUERA del motor 3D, absorbido por
+**`lib/overflow.ts`** (como los materiales en la pos 5): escaneo polar de la envolvente de tinta
+(máscara alfa 512², α ≥ 128, R4 — ≤ 25 ms) y evaluación O(1) por escala/D_ext/D_int/carga de
+diseño, jamás por ángulo/espejo (invariancia polar R3). El compositor completó el pipeline
+canónico **ESCALA → ESPEJO → ROTACIÓN** al mismo pivote con la **base congelada** al cargar el
+asset (R1: `baseSideMm`, dibujo FULL-canvas — el fit provisional de inscripción de pos 6 era el
+bug del "SVG invisible"). La **alerta visual** es un overlay de guías (`PulseGuideLine`): los
+bordes de chapa afectados pulsan en `#FF3B30` (nota anotada) a 500 ms mientras dura el estado.
 
 Dependencias (`three`, `@react-three/fiber`, `@react-three/drei` + `zustand` para el store)
 quedan instaladas desde la posición 3.

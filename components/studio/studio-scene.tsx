@@ -1,8 +1,8 @@
 'use client';
 
 /* ============================================================================
- * ESCENA 3D (posiciones 4–6) — spec_seleccion_de_color + spec_tecnica_geometrica
- * + spec_rotacion_archivo_svg_png (grabado)
+ * ESCENA 3D (posiciones 4–7) — spec_seleccion_de_color + spec_tecnica_geometrica
+ * + spec_rotacion_archivo_svg_png + spec_escala_y_alerta_de_desborde (grabado)
  * ----------------------------------------------------------------------------
  * Sobre la base de la posición 3 (cuerpo lathe del catálogo + banda metálica):
  *  · La banda de virola ahora lee las D_ext/D_int VIGENTES del store (R8:
@@ -17,16 +17,20 @@
  *    instante; en el editor la reanudación exige el botón (R7).
  *  · La cascada R3 termina acá: un único setDiameters ⇒ cuerpo/banda/guías
  *    reconstruyen SOLO su geometría (memo por diámetros), luces intactas.
- *  · Grabado del diseño (pos 6): CanvasTexture 1024² sobre la corona superior
- *    con la rotación de spec_rotacion_archivo_svg_png.md — el ÁNGULO jamás
- *    reconstruye geometría ni re-inicializa luces: solo re-composita el canvas
- *    (DesignEngravingLayer más abajo: marco R1/R4, máscara anular y quemado).
- *
- * R5 (desborde): el flash rojo de desborde (pos 7) se superpone por ENCIMA de
- * esta capa de guías mientras dure el estado (prevalece visualmente).
+ *  · Grabado del diseño (pos 6–7): CanvasTexture 1024² sobre la corona superior
+ *    con el pipeline canónico ESCALA → ESPEJO → ROTACIÓN de
+ *    spec_rotacion_archivo_svg_png.md + spec_escala_y_alerta_de_desborde.md —
+ *    ángulo/escala/espejo JAMÁS reconstruyen geometría ni re-inicializan
+ *    luces: solo re-compositan el canvas (DesignEngravingLayer: marco R1/R4,
+ *    máscara anular y quemado).
+ *  · Desborde "chorreo" (pos 7, R5): el motor vive en lib/overflow + el chequeo
+ *    se alimenta de la envolvente de tinta de sesión (store). Las guías de
+ *    bordes AFECTADAS (círculo exterior/interior) pulsan en ROJO 500 ms [&] lo
+ *    que dura el estado — overlay encima de esta capa de guías.
  * ============================================================================ */
 
 import { useEffect, useMemo, useRef } from 'react';
+import type { ComponentRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -34,7 +38,7 @@ import { resolveMateModel } from '@/lib/catalog';
 import { useEditorStore } from '@/lib/store/editor';
 import { adaptiveLaserBurn, resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
 import { EDITOR_AUTO_SPIN_RPM, rpmToRadPerSec } from '@/lib/virola';
-import { inscribedFitSizePx } from '@/lib/design';
+import { evaluateOverflow } from '@/lib/overflow';
 import {
   BORDES_DASH_MM,
   CENTRO_DASH_MM,
@@ -220,11 +224,56 @@ function GuideStroke({ points, color, dash }: { points: THREE.Vector3[]; color: 
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* R5 (pos 7) — pulso de desborde: cada guía de borde AFECTADA pasa a ROJO con */
+/* un pulso de 500 ms mientras dura el estado. Es un OVERLAY encima de la      */
+/* guía normal (grupo renderOrder 2; dWrite off para flotar sobre el grabado). */
+/* -------------------------------------------------------------------------- */
+
+/** R5: rojo de alerta de desborde — nota visual anotada (la spec pide "rojo"). */
+const GUIDE_OVERFLOW_RED = '#FF3B30';
+/** R5: "pulso de 500 ms" — período completo del ciclo de opacidad. */
+const OVERFLOW_PULSE_PERIOD_S = 0.5;
+
+function PulseGuideLine({ points, dash }: { points: THREE.Vector3[]; dash?: DashPattern }) {
+  const lineRef = useRef<ComponentRef<typeof Line> | null>(null);
+
+  useFrame(({ clock }) => {
+    const line = lineRef.current;
+    if (!line) return;
+    const mat = line.material as THREE.Material & { opacity: number };
+    // Opacidad 0.3 → 1 → 0.3 por ciclo (pulso continuo de 500 ms, R5).
+    const t = (clock.elapsedTime % OVERFLOW_PULSE_PERIOD_S) / OVERFLOW_PULSE_PERIOD_S;
+    mat.opacity = 0.3 + 0.7 * (0.5 - 0.5 * Math.cos(t * Math.PI * 2));
+  });
+
+  return (
+    <Line
+      ref={lineRef}
+      points={points}
+      color={GUIDE_OVERFLOW_RED}
+      lineWidth={2.2}
+      dashed={!!dash}
+      dashSize={dash?.dashSize}
+      gapSize={dash?.gapSize}
+      transparent
+      depthWrite={false}
+    />
+  );
+}
+
 function GuidesLayer() {
   const ext = useEditorStore((s) => s.extDiameter);
   const int = useEditorStore((s) => s.intDiameter);
   const guidesState = useEditorStore((s) => s.guidesState);
   const mateModel = useEditorStore((s) => s.mateModel);
+  /* R5 (pos 7): el estado de margen es DERIVADO — la envolvente de tinta de
+   * sesión + R_ext/R_int vigentes + escala ⇒ el chequeo re-evalúa acá por los
+   * 3 disparadores (escala, D_ext/D_int, carga de diseño). Jamás por
+   * ángulo/espejo (invariancia polar R3). */
+  const inkEnvelope = useEditorStore((s) => s.inkEnvelope);
+  const inkScanDegraded = useEditorStore((s) => s.inkScanDegraded);
+  const designScale = useEditorStore((s) => s.design.scale);
 
   const product = useMemo(() => resolveMateModel(mateModel), [mateModel]);
   const totalHeightMm = product.shape.totalHeightMm;
@@ -252,6 +301,18 @@ function GuidesLayer() {
     };
   }, [ext, int, totalHeightMm, sealOverlapMm]);
 
+  // R5 (pos 7): guías de bordes AFECTADAS pulsan en rojo 500 ms lo que dura
+  // el estado. Modo degradado (§6): el trazo del chequeo cayó a envolvente
+  // ⇒ el interior queda EN DUDA ⇒ pulsa conservadoramente (alerta de más).
+  const burstOuter = useMemo(() => {
+    if (!inkEnvelope) return false;
+    return evaluateOverflow(inkEnvelope, ext / 2, int / 2, designScale).overflowOuter;
+  }, [inkEnvelope, ext, int, designScale]);
+  const burstInner = useMemo(() => {
+    if (!inkEnvelope) return inkScanDegraded; // sin envolvente: solo el modo degradado avisa
+    return evaluateOverflow(inkEnvelope, ext / 2, int / 2, designScale).overflowInner;
+  }, [inkEnvelope, inkScanDegraded, ext, int, designScale]);
+
   return (
     <group renderOrder={2}>
       {guidesState.bordes && (
@@ -259,6 +320,9 @@ function GuidesLayer() {
           {/* Bordes de chapa: punteado 4-3 #4FC3F7 — límites Dext / Dint de la corona superior */}
           <GuideStroke points={geo.ringInner} color={GUIDE_COLORS.bordes} dash={DASH_BORDES} />
           <GuideStroke points={geo.ringOuter} color={GUIDE_COLORS.bordes} dash={DASH_BORDES} />
+          {/* R5 (pos 7): overlay rojo pulsante SOBRE las guías afectadas */}
+          {burstInner && <PulseGuideLine points={geo.ringInner} dash={DASH_BORDES} />}
+          {burstOuter && <PulseGuideLine points={geo.ringOuter} dash={DASH_BORDES} />}
         </>
       )}
       {guidesState.centro && (
@@ -291,7 +355,8 @@ function GuidesLayer() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Grabado del diseño (pos 6) — CanvasTexture viva 1024² sobre la corona.     */
+/* Grabado del diseño (posiciones 6–7) — CanvasTexture viva 1024² sobre la    */
+/* corona.                                                                    */
 /* R1/R4 (marco canónico): el canvas de la corona proyecta UV polar centrada  */
 /* x/(2R)+0.5 (lathe-builder) ⇒ px = C+x·s / py = C−z·s con flipY del texture: */
 /* el +Z (Frente con la cámara por defecto) es el borde SUPERIOR del canvas y */
@@ -299,15 +364,20 @@ function GuidesLayer() {
 /* horario: 0° Frente / 90° Der / 180° Dorso / 270° Izq (presets EXACTAMENTE   */
 /* como los nombra la spec R4). La costura lathe (ancla de guías pos 4) queda  */
 /* al DORSO — nota visual anotada: 0° del DISEÑO es el frente del canvas.     */
-/* R2: la rotación actúa ÚLTIMA (escala/espejo llegan con pos 7 y se aplican   */
-/* ANTES acá). R8: trabajo en vivo 1024² con smoothing 'high' (PNG bicúbico;  */
-/* el SVG llegó pre-rasterizado canalizando su vectorización); Ficha HD       */
-/* re-proyecta ≥2048² (pos 9).                                                */
+/* R2 (pos 7 = spec_escala...): pipeline canónico ESCALA → ESPEJO → ROTACIÓN  */
+/* compositadas AL MISMO PIVOTE (centro del carril = origen X:50% Y:50%).     */
+/* R1 (pos 7): el ANCLAJE del 100 % ya vive en el ráster (contain-fit R8 de   */
+/* pos 6 = envolvente tocando el anillo); el asset congela su base en mm      */
+/* (baseSideMm = D_ext vigente al cargar) y el % multiplica SOLO esa base —   */
+/* editar D_ext/D_int después NO re-escala el diseño, solo re-chequea.        */
+/* R8: trabajo en vivo 1024² con smoothing 'high' (PNG bicúbico; el SVG llegó */
+/* pre-rasterizado canalizando su vectorización); Ficha HD re-proyecta        */
+/* ≥2048² (pos 9).                                                            */
 /* Clipping anular con máscara destination-in SOLO entre R_int y R_ext, y     */
-/* tinte ÚNICO con el tono del quemado adaptativo R4 (pos 5 → pos 6: el modo  */
-/* de quemado no altera el ángulo). Provisional pos 6: la imagen se inscribe  */
-/* en el círculo del carril ⇒ NINGÚN ángulo desborda (el fit exacto + banner  */
-/* "chorreo" llega con la pos 7); el re-chequeo R6 engancha ahí.              */
+/* tinte ÚNICO con el tono del quemado adaptativo R4 (pos 5 → pos 7: el modo  */
+/* de quemado no altera la escala). El motor de desborde (R4 de               */
+/* spec_escala...) vive en lib/overflow + OverflowMonitor: supervisores al    */
+/* composite de la ESCENA (guías pulsan rojo vía el overlay de GuidesLayer).  */
 /* -------------------------------------------------------------------------- */
 
 const ENGRAVING_CANVAS_PX = 1024; // R8: canvas de trabajo en vivo
@@ -318,6 +388,8 @@ function composeEngravingCanvas(
   canvas: HTMLCanvasElement,
   asset: HTMLCanvasElement | null,
   rotationDeg: number,
+  mirror: boolean,
+  scalePct: number,
   burn: { color: string },
   rInMm: number,
   rOutMm: number,
@@ -334,13 +406,20 @@ function composeEngravingCanvas(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high'; // R8: máxima interpolación del PNG
 
-  // 1) Capa de diseño rotada alrededor del CENTRO del carril — pivote exacto
-  //    (QA1): nunca se desliza. rotate(+θ) canvas ≡ rotateY(+θ) mundo.
+  // Pipeline canónico R2 sobre el PIVOTE (QA1: nunca se desliza). El orden de
+  // llamadas canvas ES el orden canónico: la matriz resultante T·R·Escala·Espejo
+  // aplica Escala primero, luego Espejo y por último Rotación — así la rotación
+  // gira EXACTAMENTE la imagen que el usuario ve (QA2: espejo + 90°/270° siguen
+  // en sentido visual horario).
   ctx.save();
   ctx.translate(C, C);
   ctx.rotate((rotationDeg * Math.PI) / 180);
-  const side = inscribedFitSizePx(rOutMm - rInMm, pxPerMm);
-  ctx.drawImage(asset, -side / 2, -side / 2, side, side);
+  ctx.scale(mirror ? -1 : 1, 1);
+  ctx.scale(scalePct / 100, scalePct / 100);
+  // Dibujo FULL-canvas del ráster de trabajo (R1: base congelada = el 100 %
+  // deja la envolvente tocando el anillo — jamás inscrito en el hueco).
+  ctx.translate(-C, -C);
+  ctx.drawImage(asset, 0, 0);
   ctx.restore();
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -367,13 +446,15 @@ function DesignEngravingLayer() {
   const mateModel = useEditorStore((s) => s.mateModel);
   const virolaColor = useEditorStore((s) => s.virolaColor);
   const rotation = useEditorStore((s) => s.design.rotation);
+  const mirror = useEditorStore((s) => s.design.mirror);
+  const scale = useEditorStore((s) => s.design.scale);
   const asset = useEditorStore((s) => s.designAsset);
 
   const product = useMemo(() => resolveMateModel(mateModel), [mateModel]);
   const topY = product.shape.totalHeightMm + product.shape.sealOverlapMm;
 
-  // MISMA geometría que VirolaGroup (misma cache ⇒ comparte buffers: el ángulo
-  // jamás reconstruye la virola — spec §3 comportamiento del sistema).
+  // MISMA geometría que VirolaGroup (misma cache ⇒ comparte buffers: ángulo,
+  // escala y espejo JAMÁS reconstruyen la virola — spec §3 comportamiento).
   const geometry = useMemo(
     () => cached(`virolaTop:${int}:${ext}`, () => buildVirolaTopGeometry(int, ext), virolaCache),
     [int, ext],
@@ -391,12 +472,13 @@ function DesignEngravingLayer() {
     return { canvas: c, texture: tex };
   }, []);
 
-  // (a)+(c) del flujo §3: cada cambio de ángulo normalizado re-composita y
-  // emite la textura — sin reconstruir virola ni re-inicializar luces.
+  // (a)+(c) del flujo §3: cada cambio de ángulo/escala/espejo/diametros
+  // NORMALIZADO re-composita y emite la textura — sin reconstruir virola ni
+  // re-inicializar luces.
   useEffect(() => {
-    composeEngravingCanvas(canvas, asset?.canvas ?? null, rotation, burn, int / 2, ext / 2);
+    composeEngravingCanvas(canvas, asset?.canvas ?? null, rotation, mirror, scale, burn, int / 2, ext / 2);
     texture.needsUpdate = true;
-  }, [canvas, texture, asset, rotation, burn, int, ext]);
+  }, [canvas, texture, asset, rotation, mirror, scale, burn, int, ext]);
 
   const material = useMemo(
     () =>

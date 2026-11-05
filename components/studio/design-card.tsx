@@ -1,35 +1,57 @@
 'use client';
 
 /* ============================================================================
- * TARJETA "CARGAR ARCHIVO / EDICIÓN DEL VECTOR" — posición 6
- * ÚNICA FUENTE: spec_rotacion_archivo_svg_png.md (+ tono de quemado de
- * spec_seleccion_de_color.md R4, pos 5).
+ * TARJETA "CARGAR ARCHIVO / EDICIÓN DEL VECTOR" — posiciones 6–7
+ * ÚNICA FUENTE: spec_rotacion_archivo_svg_png.md + spec_escala_y_alerta_de_desborde.md
+ * (+ tono de quemado de spec_seleccion_de_color.md R4, pos 5).
  * ----------------------------------------------------------------------------
  * · Archivo: SVG/PNG rasterizado EN CLIENTE al canvas de trabajo 1024² (R8,
  *   contain + centrado) y guardado SOLO en el asset de sesión (el archivo NO
- *   viaja al jsonb todavía: la rotación persiste; el ciclo de vida del
- *   archivo llega con variantes pos 7 / links pos 10).
+ *   viaja al jsonb todavía: la rotación/escala/espejo persisten; el ciclo de
+ *   vida del archivo llega con variantes A/B/C y links pos 10).
+ *   — TRAZOS FINOS (técnica del prototipo Mate Studio): el rastercado realza
+ *     la opacidad (×1.8) para que los hairline (ej. 0.05 mm) no desaparezcan
+ *     sobre el metal; conserva bordes suavizados sin dentar.
  *   Fallo de raster (archivo corrupto tras edición externa): se conserva la
  *   última textura válida y aviso inline (§6) — reintentar reactiva el diseño.
+ * · R1 (pos 7): la CARGA congela la base del diseño en mm (baseSideMm = D_ext
+ *   vigente: el contain-fit deja la envolvente tocando el anillo). El % de la
+ *   sección C multiplica SOLO esa base: editar D_ext/D_int después NO
+ *   re-escala el diseño, apenas re-chequea desborde (comportamiento
+ *   predecible; el % tiene siempre el mismo significado).
  * · Rotación R3: único marco [0°, 360°) paso 0.5°; el campo numérico acepta
  *   `.` y `,` decimales, signo y sufijo °; normaliza por módulo en vivo
  *   (370°⇒10°, −90°⇒270°, 45.25°⇒45.5°) y texto/vacío RESTAURA el último
  *   válido — la escena jamás pierde la alineación.
+ * · Espejo R2 (de spec_rotacion): inversión horizontal sobre el eje vertical
+ *   central — tercera posición del pipeline canónico (Escala→Espejo→Rotación).
  * · Imán R4: atracción ±4° en el arrastre del slider; checkbox ON por defecto
  *   y SOLO DE DISPOSITIVO (§5: localStorage — nunca projects.state). Los 4
  *   presets (0° Frente / 90° Der / 180° Dorso / 270° Izq) fijan el ángulo
  *   EXACTO con imán ON u OFF.
- * · Reset: vuelve a 0° escalar conservando imán (y con pos 7: escala/espejo).
- * · AJUSTE PROVISIONAL pos 6 (nota, no contrato): mientras no exista el motor
- *   de escala/chorreo (pos 7), el diseño se inscribe en el círculo del carril
- *   — NINGÚN ángulo desborda, así que el re-chequeo R6 no tiene gancho aún y
- *   no aparece el banner de desborde jamás en esta posición.
- * · Sin candado: la rotación es edición de vector — FREE y PRO (§6 permisos);
- *   el Modo Cliente no muestra controles (llega con pos 10).
+ * · Reset: vuelve a 0° escalar conservando imán, escala y espejo (R7).
+ * · Escala R8 (pos 7, sección C): % en [70, 110] paso 0.5% con campo
+ *   numérico sincrónico, presets 85/90/100 (SIN "Máx") y botón Auto (R7:
+ *   mayor escala segura ≤ 110 % — hover muestra el número ANTES de aplicarlo
+ *   y al aplicarlo el slider viaja animado 250 ms).
+ * · Desborde R4/R5 (pos 7): la envolvente de tinta se mide AL CARGAR (máscara
+ *   alfa 512² R4), el chequeo re-evalúa por cambio de escala/diametros/carga
+ *   — JAMÁS por ángulo/espejo (invariancia polar R3). Banner con la redacción
+ *   EXACTA de R5; guías afectadas pulsan rojo (en la escena). Tolerancia 0 mm
+ *   estricta: NO existe "margen de seguridad".
+ *   §6 modo degradado: si el chequeo falla, se cae a envolvente (bbox)
+ *   conservadora con aviso "Detección aproximada" — alerta de más, nunca de
+ *   menos.
+ * · R6 (pos 7): la decisión de export con desborde (modal con desvío medido)
+ *   se conectará cuando exista el export (pos 8/9); la línea de ficha
+ *   ("Margen: seguro" / "con riesgo (excede X mm)") ya vive en lib/overflow.
+ * · Sin candado: rotación, espejo, escala, presets, Auto, banner y
+ *   confirmación son FREE (§6 permisos); el Modo Cliente no muestra controles
+ *   (llega con pos 10).
  * ============================================================================ */
 
-import { useEffect, useRef, useState } from 'react';
-import { FileImage, ImagePlus, Magnet, RotateCcw, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2, Scaling } from 'lucide-react';
 import { useEditorStore } from '@/lib/store/editor';
 import {
   applyMagnet,
@@ -41,8 +63,26 @@ import {
   saveSnapMagnet,
   type DesignAsset,
 } from '@/lib/design';
+import {
+  evaluateOverflow,
+  evaluateOverflowBBox,
+  formatScaleLabel,
+  largestSafeScalePct,
+  normalizeScale,
+  overflowBannerText,
+  parseScaleInput,
+  scanInkEnvelope,
+  SCALE_PRESETS,
+  SCALE_RANGE,
+  SCALE_STEP_PCT,
+} from '@/lib/overflow';
 
 const FILE_ACCEPT = 'image/svg+xml,image/png,.svg,.png'; // R8: SVG/PNG
+
+/** R4 pos 5/§4: umbral visual "grave" del banner ámbar→rojo (nota anotada:
+ *  la spec pide los dos tonos sin fijar el corte; 2 mm ≈ grabado deformado
+ *  visible a simple vista sobre la chapa). */
+const OVERFLOW_SEVERE_MM = 2;
 
 /** Texto canónico del campo numérico (R3: sin signo raro, sin ceros extra). */
 function fmtAngle(deg: number): string {
@@ -51,9 +91,9 @@ function fmtAngle(deg: number): string {
 
 /**
  * R8: rasteriza el archivo EN CLIENTE al canvas de trabajo 1024² (contain,
- * centrado). El SVG se rasteriza con la vectorización nativa del navegador
- * (sin interpolación visible a este tamaño); el PNG pasa tal cual. El resultado
- * vive SOLO en el asset de sesión — jamás se envía al backend en pos 6.
+ * centrado) con REFUERZO de trazos finos (prototipo: alpha ×1.8 ⇒ los
+ * hairline del SVG no desaparecen en el metal). El resultado vive SOLO en el
+ * asset de sesión — jamás se envía al backend.
  */
 async function rasterizeDesignFile(file: File): Promise<HTMLCanvasElement> {
   const url = URL.createObjectURL(file);
@@ -68,7 +108,7 @@ async function rasterizeDesignFile(file: File): Promise<HTMLCanvasElement> {
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) throw new Error('canvas no disponible');
     const w = img.naturalWidth || img.width || size;
     const h = img.naturalHeight || img.height || size;
@@ -76,10 +116,41 @@ async function rasterizeDesignFile(file: File): Promise<HTMLCanvasElement> {
     const dw = w * scale;
     const dh = h * scale;
     ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+
+    // Refuerzo de trazos finos (técnica del prototipo): α>0 ⇒ ×1.8 (max 255),
+    // silueta, posición y colores respetados — los píxeles con α=0 no se tocan.
+    const imgData = ctx.getImageData(0, 0, size, size);
+    const px = imgData.data;
+    for (let i = 3; i < px.length; i += 4) {
+      if (px[i] > 0) px[i] = Math.min(255, Math.round(px[i] * 1.8));
+    }
+    ctx.putImageData(imgData, 0, 0);
     return canvas;
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * R4 (pos 7): mide la ENVOLVENTE DE TINTA al 100 % del asset recién cargado —
+ * máscara alfa 512×512 (detalle R4) del Ráster base SIN máscara anular NI
+ * tinte (mide el trazado tal como lo usaría el láser) y SIN rotación/espejo
+ * (R3: isometrías con pivote fijo ⇒ radios preservados por definición).
+ * Coste O(n) sobre 512² ⇒ ≤ 25 ms (QA2 con margen).
+ * Retorna null si no hay trazo (α≥128) o si el kit de canvas no está.
+ */
+function measureInkEnvelopeMm(asset: HTMLCanvasElement, baseSideMm: number) {
+  // El cached de work 1024² ⇒ downsample bilinear a la máscara 512² (R4).
+  const scan = document.createElement('canvas');
+  scan.width = 512;
+  scan.height = 512;
+  const ctx = scan.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(asset, 0, 0, 512, 512);
+  const data = ctx.getImageData(0, 0, 512, 512).data;
+  // mm/px de la máscara: el ráster 1024² equivale a baseSideMm de mm ⇒ 512 px ⇔ baseSideMm/2.
+  const mmPerPx = baseSideMm / 512;
+  return scanInkEnvelope({ size: 512, alphaAt: (x, y) => data[(y * 512 + x) * 4 + 3] }, mmPerPx);
 }
 
 function kindOf(file: File): DesignAsset['kind'] {
@@ -89,30 +160,46 @@ function kindOf(file: File): DesignAsset['kind'] {
 }
 
 export default function DesignCard() {
+  const extDiameter = useEditorStore((s) => s.extDiameter);
+  const intDiameter = useEditorStore((s) => s.intDiameter);
   const rotation = useEditorStore((s) => s.design.rotation);
+  const scale = useEditorStore((s) => s.design.scale);
+  const mirror = useEditorStore((s) => s.design.mirror);
   const setDesignRotation = useEditorStore((s) => s.setDesignRotation);
+  const setDesignScale = useEditorStore((s) => s.setDesignScale);
+  const setDesignMirror = useEditorStore((s) => s.setDesignMirror);
   const designAsset = useEditorStore((s) => s.designAsset);
   const loadDesignAsset = useEditorStore((s) => s.loadDesignAsset);
+  const inkEnvelope = useEditorStore((s) => s.inkEnvelope);
+  const inkScanDegraded = useEditorStore((s) => s.inkScanDegraded);
+  const setInkEnvelope = useEditorStore((s) => s.setInkEnvelope);
+  const setInkScanDegraded = useEditorStore((s) => s.setInkScanDegraded);
 
   /* R4/§5: imán SOLO de dispositivo — se lee tras hidratar (el SSR no tiene
-   * localStorage; false/true temprano evita mismatch de hidratación). */
+   * localStorage; default ON evita mismatch de hidratación). */
   const [snapMagnet, setSnapMagnet] = useState(true);
   const [fileError, setFileError] = useState<string | null>(null);
   const [fileBusy, setFileBusy] = useState(false);
   const [angleText, setAngleText] = useState(fmtAngle(0));
   const [angleInvalid, setAngleInvalid] = useState(false);
+  const [scaleText, setScaleText] = useState('100');
+  const [scaleInvalid, setScaleInvalid] = useState(false);
   const editingAngleRef = useRef(false);
+  const editingScaleRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setSnapMagnet(loadSnapMagnetDefault()), []);
 
-  /* Slider/presets/escena pueden cambiar el ángulo: el campo numérico sigue
-   * al store MIENTRAS no se esté tipeando (espejo del patrón de HexInput). */
+  /* Slider/presets/escena pueden cambiar ángulo y escala: los campos siguen al
+   * store MIENTRAS no se esté tipeando (espejo del patrón de HexInput). */
   useEffect(() => {
     if (!editingAngleRef.current) setAngleText(fmtAngle(rotation));
   }, [rotation]);
+  useEffect(() => {
+    if (!editingScaleRef.current) setScaleText(String(scale));
+  }, [scale]);
 
-  /* §3 flujo R4: slider con imán SOLO en el arrastre (±4°), paso 0.5. */
+  /* §3 flujo R4: slider con imán SOLO en el arrastre (±4°), paso 0.5°. */
   function handleSlider(value: number): void {
     setDesignRotation(applyMagnet(normalizeRotation(value), snapMagnet));
   }
@@ -137,6 +224,25 @@ export default function DesignCard() {
     setAngleText(fmtAngle(rotation));
   }
 
+  /* R8 escala: mismo patrón WYSIWYG del ángulo — clamp [70,110] paso 0.5%. */
+  function handleScaleTyping(text: string): void {
+    editingScaleRef.current = true;
+    setScaleText(text);
+    const parsed = parseScaleInput(text);
+    if (parsed === null) {
+      setScaleInvalid(true);
+      return;
+    }
+    setScaleInvalid(false);
+    setDesignScale(parsed); // normaliza (clamp + paso 0.5%) — jamás fuera de rango
+  }
+
+  function commitScaleBlur(): void {
+    editingScaleRef.current = false;
+    setScaleInvalid(false);
+    setScaleText(String(scale));
+  }
+
   function toggleMagnet(): void {
     const next = !snapMagnet;
     setSnapMagnet(next);
@@ -148,8 +254,23 @@ export default function DesignCard() {
     setFileBusy(true);
     try {
       const canvas = await rasterizeDesignFile(file);
-      const asset: DesignAsset = { canvas, name: file.name, kind: kindOf(file) };
+      // R1 (pos 7): la CARGA congela la base (mm): 100 % = trazado tocando el
+      // anillo con el D_ext vigente; después solo re-chequea.
+      const asset: DesignAsset = {
+        canvas,
+        name: file.name,
+        kind: kindOf(file),
+        baseSideMm: extDiameter,
+      };
       loadDesignAsset(asset);
+      try {
+        setInkEnvelope(measureInkEnvelopeMm(canvas, asset.baseSideMm));
+        setInkScanDegraded(false);
+      } catch {
+        // §6: raster del chequeo falló ⇒ modo envolvente conservador.
+        setInkEnvelope(null);
+        setInkScanDegraded(true);
+      }
       setFileError(null);
     } catch {
       // §6: se conserva la última textura válida y aviso inline.
@@ -160,9 +281,59 @@ export default function DesignCard() {
     }
   }
 
+  function removeDesign(): void {
+    loadDesignAsset(null);
+    setInkEnvelope(null); // sin trazado: nada que medir para el motor
+    setInkScanDegraded(false);
+  }
+
   /* Feedback de imán (§4): el preset "enganchado" se marca; con imán OFF los
    * marcadores quedan neutros. */
   const snapped = magnetSnappedPreset(rotation, snapMagnet);
+
+  /* ─────── R4/R5/R7 — chequeo, banner y Auto del margen ─────── */
+  const rExtMm = extDiameter / 2;
+  const rIntMm = intDiameter / 2;
+
+  const check = useMemo(() => {
+    if (!designAsset) return null;
+    if (inkEnvelope) return evaluateOverflow(inkEnvelope, rExtMm, rIntMm, scale);
+    if (inkScanDegraded) { // §6: modo envolvente (bbox) conservador
+      return evaluateOverflowBBox(designAsset.baseSideMm, scale, rExtMm, rIntMm);
+    }
+    return null; // medición en curso / asset sin trazado
+  }, [designAsset, inkEnvelope, inkScanDegraded, rExtMm, rIntMm, scale]);
+
+  const overflowing = check?.status === 'overflow';
+  const severe =
+    overflowing &&
+    ((check?.overflowOuterMm ?? 0) >= OVERFLOW_SEVERE_MM ||
+      (check?.overflowInnerMm ?? 0) >= OVERFLOW_SEVERE_MM);
+
+  // R7: mayor escala segura ≤ 110 % — hover-preview O(1) sobre la envolvente.
+  const autoPct = useMemo(() => {
+    if (!designAsset || !inkEnvelope) return null;
+    return largestSafeScalePct(inkEnvelope, rExtMm, rIntMm);
+  }, [designAsset, inkEnvelope, rExtMm, rIntMm]);
+
+  const scaleAnimRef = useRef(0);
+
+  function applyAuto(): void {
+    if (autoPct === null || autoPct === scale) return;
+    // §4: al aplicarlo, el slider viaja animado (250 ms) hasta el valor.
+    const from = scale;
+    const start = performance.now();
+    cancelAnimationFrame(scaleAnimRef.current);
+    const step = () => {
+      const t = Math.min(1, (performance.now() - start) / 250);
+      const eased = 1 - (1 - t) * (1 - t); // easeOutQuad (≈ CameraRefit)
+      setDesignScale(from + (autoPct - from) * eased);
+      if (t < 1) scaleAnimRef.current = requestAnimationFrame(step);
+    };
+    scaleAnimRef.current = requestAnimationFrame(step);
+  }
+
+  useEffect(() => () => cancelAnimationFrame(scaleAnimRef.current), []);
 
   return (
     <div className="rounded-xl border border-line bg-panel p-4 space-y-4">
@@ -174,9 +345,9 @@ export default function DesignCard() {
         </h2>
       </div>
       <p className="text-[10px] leading-relaxed text-stone-600">
-        Rotación del grabado 360° — FREE, sin candado (R1 de{' '}
-        <span className="font-mono">spec_rotacion_archivo_svg_png</span>). El archivo se usa en
-        sesión; la <span className="text-stone-400">rotación</span> es lo que guarda el proyecto.
+        Rotación, espejo y escala del grabado — FREE, sin candado (§6 de{' '}
+        <span className="font-mono">spec_rotacion</span> y <span className="font-mono">spec_escala</span>).
+        El archivo se usa en sesión; rotación, escala y espejo son lo que guarda el proyecto.
       </p>
 
       {/* ─────────────── SECCIÓN A — ARCHIVO ─────────────── */}
@@ -211,7 +382,7 @@ export default function DesignCard() {
               <button
                 type="button"
                 title="Quitar diseño"
-                onClick={() => loadDesignAsset(null)}
+                onClick={removeDesign}
                 className="text-stone-500 transition hover:text-rose-300 focus:outline-none"
               >
                 <X className="h-3 w-3" />
@@ -227,9 +398,9 @@ export default function DesignCard() {
         )}
 
         {!designAsset && !fileError && (
-          <p className="text-[10px] text-stone-600">
-            Sin diseño: la corona sale lisa. SVG o PNG; la vista previa del grabado es en vivo en
-            el 3D.
+          <p className="text-[10px] leading-relaxed text-stone-600">
+            Sin diseño: la corona sale lisa. SVG o PNG con trazado tocando el anillo; al cargar se
+            congela el 100 % (R1) y la vista previa es en vivo en el 3D.
           </p>
         )}
       </section>
@@ -310,7 +481,7 @@ export default function DesignCard() {
           })}
         </div>
 
-        {/* Imán configurable R4 (±4°) — estado de DISPOSITIVO (§5) + reset */}
+        {/* Imán configurable R4 (±4°) — estado de DISPOSITIVO (§5) + espejo + reset */}
         <div className="flex items-center justify-between gap-2">
           <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
             <input
@@ -325,11 +496,160 @@ export default function DesignCard() {
           <button
             type="button"
             onClick={() => setDesignRotation(0)}
-            title="Vuelve a 0° conservando el imán (y escala/espejo con pos 7)"
+            title="Vuelve a 0° conservando imán, escala y espejo (R7)"
             className="flex items-center gap-1 text-[10px] text-stone-500 transition hover:text-stone-300 focus:outline-none"
           >
             <RotateCcw className="h-3 w-3" />
             Reset 0°
+          </button>
+        </div>
+
+        {/* Espejo horizontal R2 (spec_rotacion): pipeline Escala→Espejo→Rotación */}
+        <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
+          <input
+            type="checkbox"
+            checked={mirror}
+            onChange={() => setDesignMirror(!mirror)}
+            className="accent-gold"
+          />
+          <FlipHorizontal2 className={`h-3.5 w-3.5 ${mirror ? 'text-gold-soft' : 'text-stone-600'}`} />
+          Espejo del grabado
+          <span className="ml-auto text-[9px] text-stone-600">
+            {mirror ? 'invertido sobre eje vertical' : 'normal (R2)'}
+          </span>
+        </label>
+      </section>
+
+      <hr className="border-line" />
+
+      {/* ─────── SECCIÓN C — TAMAÑO / ESCALA DEL GRABADO (pos 7) ─────── */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <p className="text-xs font-bold uppercase tracking-wider text-stone-400">
+            Tamaño / Escala del Grabado
+          </p>
+          <span className="text-[9px] text-stone-600">paso 0.5% (R8)</span>
+        </div>
+
+        {/* Badge de estado de margen R5 (§4: junto al banner) */}
+        <div className="flex items-center justify-between gap-2">
+          {!check ? (
+            <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-stone-500">
+              {designAsset ? 'midiendo trazado…' : 'sin diseño'}
+            </span>
+          ) : overflowing ? (
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">
+              ⚠ Con riesgo de chorreo
+            </span>
+          ) : (
+            <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-400">
+              Dentro de zona segura
+            </span>
+          )}
+          {inkScanDegraded && designAsset && (
+            <span className="text-[9px] text-amber-300/80">Detección aproximada (§6)</span>
+          )}
+        </div>
+
+        {/* Banner R5 — redacción EXACTA de la spec */}
+        {overflowing && check && (
+          <p
+            className={[
+              'flex gap-1.5 rounded-lg px-2.5 py-2 text-[10px] leading-relaxed',
+              severe
+                ? 'border border-rose-500/50 bg-rose-500/10 text-rose-200'
+                : 'border border-amber-500/40 bg-amber-500/10 text-amber-200',
+            ].join(' ')}
+          >
+            <span>⚠️</span>
+            <span aria-live="polite">{overflowBannerText(check)}</span>
+          </p>
+        )}
+
+        <p className="text-[10px] leading-relaxed text-stone-600">
+          El <span className="text-stone-400">100%</span> queda congelado al cargar el archivo (R1:
+          la envolvente toca el anillo); editar medidas NO re-escala el diseño, solo re-chequea.
+          La tolerancia del anillo es 0 mm estricta (R4).
+        </p>
+
+        {/* Slider 70–110 · paso 0.5% (R8) */}
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={SCALE_RANGE.min}
+            max={SCALE_RANGE.max}
+            step={SCALE_STEP_PCT}
+            value={scale}
+            aria-label="Escala del grabado"
+            onChange={(e) => setDesignScale(Number(e.target.value))}
+            className="w-full accent-gold"
+          />
+        </div>
+
+        {/* Campo numérico adyacente con sufijo % — sincrónico bidireccional */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={scaleText}
+            aria-label="Escala en porcentaje"
+            onChange={(e) => handleScaleTyping(e.target.value)}
+            onBlur={commitScaleBlur}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            }}
+            placeholder="100"
+            maxLength={7}
+            spellCheck={false}
+            className={[
+              'h-8 w-[4.5rem] rounded-md border bg-black/30 px-2 text-right text-xs font-semibold outline-none transition focus:outline-none focus:ring-1',
+              scaleInvalid
+                ? 'border-amber-400/70 text-amber-100 focus:ring-amber-400/60'
+                : 'border-white/10 text-stone-100 focus:border-gold/50 focus:ring-gold/40',
+            ].join(' ')}
+          />
+          <span className="text-xs text-stone-500">%</span>
+          <span className="flex-1 text-right text-[10px] text-stone-600">
+            {scaleInvalid ? 'restaura al salir' : `${formatScaleLabel(normalizeScale(scale))} vigente`}
+          </span>
+        </div>
+
+        {/* Presets R7 (sin "Máx": el máximo real es 110%) + Auto destacado */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {SCALE_PRESETS.map((preset) => (
+            <button
+              key={preset.pct}
+              type="button"
+              onClick={() => setDesignScale(preset.pct)}
+              title={`Fija la escala en ${preset.pct}%`}
+              className={[
+                'rounded-lg border px-2 py-1.5 text-[11px] transition-all focus:outline-none',
+                scale === preset.pct
+                  ? 'border-gold ring-2 ring-gold bg-gold/10 text-cream'
+                  : 'border-line text-stone-400 hover:border-gold/50 hover:text-cream',
+              ].join(' ')}
+            >
+              {preset.pct}%
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={applyAuto}
+            disabled={autoPct === null || autoPct === scale}
+            title={
+              autoPct !== null
+                ? `Aplica la mayor escala segura sin desborde: ${formatScaleLabel(autoPct)}`
+                : 'Ninguna escala del rango 70–110% es segura con el diseño y medidas vigentes'
+            }
+            className={[
+              'ml-auto flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all focus:outline-none',
+              autoPct !== null && autoPct !== scale
+                ? 'border-gold/60 bg-gold/10 text-cream hover:bg-gold/20'
+                : 'border-line text-stone-500',
+            ].join(' ')}
+          >
+            <Scaling className="h-3.5 w-3.5" />
+            Auto{autoPct !== null ? ` ${formatScaleLabel(autoPct)}` : ''}
           </button>
         </div>
       </section>

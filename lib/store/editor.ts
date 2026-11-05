@@ -27,6 +27,16 @@
  *                el auto-giro: nunca viaja al jsonb). El archivo del diseño
  *                (designAsset) es de SESIÓN también: solo la ROTACIÓN persiste;
  *                el ciclo de vida del archivo llega con pos 7/10.
+ *
+ * claves pos 7 (spec_escala_y_alerta_de_desborde.md):
+ *   design.scale escala fina del grabado: % [70, 110] paso 0.5% (R1/R8), que
+ *                multiplica la base CONGELADA del fit inicial — editar
+ *                D_ext/D_int después NO re-escala, solo re-chequea.
+ *   design.mirror espejo horizontal del pipeline Escala→Espejo→Rotación
+ *                (R2 de spec_rotacion...: obliga a pos 7 por su consumo).
+ *   inkEnvelope  envolvente radial de tinta al 100% en mm — DERIVADA de sesión
+ *                (se mide al cargar el asset); JAMÁS se persiste (R8: el
+ *                estado de margen se re-calcula al abrir/evaluar).
  * ============================================================================ */
 
 import { create } from 'zustand';
@@ -40,6 +50,8 @@ import {
   type BodyPresetId,
 } from '@/lib/color';
 import { normalizeRotation, DEFAULT_DESIGN_STATE, type DesignState, type DesignAsset } from '@/lib/design';
+import { normalizeScale } from '@/lib/overflow';
+import type { InkEnvelope } from '@/lib/overflow';
 
 /** Recurso del diseño cargado en sesión (canvas rasterizado 1024², R8). */
 export type { DesignAsset };
@@ -69,6 +81,19 @@ export interface EditorStore extends EditorStateSnapshot {
   offlineDraft: boolean;
   /** pos 6: asset de diseño de la SESIÓN (nunca persistido; restore ⇒ null). */
   designAsset: DesignAsset | null;
+  /**
+   * pos 7: envolvente de tinta al 100 % (mm) — DERIVADA de sesión (la mide el
+   * motor de desborde al cargar el asset). NO se persiste ni marca dirty
+   * (R8: el estado de margen se recalcula siempre; jamás se confía en valores
+   * guardados). null ⇒ sin diseño / medición no disponible todavía.
+   */
+  inkEnvelope: InkEnvelope | null;
+  /**
+   * pos 7 (§6): true ⇒ el raster del chequeo FALLÓ y todo lo derivado cae a
+   * modo envolvente conservador ("Detección aproximada"). Derivado de sesión:
+   * no se persiste ni marca dirty. restore ⇒ false.
+   */
+  inkScanDegraded: boolean;
 
   /** Restaura desde el backend (o del draft local más reciente). */
   restoreState: (s: EditorStateSnapshot, projectId: string | null) => void;
@@ -93,11 +118,19 @@ export interface EditorStore extends EditorStateSnapshot {
   addRecentColor: (zone: 'body' | 'virola', hex: string) => void;
   /** pos 6: setea la rotación canónica del grabado (R3: normaliza por módulo). */
   setDesignRotation: (angleDeg: number) => void;
+  /** pos 7: setea la escala canónica del grabado (% R8: normaliza [70,110] 0.5%). */
+  setDesignScale: (scalePct: number) => void;
+  /** pos 7: alterna el espejo horizontal (R2 spec_rotacion: pipeline central). */
+  setDesignMirror: (on: boolean) => void;
   /**
    * pos 6: carga/limpia (null) el archivo de diseño en SESIÓN — el asset NO
    * se persiste ni marca dirty: no cambia nada del estado contractual.
    */
   loadDesignAsset: (asset: DesignAsset | null) => void;
+  /** pos 7: publica la envolvente de tinta medida (derivado de sesión; sin dirty). */
+  setInkEnvelope: (ink: InkEnvelope | null) => void;
+  /** pos 7 (§6): publica el modo degradado del chequeo (envolvente conservador). */
+  setInkScanDegraded: (on: boolean) => void;
   /** Marca dirty de otro flujo (ej. restore desde draft local más nuevo). */
   markDirty: () => void;
   /** Confirmado de guardar (lo llama el autosave). */
@@ -121,6 +154,8 @@ export const useEditorStore = create<EditorStore>((set) => ({
   lastSavedAt: null,
   offlineDraft: false,
   designAsset: null,
+  inkEnvelope: null,
+  inkScanDegraded: false,
 
   restoreState: (s, projectId) =>
     set((prev) => ({
@@ -139,6 +174,9 @@ export const useEditorStore = create<EditorStore>((set) => ({
       // pos 6: el archivo del diseño es de sesión — al restaurar NO revivimos
       // la imagen (la rotación sí persiste; el asset se re-carga a mano).
       designAsset: null,
+      // pos 7 (R8): el estado de margen NO se persiste — se recalcula al abrir.
+      inkEnvelope: null,
+      inkScanDegraded: false,
     })),
 
   setMateModel: (id) => set((prev) => ({ ...prev, mateModel: id, dirty: true })),
@@ -182,9 +220,27 @@ export const useEditorStore = create<EditorStore>((set) => ({
       dirty: true,
     })),
 
+  // pos 7 (R8): SIEMPRE la representación canónica [70, 110] paso 0.5%.
+  setDesignScale: (scalePct) =>
+    set((prev) => ({
+      ...prev,
+      design: { ...prev.design, scale: normalizeScale(scalePct) },
+      dirty: true,
+    })),
+
+  // pos 7 (R2 de spec_rotacion): el espejo es parte del pipeline canónico.
+  setDesignMirror: (on) =>
+    set((prev) => ({ ...prev, design: { ...prev.design, mirror: on }, dirty: true })),
+
   // pos 6: el asset no es contractual — no marca dirty (el autosave dedupea
   // por payload igual; esto evita autosaves con payload idéntico).
   loadDesignAsset: (asset) => set((prev) => ({ ...prev, designAsset: asset })),
+
+  // pos 7: la envolvente es derivada de sesión — jamás persistida (R8 §5),
+  // por eso tampoco marca dirty: el autosave no ve un cambio contractual.
+  setInkEnvelope: (ink) => set((prev) => ({ ...prev, inkEnvelope: ink })),
+  // pos 7 (§6): modo degradado del chequeo — derivado de sesión, sin dirty.
+  setInkScanDegraded: (on) => set((prev) => ({ ...prev, inkScanDegraded: on })),
 
   markSaved: (at, projectId) => set((prev) => ({ ...prev, dirty: false, lastSavedAt: at, projectId })),
   markOfflineDraft: (on) => set((prev) => ({ ...prev, offlineDraft: on })),

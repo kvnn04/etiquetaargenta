@@ -9,10 +9,11 @@
  *      superior, así los presets aterrizan exactamente como los nombra la spec R4:
  *      0° Frente · 90° Der · 180° Dorso · 270° Izq (nota visual anotada: la
  *      costura de la lathe queda al dorso — ver engranador en studio-scene).
- * R2 — Orden canónico de composite: escala (pos 7) → espejo (pos 7) → ROTACIÓN.
- *      La rotación actúa SIEMPRE última (resp. al mismo pivote central) y gira
- *      exactamente la imagen que el usuario ve en pantalla. Cambiar el orden
- *      queda prohibido en el motor (QA2 pos 7).
+ * R2 — Orden canónico de composite: ESCALA → ESPEJO → ROTACIÓN (pos 7 conecta
+ *      las dos primeras: spec_escala_y_alerta_de_desborde.md R2). La rotación
+ *      actúa SIEMPRE última (resp. al mismo pivote central) y gira exactamente
+ *      la imagen que el usuario ve en pantalla. Cambiar el orden queda
+ *      prohibido en el motor (QA2 pos 7).
  * R3 — Representación angular canónica ÚNICA: escalar en [0°, 360°) con paso
  *      0.5°; normalización por módulo (370° ⇒ 10°, −90° ⇒ 270°, 45.25° ⇒ 45.5°
  *      con redondeo al medio grado más cercano). Jamás −180°/180° bipolar en
@@ -22,13 +23,18 @@
  *      el estado del imán. El estado del imán es SOLO DE DISPOSITIVO (§5:
  *      localStorage — nunca en projects.state/jsonb).
  * R7 — Persistencia: `design.rotation` viaja en `projects.state` (se vuelve
- *      por variante A/B/C con la pos 7). Nota de ficha: "Rotación: 45° / 45.5°"
- *      — un decimal SOLO si no es entero (convenio único de
- *      spec_detalle_del_modelo_en_ficha.md).
+ *      por variante A/B/C con la pos 10). Nota de ficha: "Rotación: 45° /
+ *      45.5°" — un decimal SOLO si no es entero (convenio único de
+ *      spec_detalle_del_modelo_en_ficha.md). La ESCALA (percent 70–110 paso
+ *      0.5) y el ESPEJO (bool) también persisten con pos 7 (spec
+ *      spec_escala_y_alerta_de_desborde.md R8) y los payloads comerciales los
+ *      publican como `variants[n].scale`/`mirror`.
  * R8 — Re-muestreo: vivo en canvas de trabajo 1024×1024; la exportación
  *      HD/Ficha (pos 9) re-proyecta a ≥2048². Proyecto/link antiguo sin
  *      rotation ⇒ 0°.
  * ============================================================================ */
+
+import { normalizeScale } from './overflow';
 
 /** R3: paso canónico del ángulo (medio grado). */
 export const ROTATION_STEP_DEG = 0.5;
@@ -123,52 +129,57 @@ export function formatRotationLabel(angle: number): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/* AJUSTE PROVISIONAL AL CARRIL (pos 6 — nota, NO contrato)                   */
+/* AJUSTE AL CARRIL (pos 6 provisional ⇒ pos 7 R1: 100 % = anclaje congelado)  */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Tamaño lateral (px) para inscribir el diseño en el CÍRCULO inscrito del
- * carril (radio = W_banda / 2 sobre R_centro). Un cuadrado de lado S tiene
- * semidiagonal S·√2/2; exigir semidiagonal ≤ semiancho del carril garantiza
- * que NINGÚN ángulo saque el trazado fuera del anillo (QA1 sin desborde
- * espurio). La regla EXACTA de fit + banner "chorreo" llega con la pos 7
- * (spec_escala...): ahí este tope crece de 0.707·W a lo que la escala permita.
- */
-export function inscribedFitSizePx(bandWidthMm: number, pxPerMm: number): number {
-  if (!Number.isFinite(bandWidthMm) || !Number.isFinite(pxPerMm) || bandWidthMm <= 0 || pxPerMm <= 0) {
-    return 0;
-  }
-  return (bandWidthMm / Math.SQRT2) * pxPerMm;
-}
+/* La regla provisional de pos 6 (inscribir el diseño en el círculo del carril,
+ * `inscribedFitSizePx`) fue SUSTITUIDA por el anclaje real de
+ * spec_escala_y_alerta_de_desborde.md R1: el ráster contain-fit 1024² DE pos 6
+ * ya dimensiona el trazado para que su envolvente toque el anillo de la chapa
+ * — ese tamaño queda congelado y el 70–110 % multiplica SOBRE esa base (ver
+ * lib/overflow.ts). Si se inscribía en el círculo W/√2 centrado en el EJE, la
+ * máscara anular lo borraba por completo (el diseño quedaba dentro del hueco
+ * R_int) — el reporte real "el SVG no se ve en la virola" nació acá. */
 
 /* -------------------------------------------------------------------------- */
 /* §5 — ESTADO frontend persistido                                            */
 /* -------------------------------------------------------------------------- */
 
-/** `projects.state.design` (pos 6): la rotación activa del grabado. La imagen
- *  del archivo es de SESIÓN (carga por el tallerista) y NO viaja al jsonb
- *  todavía — el ciclo de vida del archivo llega con variantes (pos 7) y links
- *  comerciales (pos 10). */
+/** `projects.state.design` (pos 6 + pos 7): rotación, escala y espejo del
+ *  grabado. La imagen del archivo es de SESIÓN (carga por el tallerista) y NO
+ *  va al jsonb todavía — el ciclo de vida del archivo llega con las variantes
+ *  (pos 7 slots A/B/C) y los links comerciales (pos 10). */
 export interface DesignState {
+  /** R3 pos 6: rotación en [0°, 360°) paso 0.5°. */
   rotation: number;
+  /** R8 pos 7: escala en % [70, 110] paso 0.5% — multiplicador del fit fijo. */
+  scale: number;
+  /** R2 pos 7 (de spec_rotacion): espejo horizontal sobre el eje vertical central. */
+  mirror: boolean;
 }
 
-/** R8: proyecto/link antiguo sin rotation ⇒ 0°. */
-export const DEFAULT_DESIGN_STATE: DesignState = { rotation: 0 };
+/** R8: proyecto/link antiguo sin rotation/scale/mirror ⇒ 0° / 100% / OFF. */
+export const DEFAULT_DESIGN_STATE: DesignState = { rotation: 0, scale: 100, mirror: false };
 
-/** Normalizador tolerante del jsonb: falta el key ⇒ default; valor basura ⇒ 0. */
+/** Normalizador tolerante del jsonb: falta el key ⇒ default; valor basura ⇒ default. */
 export function normalizeDesignState(raw: unknown): DesignState {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ...DEFAULT_DESIGN_STATE };
   }
-  const rotation = normalizeRotation((raw as { rotation?: unknown }).rotation);
-  return { rotation };
+  const o = raw as { rotation?: unknown; scale?: unknown; mirror?: unknown };
+  const rotation = normalizeRotation(o.rotation);
+  // R8 pos 7: scale/mirror viajan DESDE pos 7 — proyectos pos-6 (solo rotation)
+  // cargan con 100 % / espejo OFF (los defaults contractuales).
+  const scale = normalizeScale(o.scale);
+  const mirror = o.mirror === true;
+  return { rotation, scale, mirror };
 }
 
 /**
- * Recurso de diseño de SESIÓN (pos 6): raster del archivo ya en el canvas de
- * trabajo 1024² (R8) + metadatos para la UI. SOLO vive en memoria del
- * navegador: NO se persiste (el archivo viaja con variantes pos 7 / links pos 10).
+ * Recurso de diseño de SESIÓN (pos 6 + pos 7): raster del archivo ya en el
+ * canvas de trabajo 1024² (R8) + metadatos para la UI y el motor de desborde.
+ * SOLO vive en memoria del navegador: NO se persiste (el ciclo de vida del
+ * archivo por variantes llega con pos 7 A/B/C y con los links pos 10).
  */
 export interface DesignAsset {
   /** Raster de trabajo: contain-fit centrado en 1024², listo para componer. */
@@ -177,6 +188,12 @@ export interface DesignAsset {
   name: string;
   /** Formato declarado por el archivo (R8 habla de SVG/PNG). */
   kind: 'svg' | 'png';
+  /**
+   * R1 pos 7: base CONGELADA al cargar (mm) — el lado en mm del dibujo al
+   * 100 % (en la carga: el D_ext vigente, con la envolvente tocando el anillo
+   * por el contain-fit R8). Editar D_ext/D_int DESPUÉS no re-escala el diseño.
+   */
+  baseSideMm: number;
 }
 
 /* -------------------------------------------------------------------------- */
