@@ -5,9 +5,10 @@ cliente por enlace y cierran la venta. Implementación del paquete de especifica
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
 **Estado**: ✅ Posición 3 de 10 — *Catálogo de mates + escena 3D + autosave* implementada y
-commiteada (`db31c08` + fix `f54e359`). ⚠️ Pendiente operativo (del QA real): **correr
-`0003_projects_owner_default.sql` en el SQL Editor** (RLS del autosave) y, después,
-`0002_profile_fields.sql` para desbloquear `/perfil`. Mapa completo y evidencia: `PROYECTO.md`.
+commiteada. Migraciones `0002` + `0003` **aplicadas** y grants de `ops/0910` ampliados
+(04-nov): `/perfil` y el autosave operan de punta a punta en el proyecto real. Pendiente
+menor: QA visual fino de la escena (swap/refit, unión metal-cuerpo, banner offline).
+Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
 
@@ -136,9 +137,9 @@ error ...`) — si algo sigue fallando, esa es la línea exacta a mirar.
 **Smoke gating** (server efímero, sin sesión): `/perfil` 307→`/auth` · logo/delete 401 ·
 `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200.
 
-**Pendiente de tu prueba manual** — correr `0002_profile_fields.sql` y luego: subir un logo
-(observá el indicador % y la vista previa), guardar los 5 campos con sesión real y eliminar la
-cuenta de prueba para ver el bloqueo neutro del re-login.
+**QA corrida con sesión real (04-nov)** — subir el logo (preview + indicador ✅) y guardar los
+5 campos ✅ (ambos flujos tras re-correr el `ops/0910_base_grants.sql` ampliado). Queda para
+cuando prefieras (no bloquea): eliminar la cuenta de prueba y ver el bloqueo neutro del re-login.
 
 ## ¿Qué quedó de la posición 3? (según `spec_tipo_de_mate.md`)
 
@@ -172,8 +173,8 @@ npm run test        # Vitest (matriz R2 + branding + catálogo, 44 tests)
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
 
 1. ✅ **Esqueleto Auth** — probada de punta a punta en el proyecto real de Supabase (04-nov)
-2. ✅ **Perfil + `resolveBranding()`** — commiteada (`3cf09d0`); pendiente correr `0002` en el proyecto real
-3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); QA visual en curso — requiere correr `0003` (RLS del autosave)
+2. ✅ **Perfil + `resolveBranding()`** — commiteada (`3cf09d0`); `0002` aplicada y QA del panel OK (04-nov)
+3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); `0003` + grants aplicados (04-nov)
 4. ⬜ Medidas/guías + cascada — `spec_tecnica_geometrica...` ← siguiente
 5. ⬜ Color PBR + quemado adaptativo — `spec_seleccion_de_color`
 6. ⬜ Rotación del diseño — `spec_rotacion_...`

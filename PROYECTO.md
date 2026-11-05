@@ -60,9 +60,8 @@ y el autosave la consume tal cual.
 
 La posición 2 entregó el **Panel de Perfil** (`/perfil`), la **librería única de branding**
 (`resolveBranding()` — fallbacks canónicos que consumirán ficha/visor/CTA desde las posiciones
-6–10) y la **Zona de peligro** (eliminar cuenta, R8). Único pendiente operativo: correr la
-migración `0002_profile_fields.sql` en el SQL Editor (checklist §7) — hasta entonces las páginas
-que leen las columnas nuevas fallan en el proyecto real con *"column does not exist"*.
+6–10) y la **Zona de peligro** (eliminar cuenta, R8). Sus migraciones ya están aplicadas en el
+proyecto real (`0002` y la `0003` que añadió la posición 3 — checklist §7).
 
 Se empezó por las posiciones 1–2 (y no por el editor) porque toda la plataforma vive detrás del
 login y la identidad del taller es la **materia prima** del editor y de los links futuros: de acá
@@ -240,7 +239,7 @@ ve su logo en el workspace y header SIEMPRE, pero la ficha/visor solo lo imprime
 | R8 | Enlaces o estados con id desconocido ⇒ fallback `camionero`, sin abortar la carga | `resolveMateModel()` + `normalizeState()` | ✅ |
 | QA1 | Fidelidad distinguible: panza Imperial ≥ 1.25× el radio del Camionero a media altura | test matemático: Imperial 1.30·R_boca (a 55 mm) vs 1.02·R_boca del Camionero ⇒ ratio ≈ 1.27 ≥ 1.25 | ✅ |
 | QA2 | Swap < 300 ms, sin resetear órbita ni iluminación | swap instantáneo de geometría + refit de cámara SOLO si excede encuadre (~300 ms, easeOut) | ⬜ visual |
-| QA3 | Al reabrir se restaura el producto activo | restore del proyecto más reciente con prioridad del borrador local más nuevo | ⬜ visual (la mitad de ficha/links: pos 9–10) |
+| QA3 | Al reabrir se restaura el producto activo | restore del proyecto más reciente con prioridad del borrador local más nuevo | ✅ con sesión real (04-nov) · la mitad de ficha/links: pos 9–10 |
 | QA4 | Escalabilidad solo-datos: un 3.er producto funciona con su entrada JSON y 0 líneas extra | el test agrega un producto más a la validación; selector y siluetas derivan del mismo array | ✅ (estructural) |
 | §6 | Entrada corrupta jamás deja la escena vacía | `validateCatalog()` descarta (<3 puntos, alturas no positivas, ids duplicados) con aviso en consola | ✅ |
 | §6 | Corte de internet durante el autosave no pierde trabajo | borrador local con timestamp + banner en pantalla + backoff 1s→30s + flush al reconectar | ✅ código |
@@ -315,10 +314,10 @@ El **editor** suma su recorrido de datos desde la posición 3 (spec tipo de mate
 | `npm install` local | ✅ 168 paquetes (las deps 3D de la posición 3 ya están adentro) |
 | Proyecto Supabase (sa-east-1) | ✅ por el usuario |
 | Migración `0001_auth_skeleton.sql` | ✅ ejecutada en el proyecto real (idempotente, sin DROP; los grants también quedaron embedidos en el archivo) |
-| Migraciones para la posición 3 | ✅ `0003_projects_owner_default.sql` (**⬜ pendiente de correr por el usuario**) — el QA real destapó que `projects.user_id` no tenía `default auth.uid()` y el INSERT del autosave moría en RLS (`new row violates row-level security policy`); el SELECT del restore nunca lo mostró |
-| **Migración `0002_profile_fields.sql`** | ⬜ **pendiente de correr por el usuario en el SQL Editor** — idempotente y sin DROP; hasta entonces `/perfil` y las páginas que leen las columnas nuevas fallan (`column does not exist`) |
+| Migración `0003_projects_owner_default.sql` | ✅ aplicada 04-nov — `projects.user_id` nace con `default auth.uid()`; el autosave ya no logea `new row violates row-level security policy` (el INSERT del editor cargó la fila con la sesión vigente) |
+| Migración `0002_profile_fields.sql` | ✅ aplicada 04-nov — confirmada por el QA del panel: los 5 campos viven en columnas de esta migración y respondieron tras ampliar los grants |
 | Bucket Storage `branding` | ➖ no requiere acción: se crea SOLO (lazy) en la primera subida de logo, con service role (privado — las URLs a las vistas se firman 1 h) |
-| Grants base (users / projects / pricing) | ✅ aplicados via `ops/0910_base_grants.sql` — el proyecto del usuario NO aplicaba GRANT automáticos |
+| Grants base (users / projects / pricing) | ✅ `ops/0910_base_grants.sql` ampliado y re-corrido 04-nov: `update` de users para `authenticated` y `select, update` para `service_role` (el proyecto del usuario NO aplica GRANT automáticos) |
 | Google provider en dashboard | ⬜ no configurado — el camino probado fue email+contraseña (funciona sin esto) |
 | `Confirm email = OFF` en dashboard | ✅ apagado 04-nov tras tropezar con el límite de emails (regla "fricción cero" R1) |
 | Replicación realtime de `public.users` | ⬜ (Dashboard → Database → Replication) — hace falta desde que existan cambios de plan (pos 8–10) |
@@ -333,7 +332,7 @@ El **editor** suma su recorrido de datos desde la posición 3 (spec tipo de mate
 | Re-crear un email ya borrado fallaba ("No pudimos crear la cuenta") | Confirm email ON ⇒ cada registro dispara email ⇒ tope de emails por hora en el plan free | Confirm email = OFF (estado correcto del producto según la spec — fricción cero) |
 | Sin botón de cerrar sesión con plan free | el logout solo existía dentro del menú visible para PRO | fix top-bar: icono de sesión siempre disponible (commit `c8edbcf`) |
 | `[projects] save: "new row violates row-level security policy"` al autosave (QA pos 3, 04-nov) | `projects.user_id` sin `default auth.uid()` (migración 0001): el INSERT del autosave llegaba con `user_id = NULL` y el `with check` de `own_projects` lo rechazaba | migración `0003_projects_owner_default.sql` — aditiva (solo SET DEFAULT); en fresh setups el patrón ya arranca acá |
-| `/perfil`: los 4 campos morían con `permission denied for table users` + el logo con "El Storage estaba caído" (QA pos 2, 04-nov) | los grants de `ops/0910` habían quedado cortos: `authenticated` solo tenía `select` de users y `service_role` nada — GRANT se evalúa ANTES de RLS, así que ni el update del panel ni el de `logo_url` del server llegaban a la política; además el catch de la ruta del logo disfrazaba el fallo de DB como 503 "Storage caído" | `ops/0910` ampliado (sumativo): `update` para `authenticated` + `select, update` para `service_role` en users; la ruta del logo ahora distingue Storage (503) de persistencia de la fila (500 `GUARDADO_FALLIDO`) con mensajes honestos en el panel |
+| `/perfil`: los 4 campos morían con `permission denied for table users` + el logo con "El Storage estaba caído" (QA pos 2, 04-nov) | los grants de `ops/0910` habían quedado cortos: `authenticated` solo tenía `select` de users y `service_role` nada — GRANT se evalúa ANTES de RLS, así que ni el update del panel ni el de `logo_url` del server llegaban a la política; además el catch de la ruta del logo disfrazaba el fallo de DB como 503 "Storage caído" | `ops/0910` ampliado (sumativo): `update` para `authenticated` + `select, update` para `service_role` en users; la ruta del logo ahora distingue Storage (503) de persistencia de la fila (500 `GUARDADO_FALLIDO`) con mensajes honestos en el panel — **confirmado 04-nov: tras re-correr el ops, campos y logo responden** |
 
 **Verificación SQL post-migración** (copiable en el SQL Editor):
 
@@ -368,18 +367,14 @@ select column_name from information_schema.columns
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
 | **Smoke gating pos 3** (server efímero 7435, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 — el guard de ruta sobrevive al nuevo canvas |
-| Git | ✅ `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
+| Git | ✅ `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
-**Pendiente de verificación con sesión real:**
-
-- **pos 3** (no requiere migración): con `npm run dev` + login, mirar la escena — el swap
-  Camionero ⇄ Imperial (¡y una y otra vez! < 300 ms, sin parpadeo), el refit de cámara al
-  mostrar el panzudo, la unión metal/cuerpo sin ranura visible, el chip "Guardado HH:MM" y el
-  banner offline cortando la red un momento.
-- **pos 2** (requiere `0002` corrida): subida del logo con pipeline completo (indicador %,
-  preview, reemplazo), guardado inline de los 5 campos y eliminar la cuenta de prueba
-  comprobando el bloqueo neutro del re-login.
-- El smoke restante de pos 1 (desbloqueo PRO live + realtime) sigue esperando a posiciones 8–10.
+**QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
+· los 5 campos del panel ✅ (ambos flujos tras ampliar los grants de `ops/0910`) · autosave en
+`projects.state` ✅ tras la 0003 · restore al reabrir ✅. Queda a tu ritmo: eliminar la cuenta
+de prueba (bloqueo neutro del re-login, R8) y la pasada fina de la escena (swap/refit de
+cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke restante de pos 1
+(desbloqueo PRO live + realtime) sigue esperando a posiciones 8–10.
 
 ---
 
