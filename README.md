@@ -243,7 +243,7 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (`feca766`, 05-nov)
 5. ✅ **Color PBR + quemado adaptativo** — commiteada (`940e69c`, 05-nov)
 6. ✅ **Rotación del diseño (grabado)** — commiteada (`f31fa32`, 05-nov)
-7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo/Auto** — commiteada (05-nov)
+7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo/Auto** — commiteada (`b8cb203`, 05-nov)
 8. ⬜ Protección (watermark cocida, 402) — auth paso B ← siguiente
 9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha`
 10. ⬜ Links comerciales + pagos MP — links + `spec_pagos`
