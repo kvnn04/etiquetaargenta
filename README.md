@@ -4,8 +4,8 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 4 de 10 — *Medidas de la virola + anatomía 3 mallas (corona superior plana) + guías coplanares + cascada + auto-giro* implementada.
-75 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
+**Estado**: ✅ Posición 5 de 10 — *Color PBR inteligente (cuerpo/virola #HEX) + quemado adaptativo del grabado* implementada sobre la posición 4 (medidas, 3 mallas, guías coplanares, cascada y auto-giro).
+107 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -18,8 +18,8 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Estilos | Tailwind CSS v4 (CSS-first, `@theme inline`) |
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
-| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + guías coplanares + auto-giro) |
-| Test unit | Vitest 4 (75 tests: matriz R2 + branding + catálogo + virola/guías pos 4 en `tests/unit/`) |
+| 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + guías coplanares + auto-giro) |
+| Test unit | Vitest 4 (107 tests: matriz R2 + branding + catálogo + virola/guías pos 4 + color pos 5 en `tests/unit/`) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
 > `@supabase/ssr` y React 19; Next 16 puede migrar por su cuenta más adelante.
@@ -47,6 +47,8 @@ simulador-mates/
     permissions.ts   → MATRIZ R2 (única fuente, alineada a spec_auth §3-R2)
     branding.ts      → resolveBranding() + approvalCode() (fallbacks canónicos R3/R5)
     catalog.ts       → REGISTRO CENTRAL DE PRODUCTOS R1 (+ validación §6 y fallback R8)
+    virola.ts        → MEDIDAS DE VIROLA: clamps R1, rangos dinámicos, métricas R2, triada guías R6
+    color.ts         → COLOR INTELIGENTE (pos 5): tabla PBR + exclusividad/recientes + quemado R4 (L 0.55)
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
@@ -173,13 +175,26 @@ red un momento para ver el banner del borrador local.
 | Auto-giro del editor a 0.75 RPM con pausa por interacción (OrbitControls) y botón Girar/Pausar | ✅ `AutoSpin` + `components/studio/auto-giro-bar.tsx` |
 | Fix de bucle infinito en React 19 / Zustand (selectores memoizados) | ✅ `components/studio/studio-scene.tsx` |
 
+## ¿Qué quedó de la posición 5? (según `spec_seleccion_de_color.md`)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Tabla PBR canónica única: 3 presets de cuerpo + 3 metálicos de virola + valores libres anotados | ✅ `lib/color.ts` (32 tests) |
+| Cobertura integral de virola: el color tiñe las 3 mallas (corona + faldón + pared interior), guías intactas | ✅ material único memoizado en `VirolaGroup` |
+| Exclusividad mutua preset ⇄ color libre + colores recientes (máx 6, dedup, por zona) | ✅ (testeado) |
+| Quemado adaptativo R4: preset ⇒ oscuro #2B2118@0.88; hex con L ≥ 0.55 ⇒ oscuro · L < 0.55 ⇒ plateado #C9CCCF@0.92 | ✅ `adaptiveLaserBurn()` (su dibujo aplicado a la escena: pos 6) |
+| Descriptor canónico para Ficha/Cotización ("Virola: #2A2A2A · Anodizado Personalizado") | ✅ `formatColorDescriptor()` (consumo: pos 9) |
+| Persistencia: bodyPreset/metalPreset/bodyColor/virolaColor/recentColors en `projects.state` + normalize tolerante (legacy `topFaceColor`) | ✅ |
+| Tarjeta "Materiales y Acabados" en panel apilado (decisión del titular: sin pestañas) | ✅ `components/studio/color-picker-card.tsx` |
+| Todo el módulo de color 100% FREE (sin candado) | ✅ (matriz R2 sin capability nueva) |
+
 ## Scripts
 
 ```bash
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola, 75 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color, 107 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -187,9 +202,9 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola, 75 test
 1. ✅ **Esqueleto Auth** — probada de punta a punta en el proyecto real de Supabase (04-nov)
 2. ✅ **Perfil + `resolveBranding()`** — commiteada (`3cf09d0`); `0002` aplicada y QA del panel OK (04-nov)
 3. ✅ **Catálogo de mates + escena 3D + autosave** — commiteada (`db31c08`); `0003` + grants aplicados (04-nov)
-4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (05-nov)
-5. ⬜ **Color PBR + quemado adaptativo** — `spec_seleccion_de_color` ← siguiente
-6. ⬜ Rotación del diseño — `spec_rotacion_...`
+4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (`feca766`, 05-nov)
+5. ✅ **Color PBR + quemado adaptativo** — commiteada (`940e69c`, 05-nov)
+6. ⬜ Rotación del diseño — `spec_rotacion_...` ← siguiente
 7. ⬜ Escala + alerta de chorreo — `spec_escala_y_alerta_...`
 8. ⬜ Protección (watermark, 402) — auth paso B
 9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha`

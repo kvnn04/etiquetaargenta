@@ -36,7 +36,7 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 4 de 10 ✅
+## 2. Dónde estamos: posición 5 de 10 ✅
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
@@ -44,8 +44,9 @@ El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero
 1. ✅ ESQUELETO AUTH
 2. ✅ Perfil + resolveBranding()
 3. ✅ Catálogo de mates + escena 3D
-4. ✅ Medidas de virola (3 mallas) + guías coplanares + cascada + auto-giro   ← ESTAMOS ACÁ
-5-7. ⬜ Editor 3D (color → rotación → escala/chorreo)
+4. ✅ Medidas de virola (3 mallas) + guías coplanares + cascada + auto-giro
+5. ✅ Editor 3D: color PBR + quemado adaptativo (cuerpo/virola #HEX)   ← ESTAMOS ACÁ
+6-7. ⬜ Editor 3D (rotación → escala/chorreo)
 8. ⬜ Protección (watermark cocida, bloqueo de rutas DOM, 402 export)
 9. ⬜ Ficha técnica export (PNG ≥2160px + PDF A4)
 10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
@@ -58,6 +59,17 @@ coplanares** en la cara superior ($R_{int}$, $R_{ext}$, $R_{\text{centro}}$ y ej
 la **cascada única** `virola.dimensionsChanged` (<100 ms), los **sliders con rangos dinámicos**
 sin puntos muertos en la tarjeta `DimensionsCard`, y el **auto-giro de 0.75 RPM** con pausa por
 interacción (OrbitControls) y botón de reanudación `AutoGiroBar`.
+
+La posición 5 creció sobre esa corona con el **sistema de color inteligente**
+(`spec_seleccion_de_color.md`): el material PBR del cuerpo y de las 3 mallas de virola sale de
+una **tabla canónica única** (`lib/color.ts` — presets Algarrobo/Calabaza/Cuero Negro y
+Alpaca/Acero/Bronce) con **color libre #HEX** por zona (virola anodizada ⇒ metalness 0.10 /
+roughness 0.45; cuerpo libre ⇒ 0.00/0.82), **colores recientes** (máx 6, por zona, dedup) y
+**exclusividad mutua** preset ⇄ hex (R3). La regla de **quemado adaptativo** del grabado (R4)
+queda implementada y expuesta: luminancia $L = 0.2126R + 0.7152G + 0.0722B$ con threshold
+**0.55** — fondo claro ⇒ quemado oscuro `#2B2118@0.88`, fondo oscuro ⇒ plateado `#C9CCCF@0.92`
+(su consumidor natural es la capa de diseño de la posición 6). UI como **tarjeta "Materiales y
+Acabados"**, tercera del panel — decisión del titular: tarjetas apiladas, sin pestañas.
 
 La posición 3 reemplazó el placeholder 3D por la **primera escena real**: el catálogo de
 productos (Camionero ⇄ Imperial) como **registro central solo-datos** (`lib/catalog.ts`), el
@@ -91,7 +103,7 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: 75 tests (matriz R2 + branding + catálogo + virola/geometría pos 4) |
+| Test unit | Vitest | 4.1.12 | hoy: 107 tests (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5) |
 | 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
 | Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
 | Se instalan SOLO al llegar su posición | `zod`, `pdf-lib`, `sharp`, `mercadopago`, Playwright | — | regla vigente: no adelantar deps |
@@ -143,9 +155,10 @@ simulador-mates/
 │   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans)
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado: pos 8–10)
 │   ├── session/plan-watcher.tsx   ← Realtime: UPDATE en users ⇒ router.refresh() (sin reload)
-│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 4: cuerpo lathe + virola 3 mallas + guías coplanares + auto-giro
+│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 4–5: cuerpo lathe + virola 3 mallas PBR + guías coplanares + auto-giro
 │   ├── studio/product-selector.tsx ← radio-cards (radiogroup) con siluetas SVG derivadas del catálogo
 │   ├── studio/dimensions-card.tsx ← TARJETA MEDIDAS pos 4: D_ext/D_int + steppers + sliders dinámicos + métricas + guías
+│   ├── studio/color-picker-card.tsx ← TARJETA COLOR pos 5: presets PBR + #HEX (dot nativo) + recientes + quemado
 │   ├── studio/auto-giro-bar.tsx   ← BARRA AUTO-GIRO pos 4: 0.75 RPM + botón Girar/Pausar + pausa por interacción
 │   └── ui/{button,input}.tsx      ← primitivas mínimas (cva), patrimonio de shadcn/ui a futuro
 │
@@ -155,7 +168,8 @@ simulador-mates/
 │   ├── catalog.ts                 ← ★ REGISTRO CENTRAL DE PRODUCTOS (R1) + validación §6 + fallback R8
 │   ├── virola.ts                  ← ★ MEDIDAS VIROLA: clamps R1, rangos dinámicos, métricas R2, triada guías R6
 │   ├── virola/cascade.ts          ← ★ CASCADA ÚNICA virola.dimensionsChanged (<100 ms, bus de eventos)
-│   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state
+│   ├── color.ts                   ← ★ COLOR INTELIGENTE pos 5: tabla PBR R1 + exclusividad/recientes R3 + quemado R4 (L 0.55)
+│   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color: pos 5)
 │   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
 │   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
 │   ├── profile.ts                 ← completitud 5×20 % + copy dinámico del panel (cliente-only)
@@ -182,6 +196,7 @@ simulador-mates/
 │   ├── unit/permissions.test.ts   ← 8 tests: invariantes de la matriz R2
 │   ├── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
 │   ├── unit/catalog.test.ts       ← 13 tests: QA1 matemático, labio anti-fuga R4, R8, corrupción §6
+│   ├── unit/color.test.ts         ← 32 tests: tabla PBR R1, exclusividad/recientes R3, quemado R4 (luminancia), descriptores R5
 │   └── unit/virola.test.ts        ← 31 tests: R1 clamps/rangos dinámicos, R2 métricas, R3 cascada <100ms, R4/R5 guías coplanares, R6 triada, R7 auto-giro
 ├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
 ├── three/visual-skeleton.ts       ← constantes visuales pos 4 + LATHE_SEAM_PHI_START
@@ -287,6 +302,22 @@ cifrar** (es la copia del propio estado del editor, sin secretos, y localStorage
 ya limita el acceso al mismo origen). Si el titular quiere cifrarlo, va junto con la capa de
 protección de la posición 8.
 
+### Posición 5 — Color PBR + quemado adaptativo (según `spec_seleccion_de_color.md`)
+
+| Ref | Requisito | Implementación | Estado |
+| :--- | :--- | :--- | :--- |
+| R1 | Tabla PBR canónica única: presets de cuerpo y virola + valores libres anotados (anodizado 0.10/0.45, cuerpo libre 0.00/0.82) | `lib/color.ts` (`METAL_PRESETS`, `BODY_PRESETS`, `ANODIZED_VIROLA_PBR`, `FREE_BODY_PBR`) | ✅ (32 tests) |
+| R2 | Cobertura integral de virola: el color tiñe corona + faldón + pared interior sin tocar guías/cuerpo | un único material memoizado en `VirolaGroup` (`resolveVirolaPbr`) compartido por las 3 mallas; overlays intactos | ✅ |
+| R3 | Exclusividad mutua preset ⇄ color libre + historial de recientes (máx 6, dedup, por zona) | `setBodyPreset/setMetalPreset` limpian el hex; `addRecentColor` por zona | ✅ (testeado) |
+| R4 | Quemado adaptativo del grabado: preset metálico ⇒ oscuro; color libre ⇒ L ≥ 0.55 oscuro #2B2118@0.88 · L < 0.55 plateado #C9CCCF@0.92 | `adaptiveLaserBurn()` (luminancia BT.709, threshold 0.55) en `lib/color.ts` | ✅ (QA tabla de casos) |
+| R5 | Descriptor canónico para Ficha/Cotización | `formatColorDescriptor()` (ej. `"Virola: #2A2A2A · Anodizado Personalizado"`) | ✅ (su CONSUMO: pos 9) |
+| R7 | Persistencia del color (bodyPreset/metalPreset/bodyColor/virolaColor/recentColors) | 5 claves nuevas del snapshot + `normalizeState` tolerante (legacy `topFaceColor` ⇒ `virolaColor`) | ✅ |
+| §4 | Tarjeta "Materiales y Acabados" (tercera del panel — decisión del titular: sin pestañas) | `components/studio/color-picker-card.tsx` (dot nativo + swatches + recientes) | ✅ |
+
+**Nota de la entrega (05-nov):** el quemado R4 todavía **no** se dibuja sobre la escena — es el
+tono del GRABADO y su consumidor natural es la capa de diseño de la posición 6 (que lo leerá de
+`adaptiveLaserBurn()`); pos 5 solo fija y testa la regla.
+
 ---
 
 ## 6. Cómo fluye en runtime (recorrido de un usuario real)
@@ -391,15 +422,17 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con la posición 4 y selector memoizado adentro) |
-| `npm run test` (Vitest) | ✅ **75/75** — 8 de matriz R2 + 23 de branding + 13 de catálogo + **31 de virola/guías/geometría pos 4** |
-| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 14.1 kB; el motor 3D viaja en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–5 adentro) |
+| `npm run test` (Vitest) | ✅ **107/107** — 8 de matriz R2 + 23 de branding + 13 de catálogo + 31 de virola/guías/geometría pos 4 + **32 de color pos 5** |
+| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 17 kB; el motor 3D viaja en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
 | **Smoke gating pos 3** (server efímero 7435, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 — el guard de ruta sobrevive al nuevo canvas |
+| **Smoke gating pos 5** (server efímero 7436, sin sesión) | `/editor` 307→`/auth` · `/auth` 200 · `/api/config/pricing` 200 — el guard y el precio sobreviven al color |
 | **QA Posición 4** (05-nov) | Corona superior plana con normales +Y ✅ · guías concéntricas coplanares en X-Z ✅ · cascada <100 ms ✅ · sliders dinámicos R1 ✅ · auto-giro 0.75 RPM + pausa/play ✅ · fix de loop React 19 memoizado ✅ |
-| Git | ✅ `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
+| **QA Posición 5** (05-nov) | Tabla PBR canónica ✅ · anodizado 0.10/0.45 y cuerpo libre 0.00/0.82 ✅ · exclusividad preset⇄hex ✅ · recientes máx 6 ✅ · quemado L 0.55 con ambas ramas ✅ |
+| Git | ✅ `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
 · los 5 campos del panel ✅ (ambos flujos tras ampliar los grants de `ops/0910`) · autosave en
@@ -430,23 +463,26 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 5 — Selección de Color (cuerpo + virola PBR + quemado adaptativo)** (fuente:
-`spec_seleccion_de_color.md`):
+**Posición 6 — Rotación del diseño SVG/PNG** (fuente: `spec_rotacion_archivo_svg_png.md`):
 
-- **Tabla PBR canónica de materiales (R1):** acabados de cuerpo (Algarrobo, Calabaza, Cuero Negro
-  y color libre `#HEX`) y presets metálicos de virola (Alpaca `#D8DADC`, Acero Mate `#A9ABAD`,
-  Bronce Cálido `#B08344` y anodizado libre `#HEX` con metalness 0.10, roughness 0.45).
-- **Cobertura integral de virola (R2):** el color `#HEX` tiñe las 3 mallas del grupo virola
-  (`virolaTopMesh`, `virolaOuterWallMesh`, `virolaInnerWallMesh`), preservando guías y desborde como overlays.
-- **Quemado adaptativo del grabado (R4):** cálculo determinista de luminancia $L = 0.2126R + 0.7152G + 0.0722B$:
-  - $L \ge 0.55$ (fondo claro) ⇒ grabado en tono quemado oscuro `#2B2118` (opacidad 0.88).
-  - $L < 0.55$ (fondo oscuro) ⇒ grabado en tono plateado `#C9CCCF` (opacidad 0.92, láser destapando anodizado).
-- **Contrato con payload y Ficha (R5/R6):** incorporación de `virolaColor` en `mateConfig`
-  (compatibilidad con `topFaceColor` legado) y persistencia en `projects.state` (R7).
-- Todo el módulo de color es **100% FREE** (sin paywall).
+- **Marco canónico (R1):** 0° = eje de nacimiento de la costura UV de la chapa plana (pivote en el
+  **centro del carril**, anclado a `LATHE_SEAM_PHI_START`); presets **0° Frente · 90° Der ·
+  180° Dorso · 270° Izq** — un solo marco para TODOS los productos del catálogo.
+- **Orden de composite (R2):** escala y espejo (pos 7) → **rotación** actúa ÚLTIMA: gira exactamente
+  la imagen que el usuario ve en pantalla (incluido el espejo); cambiar el orden queda prohibido.
+- **Representación única (R3):** escalar en [0°, 360°) con paso 0.5° — 370°⇒10°, −90°⇒270°,
+  45.25°⇒45.5°; jamás −180°/180° bipolar en UI, ficha ni payload.
+- **Imán configurable (R4):** checkbox ON por defecto, atracción ±4° al arrastrar cerca de los
+  presets; presets fijan exacto siempre; botón de reset vuelve a 0° conservando escala/espejo/imán.
+- **Re-chequeo de desborde (R6):** cada ángulo re-evalúa el trazado contra R_ext/R_int con banner
+  inmediato incluso arrastrando — motor compartido con pos 7 (el gancho queda preparado).
+- **Persistencia (R7):** `design.rotation` en `projects.state`; el imán es **solo de dispositivo**
+  (localStorage, nunca jsonb — §5); legacy sin rotation ⇒ 0° (R8).
+- **Re-muestreo (R8):** vivo sobre canvas 1024²; la rotación es **FREE (sin candado)**, no reconstruye
+  la virola ni re-inicializa luces, y respeta el tono de quemado R4 de pos 5; guías estáticas y
+  auto-giro ajenos — ninguno pausa ni resetea al otro.
 
-Y después: rotación del diseño (6) → escala/chorreo (7) → protecciones (8) →
-ficha (9) → links/pagos (10).
+Y después: escala/chorreo (7) → protecciones (8) → ficha (9) → links/pagos (10).
 
 ---
 
