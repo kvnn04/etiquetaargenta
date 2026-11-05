@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Box,
   Camera,
@@ -20,7 +21,28 @@ import {
 import TopBar from '@/components/editor/top-bar';
 import PaywallModal, { type PriceInfo } from '@/components/paywall/paywall-modal';
 import PlanWatcher from '@/components/session/plan-watcher';
+import ProductSelector from '@/components/studio/product-selector';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
+import { useProjectPersistence } from '@/lib/projects/use-autosave';
+import { useEditorStore } from '@/lib/store/editor';
 import { Button } from '@/components/ui/button';
+
+/**
+ * La escena se carga lazy y sin SSR (R3F/Canvas es client-only): así la shell
+ * hidrata siempre, y el motor 3D (three ~600 kB) no entra en el HTML inicial.
+ */
+const StudioScene = dynamic(() => import('@/components/studio/studio-scene'), {
+  ssr: false,
+  loading: () => (
+    <div className="absolute inset-0 flex items-center justify-center">
+      <div className="text-center">
+        <Box className="mx-auto h-8 w-8 animate-pulse text-gold-soft/70" />
+        <p className="mt-3 text-xs text-stone-500">Cargando escena 3D…</p>
+      </div>
+    </div>
+  ),
+});
 
 export interface ShellProfile {
   exists: boolean;
@@ -47,6 +69,27 @@ function graceDaysLeft(graceExpiresAt: string | null): number | null {
   return Math.max(0, Math.ceil(diff / 86_400_000));
 }
 
+/**
+ * Chip de estado del autosave (spec §5: "al abrir el simulador se restaura el
+ * último mateModel guardado" — muestra que no hay trabajo perdido).
+ */
+function SaveChip({ dirty, lastSavedAt }: { dirty: boolean; lastSavedAt: string | null }) {
+  const label = dirty
+    ? 'Guardando…'
+    : lastSavedAt
+      ? `Guardado ${new Date(lastSavedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+      : 'Sincronizado';
+  return (
+    <span
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+        dirty ? 'border-gold/40 text-gold-soft' : 'border-emerald-500/30 text-emerald-400'
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function EditorShell({
   userId,
   profile,
@@ -58,6 +101,40 @@ export default function EditorShell({
   const [priceError, setPriceError] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [actionHint, setActionHint] = useState<string | null>(null);
+
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const mateModel = useEditorStore((s) => s.mateModel);
+  const setMateModel = useEditorStore((s) => s.setMateModel);
+  const dirty = useEditorStore((s) => s.dirty);
+  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+  const offlineDraft = useEditorStore((s) => s.offlineDraft);
+
+  /* Restore del proyecto más reciente (R1 Happy Path: "restaura su último
+   * proyecto guardado… camionero por defecto si no existe estado"). El draft
+   * local más nuevo que el backend manda (last-write-wins, §6) y se marca
+   * dirty para que el autosave lo lleve al backend apenas pueda. */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const server = await loadLatestProject(supabase);
+      const draft = loadLocalDraft();
+      if (!alive) return;
+      const draftWins =
+        draft && (!server?.updatedAt || Date.parse(draft.updatedAt) > Date.parse(server.updatedAt));
+      if (draftWins && draft) {
+        useEditorStore.getState().restoreState(draft.state, server?.projectId ?? null);
+        useEditorStore.getState().markDirty();
+      } else if (server) {
+        useEditorStore.getState().restoreState(server.state, server.projectId);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [supabase]);
+
+  /* Autosave (debounce 2 s, last-write-wins, borrador offline con backoff). */
+  useProjectPersistence(supabase);
 
   useEffect(() => {
     let alive = true;
@@ -102,39 +179,56 @@ export default function EditorShell({
       />
 
       <main className="mx-auto grid w-full max-w-6xl flex-1 gap-6 px-4 py-6 lg:grid-cols-[1fr_340px]">
-        {/* Placeholder de escena 3D (posiciones 3–7) */}
-        <section className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-2xl border border-line">
-          <div
-            className="absolute inset-0"
-            style={{ background: 'radial-gradient(ellipse at 50% 40%, #292521 0%, #171719 45%, #090a0d 100%)' }}
-          />
-          <div className="relative z-10 max-w-md px-8 text-center">
-            <Box className="mx-auto h-10 w-10 text-gold-soft/80" />
-            <h2 className="mt-3 text-lg font-bold text-cream">Escena 3D</h2>
-            <p className="mt-2 text-xs leading-relaxed text-stone-400">
-              El motor del editor (catálogo Camionero ⇄ Imperial, virola milimétrica, guías y
-              diseño SVG/PNG) se implementa en las posiciones 3–7 de{' '}
-              <span className="font-mono">orden_de_implementacion.md</span>.
-            </p>
-            <p className="mt-3 text-[11px] text-stone-600">
-              Esta página verifica el esqueleto: sesión, plan desde el server, gating de matriz R2
-              y precio dinámico.
-            </p>
+        {/* Estudio 3D (posición 3: catálogo Camionero ⇄ Imperial con virola esqueleto) */}
+        <section className="relative min-h-[420px] overflow-hidden rounded-2xl border border-line lg:min-h-0">
+          <StudioScene />
+          <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 backdrop-blur">
+            Estudio 3D
           </div>
         </section>
 
-        {/* Panel de estado del plan */}
+        {/* Panel derecho */}
         <aside className="space-y-4">
-          {actionHint && (
-            <div className="rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold-soft">
-              {actionHint}
-            </div>
-          )}
-
           {!profile.exists && (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
               No existe fila en <span className="font-mono">public.users</span> (¿corrió el trigger{' '}
               <span className="font-mono">on_auth_user_created</span>?). Se usa plan <b>free</b> como fallback.
+            </div>
+          )}
+
+          {/* PRIMERA tarjeta (§4 spec_tipo_de_mate): Configuración del Producto */}
+          <div className="rounded-xl border border-line bg-panel p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400">
+                  Configuración del Producto
+                </h3>
+                <p className="mt-1 text-[10px] leading-relaxed text-stone-600">
+                  La virola conserva diámetros, guías y grabado al cambiar (R3 de{' '}
+                  <span className="font-mono">spec_tipo_de_mate</span>).
+                </p>
+              </div>
+              <SaveChip dirty={dirty} lastSavedAt={lastSavedAt} />
+            </div>
+            <div className="mt-3">
+              <ProductSelector
+                activeId={mateModel}
+                plan={profile.plan}
+                onSelect={setMateModel}
+                onLockedSelect={() => setPaywallOpen(true)}
+              />
+            </div>
+            {offlineDraft && (
+              <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-relaxed text-amber-200">
+                Sin conexión: tus cambios quedaron guardados en este dispositivo — se sincronizan
+                al reconectar.
+              </p>
+            )}
+          </div>
+
+          {actionHint && (
+            <div className="rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold-soft">
+              {actionHint}
             </div>
           )}
 
@@ -196,15 +290,17 @@ export default function EditorShell({
               })}
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-stone-600">
-              El client solo <b>decora</b>: en posiciones 8–10 cada acción exige ticket server-side
+              El cliente solo <b>decora</b>: en posiciones 8–10 cada acción exige ticket server-side
               y un <span className="font-mono">402</span> abre este mismo Paywall (R7/R8).
             </p>
           </div>
         </aside>
       </main>
 
-      <footer className="border-t border-line px-4 py-3 text-center text-[10px] text-stone-600">
-        Posición 1 del plan: esqueleto de Auth + matriz R2 + gating de UI · fuente única:{' '}
+      <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
+        Posición 3 del plan: catálogo de mates + escena 3D (schema de{' '}
+        <span className="font-mono">projects.state</span> en autosave · fuente única:{' '}
+        <span className="font-mono">spec_tipo_de_mate.md</span>) · matriz R2:{' '}
         <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span>
       </footer>
 

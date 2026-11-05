@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "Simulador 3D para grabado láser de mates — MVP SaaS (spec paquete simulador_Mates)",
+  "description": "Simulador 3D para grabado laser de mates - MVP SaaS (paquete de specs simulador_Mates)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.2",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
     "class-variance-authority": "^0.7.1",
@@ -20,13 +22,16 @@
     "next": "^15.5.29",
     "react": "^19.1.10",
     "react-dom": "^19.1.10",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "three": "^0.187.0",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.4",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.187.0",
     "tailwindcss": "^4.3.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.12"
