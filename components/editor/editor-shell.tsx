@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
+  AlertTriangle,
   Box,
   Camera,
   Check,
@@ -18,8 +19,14 @@ import {
   type Capability,
   type Plan,
 } from '@/lib/permissions';
+import { resolveBranding } from '@/lib/branding';
+import { resolveMateModel } from '@/lib/catalog';
+import { overflowBannerText, type OverflowCheck } from '@/lib/overflow';
+import { captureFichaSnapshot, currentOverflowCheck } from '@/lib/quote/snapshot';
 import TopBar from '@/components/editor/top-bar';
 import PaywallModal, { type PriceInfo } from '@/components/paywall/paywall-modal';
+import QuoteModal from '@/components/quote/quote-modal';
+import { runFotoHdExport } from '@/components/quote/foto-hd';
 import PlanWatcher from '@/components/session/plan-watcher';
 import ProductSelector from '@/components/studio/product-selector';
 import DimensionsCard from '@/components/studio/dimensions-card';
@@ -57,14 +64,33 @@ export interface ShellProfile {
   graceExpiresAt: string | null;
   /** URL firmada del thumb del logo (solo para el header del propio taller). */
   logoThumbUrl?: string | null;
+  /** Pos 9 (R4): pie de la Ficha con CTA de WhatsApp. */
+  whatsappE164: string | null;
+  /** Pos 9 (R4): pie de la Ficha con el handle de Instagram. */
+  instagramHandle: string | null;
 }
 
-/** Acciones pay-gated: la SEAM de licencia ya vive (pos 8: /api/exports/ticket
- * con 402 FREE); el ARTEFACTO gráfico llega con las posiciones 9–10. */
-const GATED_ACTIONS: Array<{ cap: Capability; label: string; icon: typeof Camera; future: string }> = [
-  { cap: 'export.hd', label: 'Foto HD', icon: Camera, future: '9' },
-  { cap: 'export.hd', label: 'Ficha PNG / PDF', icon: FileDown, future: '9' },
-  { cap: 'links.generate', label: 'Generar Enlace Comercial', icon: Link2, future: '10' },
+/* Acciones pay-gated — pos 9: Foto HD y Ficha Técnica YA EXPORTAN (ticket R7
+ * + confirmación de desborde). "Ficha" abre el modal #quoteModal para AMBOS
+ * planes (FREE ve la grilla con candado: al exportar, el server responde 402
+ * y abre el Paywall — jamás una decisión client-side). */
+type GatedActionKind = 'foto' | 'ficha' | 'link';
+const GATED_ACTIONS: Array<{
+  cap: Capability;
+  label: string;
+  icon: typeof Camera;
+  action: GatedActionKind;
+  future?: string;
+}> = [
+  { cap: 'export.hd', label: 'Foto HD', icon: Camera, action: 'foto' },
+  { cap: 'export.hd', label: 'Ficha Técnica (PNG / PDF)', icon: FileDown, action: 'ficha' },
+  {
+    cap: 'links.generate',
+    label: 'Generar Enlace Comercial',
+    icon: Link2,
+    action: 'link',
+    future: '10',
+  },
 ];
 
 function graceDaysLeft(graceExpiresAt: string | null): number | null {
@@ -111,6 +137,31 @@ export default function EditorShell({
    * en pausa hasta que el tallerista lo reactive con el botón. */
   const [spinning, setSpinning] = useState(false);
   const pauseSpin = useCallback(() => setSpinning(false), []);
+
+  /* ── Pos 9: Ficha Técnica (modal #quoteModal) + Foto HD ───────────────────
+   * obsText: R5/§5 — el texto libre es de SESIÓN (memoria de la shell): si el
+   * modal se cierra y re-abre, las observaciones sobreviven; JAMÁS viaja al
+   * jsonb de projects. */
+  const [quoteOpen, setQuoteOpen] = useState(false);
+  const [obsText, setObsText] = useState('');
+  const [fotoBusy, setFotoBusy] = useState(false);
+  /* R5 spec_escala: confirmación de desborde como mini-diálogo reutilizable
+   * (mismos CTA "Exportar de todas formas" / "Volver a ajustar"). */
+  const [overflowConfirm, setOverflowConfirm] = useState<OverflowCheck | null>(null);
+  const overflowResolveRef = useRef<((ok: boolean) => void) | null>(null);
+
+  const askOverflowConfirm = useCallback((check: OverflowCheck): Promise<boolean> => {
+    return new Promise((resolve) => {
+      overflowResolveRef.current = resolve;
+      setOverflowConfirm(check);
+    });
+  }, []);
+
+  const answerOverflowConfirm = useCallback((ok: boolean) => {
+    setOverflowConfirm(null);
+    overflowResolveRef.current?.(ok);
+    overflowResolveRef.current = null;
+  }, []);
 
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const mateModel = useEditorStore((s) => s.mateModel);
@@ -172,12 +223,101 @@ export default function EditorShell({
       }).format(price.amount)
     : null;
 
-  function handleGatedClick(cap: Capability, future: string) {
-    if (gate(cap, profile.plan)) {
-      setActionHint(`“${CAPABILITY_LABELS[cap]}” llega con la posición ${future} del plan de implementación.`);
-    } else {
-      // FREE: ningún error técnico — se abre el Paywall (§4 spec_auth).
-      setPaywallOpen(true);
+  function handleGatedClick(entry: (typeof GATED_ACTIONS)[number]): void {
+    /* Ficha Técnica (pos 9): ENTRA libre Y pro — la grilla es la vista previa
+     * del snapshot y el access real lo decide el SERVER al pedir el ticket
+     * (402 ⇒ Paywall, R7). */
+    if (entry.action === 'ficha') {
+      setActionHint(null);
+      setQuoteOpen(true);
+      return;
+    }
+    if (gate(entry.cap, profile.plan)) {
+      if (entry.action === 'foto') {
+        void handleFotoHd();
+        return;
+      }
+      // Pos 10 (hoy): hint honesto, sin fingir funcionalidad.
+      setActionHint(
+        `“${CAPABILITY_LABELS[entry.cap]}” llega con la posición ${entry.future} del plan de implementación.`,
+      );
+      return;
+    }
+    // FREE: ningún error técnico — se abre el Paywall (§4 spec_auth).
+    setPaywallOpen(true);
+  }
+
+  /* ── Pos 9: FOTO HD — ticket R7 + confirmación de desborde + descarga ───── */
+  async function handleFotoHd(): Promise<void> {
+    if (fotoBusy) return;
+    setActionHint(null);
+    const s = useEditorStore.getState();
+    const brand = resolveBranding(
+      {
+        brandName: profile.brandName,
+        displayName: profile.baseName,
+        logoThumbUrl: profile.logoThumbUrl ?? null,
+        instagramHandle: profile.instagramHandle,
+      },
+      { plan: profile.plan },
+    );
+    const check = currentOverflowCheck({
+      hasDesignAsset: s.designAsset != null,
+      inkEnvelope: s.inkEnvelope,
+      inkScanDegraded: s.inkScanDegraded,
+      baseSideMm: s.designAsset?.baseSideMm ?? s.extDiameter,
+      extDiameterMm: s.extDiameter,
+      intDiameterMm: s.intDiameter,
+      scalePct: s.design.scale,
+    });
+    /* Hash ligado al contenido VIGENTE (R7): el mismo contrato de captura de
+     * la ficha, sin observaciones (la foto no imprime texto). */
+    const snap = captureFichaSnapshot({
+      state: {
+        mateModel: s.mateModel,
+        extDiameter: s.extDiameter,
+        intDiameter: s.intDiameter,
+        bodyPreset: s.bodyPreset,
+        metalPreset: s.metalPreset,
+        bodyColor: s.bodyColor,
+        virolaColor: s.virolaColor,
+        design: s.design,
+      },
+      designAssetPresent: s.designAsset != null,
+      hasProject: s.projectId != null,
+      overflow: check,
+      inkDegraded: s.inkScanDegraded,
+      brand,
+      whatsappE164: profile.whatsappE164,
+    });
+
+    setFotoBusy(true);
+    try {
+      const downloaded = await runFotoHdExport({
+        view: {
+          mateModel: s.mateModel,
+          extDiameterMm: s.extDiameter,
+          intDiameterMm: s.intDiameter,
+          bodyPreset: s.bodyPreset,
+          metalPreset: s.metalPreset,
+          bodyColor: s.bodyColor,
+          virolaColor: s.virolaColor,
+          rotationDeg: s.design.rotation,
+          mirror: s.design.mirror,
+          scalePct: s.design.scale,
+          designAsset: s.designAsset?.canvas ?? null,
+        },
+        check,
+        snapshotHash: snap.hash,
+        tallerTitle: brand.title,
+        productId: resolveMateModel(s.mateModel).id,
+        confirmOverflow: askOverflowConfirm,
+        onPaywallRequest: () => setPaywallOpen(true),
+        onError: (msg) => setActionHint(msg),
+      });
+      if (downloaded) setActionHint('Foto HD descargada ✓');
+    } finally {
+      setFotoBusy(false);
     }
   }
 
@@ -310,20 +450,23 @@ export default function EditorShell({
               Acciones pay-gated
             </h3>
             <div className="mt-3 space-y-2">
-              {GATED_ACTIONS.map(({ cap, label, icon: Icon, future }) => {
-                const unlocked = gate(cap, profile.plan);
+              {GATED_ACTIONS.map((entry) => {
+                const unlocked = gate(entry.cap, profile.plan);
                 return (
                   <Button
-                    key={label}
+                    key={entry.label}
                     variant="outline"
                     size="md"
                     className="w-full justify-start"
-                    onClick={() => handleGatedClick(cap, future)}
+                    disabled={fotoBusy && entry.action === 'foto'}
+                    onClick={() => handleGatedClick(entry)}
                   >
-                    <Icon className="h-4 w-4" />
-                    <span className="flex-1 text-left text-xs">{label}</span>
+                    <entry.icon className="h-4 w-4" />
+                    <span className="flex-1 text-left text-xs">{entry.label}</span>
                     {unlocked ? (
-                      <span className="text-[9px] text-stone-600">pos. {future}</span>
+                      entry.future ? (
+                        <span className="text-[9px] text-stone-600">pos. {entry.future}</span>
+                      ) : null
                     ) : (
                       <Lock className="h-3.5 w-3.5 text-rose-400" />
                     )}
@@ -332,17 +475,20 @@ export default function EditorShell({
               })}
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-stone-600">
-              El cliente solo <b>decora</b>: la ruta real <span className="font-mono">POST /api/exports/ticket</span> ya
-              está encendida (pos 8) — una cuenta FREE recibe <span className="font-mono">402</span> y este mismo
-              Paywall se abre (jamás un error crudo). El artefacto HD sale con la 9.
+              Foto HD y Ficha Técnica YA EXPORTAN (pos 9): el ticket se emite y verifica en el
+              servidor antes de adjuntar el archivo — una cuenta FREE recibe{' '}
+              <span className="font-mono">402</span> y este mismo Paywall se abre (jamás un error
+              crudo). El Enlace Comercial llega con la 10.
             </p>
           </div>
         </aside>
       </main>
 
       <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
-        Posición 8 del plan: protección FREE (watermark cocida + bloqueo DOM + 402 en export — fuente
-        única: <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span>) · posición 7:{' '}
+        Posición 9 del plan: Ficha Técnica (snapshot inmutable · grilla de 9 tarjetas · PNG HD 2160 ·
+        PDF A4 · Foto HD — fuente única:{' '}
+        <span className="font-mono">spec_detalle_del_modelo_en_ficha.md</span>) · posición 8:{' '}
+        <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span> · posición 7:{' '}
         <span className="font-mono">spec_escala_y_alerta_de_desborde.md</span> · posición 6:{' '}
         <span className="font-mono">spec_rotacion_archivo_svg_png.md</span> · posición 5:{' '}
         <span className="font-mono">spec_seleccion_de_color.md</span>
@@ -353,6 +499,56 @@ export default function EditorShell({
         price={price}
         priceError={priceError}
         onClose={() => setPaywallOpen(false)}
+      />
+
+      {/* R5 spec_escala (pos 9): mini-diálogo de confirmación EXACTa ante desborde
+          para la Foto HD — los CTA son los de la spec ("Exportar de todas formas" /
+          "Volver a ajustar"); en Ficha Técnica el panel vive DENTRO del modal. */}
+      {overflowConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmar export con desborde"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) answerOverflowConfirm(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl border border-amber-500/45 bg-panel p-5 shadow-2xl">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+              <p className="text-xs leading-relaxed text-amber-200">
+                {overflowBannerText(overflowConfirm)}
+              </p>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => answerOverflowConfirm(true)}>
+                Exportar de todas formas
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => answerOverflowConfirm(false)}>
+                Volver a ajustar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pos 9: modal #quoteModal — snapshot inmutable + grilla + export.
+          Las observaciones viven en la shell (sesión): sobreviven re-abrir. */}
+      <QuoteModal
+        open={quoteOpen}
+        onClose={() => setQuoteOpen(false)}
+        plan={profile.plan}
+        profile={{
+          brandName: profile.brandName,
+          baseName: profile.baseName,
+          logoThumbUrl: profile.logoThumbUrl ?? null,
+          whatsappE164: profile.whatsappE164,
+          instagramHandle: profile.instagramHandle,
+        }}
+        onPaywallRequest={() => setPaywallOpen(true)}
+        observaciones={obsText}
+        onObservacionesChange={setObsText}
       />
     </div>
   );

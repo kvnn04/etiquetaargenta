@@ -39,6 +39,7 @@ import { useEditorStore } from '@/lib/store/editor';
 import { adaptiveLaserBurn, resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
 import { EDITOR_AUTO_SPIN_RPM, rpmToRadPerSec } from '@/lib/virola';
 import { evaluateOverflow } from '@/lib/overflow';
+import { composeEngravingCanvas } from '@/lib/compose-engraving';
 import {
   BORDES_DASH_MM,
   CENTRO_DASH_MM,
@@ -386,61 +387,9 @@ const ENGRAVING_CANVAS_PX = 1024; // R8: canvas de trabajo en vivo
 /** ε sobre la corona para no pelear Z con el metal (guías: +0.2). */
 const ENGRAVING_LIFT_MM = 0.02;
 
-function composeEngravingCanvas(
-  canvas: HTMLCanvasElement,
-  asset: HTMLCanvasElement | null,
-  rotationDeg: number,
-  mirror: boolean,
-  scalePct: number,
-  burn: { color: string },
-  rInMm: number,
-  rOutMm: number,
-): void {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const C = canvas.width / 2;
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!asset || rOutMm <= 0 || rInMm >= rOutMm) return;
-
-  const pxPerMm = C / rOutMm; // UV polar: el borde del canvas ES R_ext
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high'; // R8: máxima interpolación del PNG
-
-  // Pipeline canónico R2 sobre el PIVOTE (QA1: nunca se desliza). El orden de
-  // llamadas canvas ES el orden canónico: la matriz resultante T·R·Escala·Espejo
-  // aplica Escala primero, luego Espejo y por último Rotación — así la rotación
-  // gira EXACTAMENTE la imagen que el usuario ve (QA2: espejo + 90°/270° siguen
-  // en sentido visual horario).
-  ctx.save();
-  ctx.translate(C, C);
-  ctx.rotate((rotationDeg * Math.PI) / 180);
-  ctx.scale(mirror ? -1 : 1, 1);
-  ctx.scale(scalePct / 100, scalePct / 100);
-  // Dibujo FULL-canvas del ráster de trabajo (R1: base congelada = el 100 %
-  // deja la envolvente tocando el anillo — jamás inscrito en el hueco).
-  ctx.translate(-C, -C);
-  ctx.drawImage(asset, 0, 0);
-  ctx.restore();
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-  // 2) Tinte ÚNICO con el tono de quemado (pos 5 R4 ⇒ grabado láser)
-  //    monótono: conserva la silueta del trazado, no el color de origen.
-  ctx.globalCompositeOperation = 'source-in';
-  ctx.fillStyle = burn.color;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // 3) Máscara anular: el grabado NO sale de la banda (R_int → R_ext).
-  ctx.globalCompositeOperation = 'destination-in';
-  ctx.beginPath();
-  ctx.arc(C, C, C, 0, Math.PI * 2); // exterior = R_ext
-  ctx.arc(C, C, (rInMm / rOutMm) * C, 0, Math.PI * 2, true); // agujero interior
-  ctx.fillStyle = '#000';
-  ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
-}
+/* El compositor del grabado (pipeline ESCALA→ESPEJO→ROTACIÓN al mismo pivote)
+ * vive en `lib/compose-engraving.ts` — ÚNICA FUENTE compartida con la Ficha HD
+ * (pos 9 llama con ≥2048²; acá R8 sigue en 1024²). */
 
 function DesignEngravingLayer() {
   const int = useEditorStore((s) => s.intDiameter);

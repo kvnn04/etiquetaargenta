@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import {
   EXPORT_TICKET_HASH_MAX,
   EXPORT_TICKET_TTL_MS,
   signExportTicket,
 } from '@/lib/exports/ticket';
+import { planOf, ticketSecret, type ExportsPlan } from '@/lib/exports/ticket-server';
 
 /**
  * POST /api/exports/ticket — servidor del *ticket de export* (pos 8, la matriz
@@ -29,30 +29,7 @@ import {
  */
 export const runtime = 'nodejs'; // node:crypto para el HMAC
 export const dynamic = 'force-dynamic'; // sesión por cookies: nada de cache
-
-function ticketSecret(): string {
-  return process.env.EXPORT_TICKET_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-}
-
-type Plan = 'free' | 'pro' | 'pro_grace';
-
-/** Plan autoritativo desde la base (service-role). Null si la fila no existe. */
-async function planOf(userId: string): Promise<Plan | null> {
-  const service = createSupabaseServiceClient();
-  const { data, error } = await service
-    .from('users')
-    .select('plan')
-    .eq('id', userId)
-    .maybeSingle<{ plan: string }>();
-  if (error) {
-    console.error('[exports/ticket plan read]:', error.message);
-    // Fallo de lectura ⇒ fail-closed: se trata como free (402), jamás como pro.
-    return 'free';
-  }
-  if (!data?.plan) return null; // sin fila (trigger no corrió) ⇒ fallback en caller
-  if (data.plan === 'pro' || data.plan === 'pro_grace') return data.plan;
-  return 'free';
-}
+/* planOf() y ticketSecret() compartidos con /verificar y /api/exports (QA). */
 
 export async function POST(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
@@ -76,7 +53,7 @@ export async function POST(request: NextRequest) {
 
   const resolved = await planOf(user.id);
   // Sin fila en users ⇒ 'free' (fail-closed, pattern de la shell del editor).
-  const plan: Plan = resolved ?? 'free';
+  const plan: ExportsPlan = resolved ?? 'free';
 
   if (plan === 'free') {
     // La matriz R2 encendida: FREE ⇒ 402 + payload que la UI traduce a Paywall.

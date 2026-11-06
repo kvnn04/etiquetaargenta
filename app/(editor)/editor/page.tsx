@@ -23,7 +23,9 @@ export default async function EditorPage() {
 
   const { data } = await supabase
     .from('users')
-    .select('id, base_name, plan, grace_expires_at, brand_name, logo_thumb_url, deleted_at')
+    .select(
+      'id, base_name, plan, grace_expires_at, brand_name, logo_thumb_url, deleted_at, whatsapp_e164, instagram_handle',
+    )
     .eq('id', user.id)
     .maybeSingle<UserRecord>();
 
@@ -46,6 +48,9 @@ export default async function EditorPage() {
     plan,
     graceExpiresAt: data?.grace_expires_at ?? null,
     logoThumbUrl,
+    // Pos 9 (R4): pie de la Ficha con CTA de WhatsApp + handle de Instagram.
+    whatsappE164: data?.whatsapp_e164 ?? null,
+    instagramHandle: data?.instagram_handle ?? null,
   };
 
   return <EditorShell userId={user.id} profile={profile} />;
