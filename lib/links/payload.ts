@@ -42,6 +42,23 @@ export interface LinkVariantDraft {
   mirror: boolean;
 }
 
+/**
+ * R7 (10A — desviación ADITIVA documentada): estado de margen CONGELADO al
+ * publicar, para que el editor lo muestre en su panel de versiones ("la
+ * variante queda marcada internamente como con riesgo"). El CLIENTE del link
+ * JAMÁS lo lee (su acordeón solo trae Modelo/Virola/Cuerpo, la spec §3-R7).
+ * Es un campo opcional: los payloads que no lo traen son compatibles al 100%.
+ */
+export interface LinkVariantRisk {
+  status: 'none' | 'safe' | 'overflow';
+  /** Exceso máximo hacia afuera (mm, 1 decimal) — null si no aplica. */
+  outsideMm: number | null;
+  /** Atravesado máximo hacia el interior (mm, 1 decimal) — null si no aplica. */
+  innerMm: number | null;
+  /** §6 spec_escala: envolvente degradada ⇒ "Detección aproximada". */
+  approx: boolean;
+}
+
 /** Bloque workshop del payload (R4) — branding ya resuelto por el SERVER. */
 export interface LinkWorkshopBlock {
   name: string;
@@ -72,6 +89,8 @@ export interface LinkVariantPayload {
   /** Grados módulo 360 (R4). */
   rotation: number;
   mirror: boolean;
+  /** R7 10A: márgenes congelados — solo la vista del editor lo consume. */
+  risk: LinkVariantRisk | null;
 }
 
 /** payload completo (R4). */
@@ -135,6 +154,8 @@ export function buildLinkPayload(input: {
   mateConfig: LinkMateConfigBlock;
   variants: readonly LinkVariantDraft[];
   assetUrl: string;
+  /** R7 10A: margen congelado por variante (el editor lo calcula por escala). */
+  riskByVariant?: Partial<Record<LinkVariantId, LinkVariantRisk>>;
 }): LinkPayload {
   return {
     schemaVersion: LINK_SCHEMA_VERSION,
@@ -150,9 +171,54 @@ export function buildLinkPayload(input: {
       scale: scaleFractionFromPct(v.scalePct),
       rotation: rotationDegPayload(v.rotationDeg),
       mirror: v.mirror,
+      risk: input.riskByVariant?.[v.id] ?? null,
     })),
   };
+}
 
+/* -------------------------------------------------------------------------- */
+/* Draft persistible del editor (projects.state.linkDraft)                     */
+/* ---------------------------------------------------------------------------- */
+
+/**
+ * Fila del borrador de variantes que el PROJECT STATE persiste (decisión
+ * 10A: labels y configs no se pierden al recargar). `included` controla si
+ * esa fila va al publish (el payload solo recibe las incluidas). SOLO vive
+ * en el jsonb del proyecto — jamás en el payload del link congelado.
+ */
+export interface StoredVariantRow extends LinkVariantDraft {
+  included: boolean;
+}
+
+/**
+ * Normalizador tolerante del jsonb (mismo criterio que normalizeState):
+ * ≤3 filas, ids válidos y sin duplicados (primera ocurrencia gana), label
+ * ≤40 con truncado elegante, escala/rotación a la canónica, `included`
+ * booleano. Basura ⇒ fila ignorada; nada explota la carga del proyecto.
+ */
+export function normalizeVariantRows(raw: unknown): StoredVariantRow[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: StoredVariantRow[] = [];
+  const seen = new Set<LinkVariantId>();
+  for (const item of raw.slice(0, LINK_VARIANTS_MAX)) {
+    const candidate = (item ?? {}) as Record<string, unknown>;
+    if (!isLinkVariantId(candidate.id) || seen.has(candidate.id)) continue;
+    seen.add(candidate.id);
+    rows.push({
+      id: candidate.id as LinkVariantId,
+      label: normalizeVariantLabel(candidate.label),
+      scalePct: normalizeScale(candidate.scalePct), // % canónico [70..110]
+      rotationDeg: rotationDegPayload(candidate.rotationDeg),
+      mirror: Boolean(candidate.mirror),
+      included: Boolean(candidate.included),
+    });
+  }
+  return rows;
+}
+
+/** Variantes que van al publish (las incluidas, en orden A→C). */
+export function includedRows(rows: readonly StoredVariantRow[]): StoredVariantRow['id'][] {
+  return rows.filter((r) => r.included).map((r) => r.id);
 }
 
 /**

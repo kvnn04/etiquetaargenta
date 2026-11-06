@@ -49,6 +49,9 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   const path = request.nextUrl.pathname;
 
+  /* Pos 10A (R8, spec shareable-link §6): /v/[linkId] es PÚBLICA de manera
+   * DELIBERADA — abrir/ver/aprobar un enlace no paga ni loguea. JAMÁS agregar
+   * /v a la lista que redirect a /auth: rompería el Modo Cliente completo. */
   if (!user && (path.startsWith('/editor') || path.startsWith('/perfil'))) {
     const url = request.nextUrl.clone();
     url.pathname = '/auth';

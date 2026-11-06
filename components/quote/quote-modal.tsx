@@ -132,6 +132,7 @@ export default function QuoteModal({
   onPaywallRequest,
   observaciones,
   onObservacionesChange,
+  linkId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -141,6 +142,10 @@ export default function QuoteModal({
   /** R5/§5: texto libre de sesión — vive en la shell, sobrevive a re-abrir. */
   observaciones: string;
   onObservacionesChange: (text: string) => void;
+  /** Pos 10A: linkId del enlace VIGENTE del proyecto. La shell lo consulta
+   * (GET /api/links, primera versión sin expirar) y acá queda ligado al
+   * snapshot inmutable de la Ficha (input PASSTHROUGH dejado en pos 9). */
+  linkId: string | null;
 }) {
   const renderPlateRef = useRef<HTMLCanvasElement | null>(null);
   const obsRef = useRef(observaciones);
@@ -194,12 +199,13 @@ export default function QuoteModal({
       inkDegraded: s.inkScanDegraded,
       brand,
       whatsappE164: profile.whatsappE164,
+      linkId, // pos 10A: el enlace comercial vigente queda ligado DNA del snapshot
       observaciones: obsRef.current,
     });
     setSnapshot(snap);
     setConfirmKind(null); // nuevo snapshot ⇒ confirma de nuevo ante desborde
     return snap;
-  }, [plan, profile]);
+  }, [plan, profile, linkId]);
 
   /* ── Apertura / Actualizar: snapshot + vista HD del render (import lazy) ── */
   useEffect(() => {

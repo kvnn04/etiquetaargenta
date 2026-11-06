@@ -37,6 +37,15 @@
  *   inkEnvelope  envolvente radial de tinta al 100% en mm — DERIVADA de sesión
  *                (se mide al cargar el asset); JAMÁS se persiste (R8: el
  *                estado de margen se re-calcula al abrir/evaluar).
+ *   inkScanDegraded true ⇒ el raster del chequeo falló y todo lo derivado cae
+ *                a modo envolvente conservador ("Detección aproximada").
+ *
+ * claves pos 10A (spec_ficha_comercial_interactiva_shareable_link §5):
+ *   linkDraft    borrador de variantes del Enlace Comercial (≤3 filas A–C con
+ *                label/escala/rotación/espejo + included): TODO lo definido
+ *                persiste en projects.state para no redefinir al re-publicar.
+ *                El PAYLOAD congelado es OTRO registro (tabla links); este
+ *                draft NO viaja al payload — es el borrador del editor.
  * ============================================================================ */
 
 import { create } from 'zustand';
@@ -52,6 +61,7 @@ import {
 import { normalizeRotation, DEFAULT_DESIGN_STATE, type DesignState, type DesignAsset } from '@/lib/design';
 import { normalizeScale } from '@/lib/overflow';
 import type { InkEnvelope } from '@/lib/overflow';
+import type { StoredVariantRow } from '@/lib/links/payload';
 
 /** Recurso del diseño cargado en sesión (canvas rasterizado 1024², R8). */
 export type { DesignAsset };
@@ -68,6 +78,13 @@ export interface EditorStateSnapshot {
   recentColors: { body: string[]; virola: string[] };
   /** pos 6 (R3/R7): rotación del grabado en grados canónicos [0°, 360°). */
   design: DesignState;
+  /**
+   * pos 10A: borrador de Variantes del Enlace (A–C con included) — persiste
+   * en projects.state (spec shareable-link §5: la configuración del link es
+   * trabajo del editor, el payload fijo queda en la tabla `links`). El
+   * normalizador del jsonb ya lo deja sano; acá viaja tal cual.
+   */
+  linkDraft: StoredVariantRow[];
 }
 
 export interface EditorStore extends EditorStateSnapshot {
@@ -131,6 +148,12 @@ export interface EditorStore extends EditorStateSnapshot {
   setInkEnvelope: (ink: InkEnvelope | null) => void;
   /** pos 7 (§6): publica el modo degradado del chequeo (envolvente conservador). */
   setInkScanDegraded: (on: boolean) => void;
+  /**
+   * pos 10A: reemplaza el borrador de variantes del Enlace (la tarjeta lo
+   * manda entero — rows normalizadas desde la propia tarjeta). Marca dirty:
+   * es estado contractual del proyecto.
+   */
+  setLinkDraft: (rows: StoredVariantRow[]) => void;
   /** Marca dirty de otro flujo (ej. restore desde draft local más nuevo). */
   markDirty: () => void;
   /** Confirmado de guardar (lo llama el autosave). */
@@ -149,6 +172,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
   virolaColor: null,
   recentColors: { body: [], virola: [] },
   design: { ...DEFAULT_DESIGN_STATE },
+  linkDraft: [],
   projectId: null,
   dirty: false,
   lastSavedAt: null,
@@ -168,6 +192,8 @@ export const useEditorStore = create<EditorStore>((set) => ({
       virolaColor: s.virolaColor ?? null,
       recentColors: s.recentColors ?? { body: [], virola: [] },
       design: s.design ?? { ...DEFAULT_DESIGN_STATE },
+      // pos 10A: el draft de variantes llegó normalizado desde el jsonb.
+      linkDraft: s.linkDraft ?? [],
       projectId,
       dirty: false,
       offlineDraft: false,
@@ -242,6 +268,9 @@ export const useEditorStore = create<EditorStore>((set) => ({
   // pos 7 (§6): modo degradado del chequeo — derivado de sesión, sin dirty.
   setInkScanDegraded: (on) => set((prev) => ({ ...prev, inkScanDegraded: on })),
 
+  // pos 10A: el borrador de variantes SÍ es estado del proyecto (dirty).
+  setLinkDraft: (rows) => set((prev) => ({ ...prev, linkDraft: rows, dirty: true })),
+
   markSaved: (at, projectId) => set((prev) => ({ ...prev, dirty: false, lastSavedAt: at, projectId })),
   markOfflineDraft: (on) => set((prev) => ({ ...prev, offlineDraft: on })),
 }));
@@ -262,5 +291,6 @@ export function snapshotOf(store: EditorStore): EditorStateSnapshot {
       virola: [...store.recentColors.virola],
     },
     design: { ...store.design },
+    linkDraft: store.linkDraft.map((r) => ({ ...r })),
   };
 }

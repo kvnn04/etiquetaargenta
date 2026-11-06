@@ -32,6 +32,8 @@ import ProductSelector from '@/components/studio/product-selector';
 import DimensionsCard from '@/components/studio/dimensions-card';
 import ColorPickerCard from '@/components/studio/color-picker-card';
 import DesignCard from '@/components/studio/design-card';
+import VariantsCard from '@/components/links/variants-card';
+import LinkModal from '@/components/links/link-modal';
 import AutoGiroBar from '@/components/studio/auto-giro-bar';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
@@ -89,9 +91,13 @@ const GATED_ACTIONS: Array<{
     label: 'Generar Enlace Comercial',
     icon: Link2,
     action: 'link',
-    future: '10',
   },
 ];
+
+/* CTA del confirm de desborde para la Foto HD (R5 spec_escala). El publish del
+ * Enlace Comercial (10A) manda los SUYOS desde su modal (PUBLISH_CONFIRM_CTAS):
+ * la shell JAMÁS inventa la voz del llamador. */
+const FICHA_EXPORT_CTAS = ['Exportar de todas formas', 'Volver a ajustar'] as const;
 
 function graceDaysLeft(graceExpiresAt: string | null): number | null {
   if (!graceExpiresAt) return null;
@@ -145,17 +151,29 @@ export default function EditorShell({
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [obsText, setObsText] = useState('');
   const [fotoBusy, setFotoBusy] = useState(false);
-  /* R5 spec_escala: confirmación de desborde como mini-diálogo reutilizable
-   * (mismos CTA "Exportar de todas formas" / "Volver a ajustar"). */
-  const [overflowConfirm, setOverflowConfirm] = useState<OverflowCheck | null>(null);
+  /* Pos 10A: modal del Enlace Comercial + linkId VIGENTE del proyecto (la
+   * versión más nueva sin expirar) que se estampa en la Ficha (input dejado
+   * en PASSTHROUGH por pos 9). */
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
+  /* R5 spec_escala + R7 10A: confirmación de desborde como mini-diálogo
+   * REUTILIZABLE — los CTA los manda el llamador (foto: "Exportar de todas
+   * formas"; publish del enlace: "Publicar de todas formas"). */
+  const [overflowConfirm, setOverflowConfirm] = useState<{
+    check: OverflowCheck;
+    ctas: readonly string[];
+  } | null>(null);
   const overflowResolveRef = useRef<((ok: boolean) => void) | null>(null);
 
-  const askOverflowConfirm = useCallback((check: OverflowCheck): Promise<boolean> => {
-    return new Promise((resolve) => {
-      overflowResolveRef.current = resolve;
-      setOverflowConfirm(check);
-    });
-  }, []);
+  const askOverflowConfirm = useCallback(
+    (check: OverflowCheck, ctas: readonly string[] = FICHA_EXPORT_CTAS): Promise<boolean> => {
+      return new Promise((resolve) => {
+        overflowResolveRef.current = resolve;
+        setOverflowConfirm({ check, ctas });
+      });
+    },
+    [],
+  );
 
   const answerOverflowConfirm = useCallback((ok: boolean) => {
     setOverflowConfirm(null);
@@ -173,6 +191,10 @@ export default function EditorShell({
    * asset es de sesión (el upload real al Storage llega en pos 10), así que el
    * badge cuenta el asset EN MEMORIA: reemplazo libre dentro del mismo slot. */
   const designAsset = useEditorStore((s) => s.designAsset);
+  /* Pos 10A: projectId/linkDraft directamente del store — el modal publica
+   * contra el proyecto actual y consume el borrador de variantes. */
+  const projectId = useEditorStore((s) => s.projectId);
+  const linkDraft = useEditorStore((s) => s.linkDraft);
   const freeDemo = profile.plan === 'free';
 
   /* Restore del proyecto más reciente (R1 Happy Path: "restaura su último
@@ -201,6 +223,35 @@ export default function EditorShell({
 
   /* Autosave (debounce 2 s, last-write-wins, borrador offline con backoff). */
   useProjectPersistence(supabase);
+
+  /* Pos 10A: link ACTIVO = la versión más nueva que NO expiró (el GET devuelve
+   * versiones desc; la primera vigente gana). Se consulta al abrir la Ficha y
+   * al cerrar el modal del enlace — así un publish fresco queda ligado al
+   * snapshot DNA de la ficha sin estados extra. */
+  const loadActiveLinkId = useCallback(async (): Promise<void> => {
+    const pid = useEditorStore.getState().projectId;
+    if (!pid) {
+      setActiveLinkId(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/links?projectId=${pid}`);
+      if (!res.ok) {
+        setActiveLinkId(null);
+        return;
+      }
+      const data = (await res.json()) as { versions: Array<{ linkId: string; expiresAt: string }> };
+      const now = Date.now();
+      const active = data.versions.find((v) => Date.parse(v.expiresAt) > now) ?? null;
+      setActiveLinkId(active?.linkId ?? null);
+    } catch {
+      setActiveLinkId(null); // sin red: la ficha sale sin enlace (honesto)
+    }
+  }, []);
+
+  useEffect(() => {
+    if (quoteOpen) void loadActiveLinkId();
+  }, [quoteOpen, loadActiveLinkId]);
 
   useEffect(() => {
     let alive = true;
@@ -237,10 +288,11 @@ export default function EditorShell({
         void handleFotoHd();
         return;
       }
-      // Pos 10 (hoy): hint honesto, sin fingir funcionalidad.
-      setActionHint(
-        `“${CAPABILITY_LABELS[entry.cap]}” llega con la posición ${entry.future} del plan de implementación.`,
-      );
+      /* Pos 10A: el Enlace Comercial YA PUBLICA — abre el modal de versiones;
+       * el 402 real (paywall) lo dicta el SERVER al publicar (R8), jamás el
+       * cliente: si el claim de plan quedó desactualizado, el modal muestra
+       * el Paywall del mismo modo. */
+      setLinkOpen(true);
       return;
     }
     // FREE: ningún error técnico — se abre el Paywall (§4 spec_auth).
@@ -408,6 +460,10 @@ export default function EditorShell({
           {/* CUARTA tarjeta (§4 spec_rotacion + spec_escala): Cargar Archivo / Edición del Vector */}
           <DesignCard />
 
+          {/* Pos 10A (decisión del titular): tarjeta "Variantes del Enlace" —
+              configs A/B/C del MISMO diseño; persiste en projects.state. */}
+          <VariantsCard />
+
           {actionHint && (
             <div className="rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold-soft">
               {actionHint}
@@ -476,17 +532,20 @@ export default function EditorShell({
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-stone-600">
               Foto HD y Ficha Técnica YA EXPORTAN (pos 9): el ticket se emite y verifica en el
-              servidor antes de adjuntar el archivo — una cuenta FREE recibe{' '}
-              <span className="font-mono">402</span> y este mismo Paywall se abre (jamás un error
-              crudo). El Enlace Comercial llega con la 10.
+              servidor antes de adjuntar el archivo. El Enlace Comercial (pos 10A) PUBLICA
+              versiones congeladas 30 días con visor 3D para tu cliente — al publicar, una cuenta
+              FREE recibe <span className="font-mono">402</span> del server y este mismo Paywall se
+              abre (jamás una decisión del cliente).
             </p>
           </div>
         </aside>
       </main>
 
       <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
-        Posición 9 del plan: Ficha Técnica (snapshot inmutable · grilla de 9 tarjetas · PNG HD 2160 ·
-        PDF A4 · Foto HD — fuente única:{' '}
+        Posición 10A del plan: Enlace Comercial / Modo Cliente (publish congelado 30 días ·
+        variantes A/B/C · visor <span className="font-mono">/v/[linkId]</span> — fuente única:{' '}
+        <span className="font-mono">spec_ficha_comercial_interactiva_shareable_link.md</span>) ·
+        posición 9: Ficha Técnica (snapshot inmutable · PNG HD 2160 · PDF A4 · Foto HD —{' '}
         <span className="font-mono">spec_detalle_del_modelo_en_ficha.md</span>) · posición 8:{' '}
         <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span> · posición 7:{' '}
         <span className="font-mono">spec_escala_y_alerta_de_desborde.md</span> · posición 6:{' '}
@@ -518,27 +577,46 @@ export default function EditorShell({
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
               <p className="text-xs leading-relaxed text-amber-200">
-                {overflowBannerText(overflowConfirm)}
+                {overflowBannerText(overflowConfirm.check)}
               </p>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => answerOverflowConfirm(true)}>
-                Exportar de todas formas
+                {overflowConfirm.ctas[0] ?? 'Exportar de todas formas'}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => answerOverflowConfirm(false)}>
-                Volver a ajustar
+                {overflowConfirm.ctas[1] ?? 'Volver a ajustar'}
               </Button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Pos 10A: modal del Enlace Comercial — publish congelado + versiones.
+          El caller manda su propio confirm (CTAs "Publicar/Volver") y onError
+          cae al actionHint de la shell (misma caja que la Foto HD). */}
+      <LinkModal
+        open={linkOpen}
+        onClose={() => {
+          setLinkOpen(false);
+          void loadActiveLinkId(); // un publish fresco queda ligado a la ficha
+        }}
+        projectId={projectId}
+        designAsset={designAsset}
+        rows={linkDraft}
+        onPaywallRequest={() => setPaywallOpen(true)}
+        onPublishConfirm={(check, ctas) => askOverflowConfirm(check, ctas)}
+        onError={(msg) => setActionHint(msg)}
+      />
+
       {/* Pos 9: modal #quoteModal — snapshot inmutable + grilla + export.
-          Las observaciones viven en la shell (sesión): sobreviven re-abrir. */}
+          Las observaciones viven en la shell (sesión): sobreviven re-abrir.
+          Pos 10A: linkId = enlace VIGENTE del proyecto (PASSTHROUGH al DNA). */}
       <QuoteModal
         open={quoteOpen}
         onClose={() => setQuoteOpen(false)}
         plan={profile.plan}
+        linkId={activeLinkId}
         profile={{
           brandName: profile.brandName,
           baseName: profile.baseName,

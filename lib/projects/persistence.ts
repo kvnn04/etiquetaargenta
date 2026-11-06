@@ -22,6 +22,7 @@ import {
   type BodyPresetId,
 } from '@/lib/color';
 import { normalizeDesignState } from '@/lib/design';
+import { normalizeVariantRows } from '@/lib/links/payload';
 
 const DRAFT_KEY = 'mocap:project-draft';
 
@@ -45,6 +46,8 @@ export function defaultSnapshot(): EditorStateSnapshot {
     recentColors: { body: [], virola: [] },
     // pos 6 (R8) + pos 7 (R8): sin design en el jsonb ⇒ 0° / 100% / espejo OFF
     design: { rotation: 0, scale: 100, mirror: false },
+    // pos 10A: sin linkDraft en el jsonb ⇒ sin filas de variantes (borrador vacío)
+    linkDraft: [],
   };
 }
 
@@ -107,6 +110,10 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
   // normalizador tolerante aplica defaults contractuales a los faltantes.
   const design = normalizeDesignState((raw as Record<string, unknown>).design);
 
+  // Pos 10A: linkDraft (variantes del Enlace) — tolerante: ≤3 filas A–C,
+  // ids únicos, labels ≤40 con truncado, escala/rotación canónicas.
+  const linkDraft = normalizeVariantRows((raw as Record<string, unknown>).linkDraft);
+
   return {
     mateModel: resolveMateModel(model)?.id ?? base.mateModel as MateModelId,
     extDiameter: reconciled.extDiameter,
@@ -118,6 +125,7 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
     virolaColor,
     recentColors,
     design, // pos 6
+    linkDraft, // pos 10A
   };
 }
 

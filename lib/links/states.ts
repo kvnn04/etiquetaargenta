@@ -92,3 +92,44 @@ export function whatsappShareHref(phoneE164: string | null, linkUrl: string): st
   if (digits.length < 6) return null; // señal de E.164 roto: jamás wa.me inválido
   return `https://wa.me/${digits}?text=${encodeURIComponent(whatsappShareText(linkUrl))}`;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Cierre comercial del CLIENTE (R6 + spec usuario §R5)                        */
+/* -------------------------------------------------------------------------- */
+
+/** RPM del giro del visor público (spec §4: "giro automático tenue 0.5 RPM"). */
+export const LINK_VIEWER_SPIN_RPM = 0.5;
+
+/**
+ * Código de aprobación EXACTO del fallback sin WhatsApp (spec usuario R5):
+ * `APROBADA-{VARIANTE}-{LINKID}` en mayúsculas (ej. `APROBADA-B-3A8F9B`).
+ * linkId llega minúscula (canónico R2); el formato lo imprime en MAYÚSCULAS.
+ */
+export function approvalCode(linkId: string, variantId: string): string {
+  return `APROBADA-${variantId}-${linkId.toUpperCase()}`;
+}
+
+/**
+ * Texto que el Modo Cliente manda por WhatsApp al aprobar (R6: el mensaje
+ * "nombra exactamente la opción visible" — el label congelado del payload,
+ * jamás una etiqueta genérica "Opción A" cuando el taller renombró).
+ */
+export function whatsappApprovalText(linkUrl: string, variantLabel: string): string {
+  return `¡Hola! Aprobé la opción "${variantLabel}" de mi mate personalizado: ${linkUrl}. ¿Sigamos con el pedido?`;
+}
+
+/**
+ * `wa.me` de la APROBACIÓN (R6: se dispara DESPUÉS de que el POST registra el
+ * evento). Mismo contrato de dígitos que el share (E.164 roto ⇒ null).
+ */
+export function whatsappApprovalHref(
+  phoneE164: string | null,
+  linkUrl: string,
+  variantLabel: string,
+): string | null {
+  const digits = (phoneE164 ?? '').replace(/\D/g, '');
+  if (digits.length < 6) return null;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(
+    whatsappApprovalText(linkUrl, variantLabel),
+  )}`;
+}
