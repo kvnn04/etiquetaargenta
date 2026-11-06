@@ -30,6 +30,25 @@ export function hasServiceCredentials(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+/**
+ * Cliente ANÓNIMO server-side (API pública sin sesión): lo usa ÚNICAMENTE la
+ * ruta de aprobaciones (pos 10A, spec shareable-link §5) para que el INSERT
+ * pase por la policy `approvals_public_insert` de RLS — la DB es la última
+ * palabra: un link inexistente o vencido es RECHAZADO por el propio motor de
+ * policies, no solo por la lógica del route.
+ * Nunca usarlo para saltarse permisos: es el espejo de un visitante real.
+ */
+export function createSupabasePublicClient(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Faltan variables para el cliente público (URL / ANON_KEY).');
+  }
+  return createClient(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* Storage del branding (posición 2, spec registro §3-R4)                      */
 /* bucket PRIVADO: en la base solo guardamos PATHS; la URL firmada se emite   */
