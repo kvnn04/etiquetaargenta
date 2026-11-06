@@ -47,7 +47,7 @@ El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero
 4. ✅ Medidas de virola (3 mallas) + guías coplanares + cascada + auto-giro
 5. ✅ Editor 3D: color PBR + quemado adaptativo (cuerpo/virola #HEX)
 6. ✅ Editor 3D: rotación del diseño SVG/PNG (imán ±4°, presets)
-7. ✅ Editor 3D: escala fina 70–110 % + motor de desborde "chorreo" + espejo + Auto  ← ESTAMOS ACÁ
+7. ✅ Editor 3D: escala fina 70–110 % + motor de desborde "chorreo" + espejo ← ESTAMOS ACÁ (botón Auto retirado por decisión del titular 05-nov)
 8. ⬜ Protección (watermark cocida, bloqueo de rutas DOM, 402 export)
 9. ⬜ Ficha técnica export (PNG ≥2160px + PDF A4)
 10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
@@ -100,14 +100,24 @@ re-escala el diseño, apenas re-chequea (el % tiene siempre el mismo significado
 R_ext/R_int con **tolerancia 0 estricta** (tocar no es desbordar); la evaluación es O(1) por
 estado y re-dispara SOLO por escala, diámetros y carga de diseño — **girar y espejar jamás
 re-chequean** (invariancia polar R3, isometrías con pivote fijo). La tarjeta suma la sección
-C **"Tamaño / Escala del Grabado"** (slider + campo WYSIWYG, presets 85/90/100 y el botón
-**Auto** R7: mayor escala segura ≤ 110 % con forma cerrada exacta sobre los dos escalares,
-hover "Auto 96.5 %" pre-calculado y slider animado 250 ms), el **banner** con la redacción
+C **"Tamaño / Escala del Grabado"** (slider + campo WYSIWYG y presets 85/90/100 — el botón
+**Auto** de la spec R7 quedó **RETIRADO por decisión del titular** (05-nov): la mayor escala
+segura la elige el tallerista a ojo con el slider y el banner; `largestSafeScalePct` sigue
+testeada en `lib/overflow` por si ficha/variantes la reusan), el **banner** con la redacción
 EXACTA de R5 (ámbar → rojo si el desvío ≥ 2 mm, nota visual anotada) y las guías afectadas
 con **pulso rojo de 500 ms** (`#FF3B30`, overlay en la escena). Si el raster del chequeo
 falla, el chequeo cae a modo envolvente conservador con aviso "Detección aproximada" (§6).
-Todo **FREE** (escala, espejo, Auto, banner); el **margen JAMÁS se persiste**: es derivable
+Todo **FREE** (escala, espejo, banner); el **margen JAMÁS se persiste**: es derivable
 y se recalcula al abrir (R8: `design.scale`/`mirror` sí persisten; legacy ⇒ 100 % / OFF).
+
+Post-entrega de la 7 (mismo 05-nov, misma decisión): la tarjeta retiró el botón Auto y se
+corrigió la **pérdida de nitidez del SVG al subirlo a la virola** — el vector se rasteriza
+SIEMPRE a la resolución final vía **envoltorio de 1024²** (sin él, un SVG con width/height
+chicos — o sin ellos: el estándar cae a 300×150 — nacía rasterizado en su tamaño intrínseco
+y el estirado del bitmap borroso era la pérdida clásica); **sin refuerzo de alfa ×1.8 en SVG**
+(conserva su anti-aliasing nativo; el refuerzo de trazos finos queda SOLO para PNG) y la
+CanvasTexture del grabado lleva **anisotropía máxima de la GPU** (la virola vista de perfil
+deja de desenfocarse por mipmap en ángulos rasantes). Canvas de trabajo intacto: 1024² (R8).
 
 La posición 3 reemplazó el placeholder 3D por la **primera escena real**: el catálogo de
 productos (Camionero ⇄ Imperial) como **registro central solo-datos** (`lib/catalog.ts`), el
@@ -197,7 +207,7 @@ simulador-mates/
 │   ├── studio/product-selector.tsx ← radio-cards (radiogroup) con siluetas SVG derivadas del catálogo
 │   ├── studio/dimensions-card.tsx ← TARJETA MEDIDAS pos 4: D_ext/D_int + steppers + sliders dinámicos + métricas + guías
 │   ├── studio/color-picker-card.tsx ← TARJETA COLOR pos 5: presets PBR + #HEX (dot nativo) + recientes + quemado
-│   ├── studio/design-card.tsx     ← TARJETA DESIGN pos 6–7: archivo SVG/PNG + rotación (imán/presets/reset) + espejo + escala 70–110 % + banner chorreo + Auto
+│   ├── studio/design-card.tsx     ← TARJETA DESIGN pos 6–7: archivo SVG/PNG (SVG a resolución FINAL: envoltorio 1024²) + rotación (imán/presets/reset) + espejo + escala 70–110 % + banner chorreo
 │   ├── studio/auto-giro-bar.tsx   ← BARRA AUTO-GIRO pos 4: 0.75 RPM + botón Girar/Pausar + pausa por interacción
 │   └── ui/{button,input}.tsx      ← primitivas mínimas (cva), patrimonio de shadcn/ui a futuro
 │
@@ -209,7 +219,7 @@ simulador-mates/
 │   ├── virola/cascade.ts          ← ★ CASCADA ÚNICA virola.dimensionsChanged (<100 ms, bus de eventos)
 │   ├── color.ts                   ← ★ COLOR INTELIGENTE pos 5: tabla PBR R1 + exclusividad/recientes R3 + quemado R4 (L 0.55)
 │   ├── design.ts                  ← ★ DISEÑO DEL GRABADO pos 6–7: rotación R3 canónico 0.5° + imán R4 ±4° (dispositivo) + estado design {rotation, scale, mirror} + asset con baseSideMm (R1)
-│   ├── overflow.ts                 ← ★ MOTOR DESBORDE pos 7: envolvente de tinta R4 + evaluación 0 mm estricta + bbox degradado §6 + Auto R7 + textos banner/ficha R5/R6
+│   ├── overflow.ts                 ← ★ MOTOR DESBORDE pos 7: envolvente de tinta R4 + evaluación 0 mm estricta + bbox degradado §6 + largestSafeScalePct R7 (función testeada; UI retirada por decisión del titular) + textos banner/ficha R5/R6
 │   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color/diseño pos 5–6 + escala/espejo/inkEnvelope pos 7)
 │   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
 │   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
@@ -397,7 +407,7 @@ diseño.
 | R4 | Escaneo polar exacto 512² (α ≥ 128), tolerancia 0 mm ESTRICTA (tocar ≠ desbordar), desvío en mm (1 decimal), chequeo ≤ 25 ms | `scanInkEnvelope` + `measureInkEnvelopeMm` al cargar (QA2: barrido ≤ 25 ms, test) | ✅ (27 tests) |
 | R5 | Banner con redacción EXACTA (mm 1 decimal); estados Seguro/Desborde + guías afectadas en rojo con pulso 500 ms | `overflowBannerText` + `PulseGuideLine` (`#FF3B30`, overlay en `GuidesLayer`) | ✅ (ámbar→rojo @2 mm: nota visual anotada) |
 | R6 | Ficha: "Margen: seguro" / "con riesgo (excede X mm)"; export con desborde exige confirmación | `marginSheetLine()` lista para pos 9 (el modal de export llega con el export, pos 9) | ✅ función (consumo pos 9) |
-| R7 | Botón Auto: mayor escala segura ≤ 110 % (binaria descendente con forma exacta) + presets 85/90/100 sin "Máx" | `largestSafeScalePct` (forma cerrada O(1)) + hover pre-cálculo + slider animado 250 ms; null ⇒ NO toca la escala | ✅ |
+| R7 | Botón Auto: mayor escala segura ≤ 110 % (binaria descendente con forma exacta) + presets 85/90/100 sin "Máx" | **UI RETIRADA por decisión del titular (05-nov)**: la mayor escala segura la elige el tallerista con slider/banner; `largestSafeScalePct` (forma cerrada O(1)) queda testeada en `lib/overflow` y pos 9/10 pueden reusarla | ✅ función · 🚫 UI retirada |
 | R8 | `design.scale`/`design.mirror` persisten (legacy ⇒ 100 % / OFF); el estado de margen JAMÁS se persiste | snapshot + `normalizeState` tolerante (115⇒110 · 65⇒70 con aviso) + `inkEnvelope`/`inkScanDegraded` de sesión | ✅ |
 | §6 | Raster del chequeo falla ⇒ modo envolvente (bbox) CONSERVADOR con aviso "Detección aproximada" | `evaluateOverflowBBox` + flag `inkScanDegraded` | ✅ |
 
@@ -513,7 +523,7 @@ select column_name from information_schema.columns
 | :--- | :--- |
 | `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–7 adentro) |
 | `npm run test` (Vitest) | ✅ **162/162** — 8 de matriz R2 + 23 de branding + 13 de catálogo + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + **27 de desborde/escala pos 7** |
-| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 22.3 kB; el motor 3D sigue en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
+| `npm run build` (producción) | ✅ **11 rutas** — `/editor` 22.2 kB; el motor 3D sigue en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
@@ -525,6 +535,7 @@ select column_name from information_schema.columns
 | **QA Posición 5** (05-nov) | Tabla PBR canónica ✅ · anodizado 0.10/0.45 y cuerpo libre 0.00/0.82 ✅ · exclusividad preset⇄hex ✅ · recientes máx 6 ✅ · quemado L 0.55 con ambas ramas ✅ |
 | **QA Posición 6** (05-nov, técnica) | R3 módulo/paso ✅ (370⇒10, −90⇒270, 45.25⇒45.5, 360⇒0) · imán ±4° con envolvente ✅ + 17.5° exacto imán OFF (QA3) ✅ · preset EXACTO con imán ON/OFF ✅ · persistencia legacy ⇒ 0° ✅ · asset de sesión fuera del snapshot ✅ · pivote central y clipping anular por máscara ✅ |
 | **QA Posición 7** (05-nov, técnica) | R8 clamp/paso ✅ (115⇒110 · 65⇒70 · 92.25⇒92.5 · legacy ⇒ 100 %) · escaneo polar R4 con tolerancia 0 estricta ✅ (tocar ≠ desbordar, píxel a radio exacto) · corona dentada y muesca cóncava cruzan R_ext/R_int ✅ (QA2) · barrido ≤ 25 ms ✅ · Auto forma cerrada ✅ (100 % / tope 110 % / banda exacta 92.5 % / dip estructural ⇒ null) · bbox degradado §6 conservador ✅ · textos banner/ficha EXACTOS ✅ · envelope de sesión fuera del snapshot ✅ |
+| **Post-entrega pos 7** (05-nov, decisión del titular) | Botón **Auto retirado de la UI** (solo UI: `largestSafeScalePct` + sus 5 tests siguen en `lib/overflow` para pos 9/10) ✅ · **nitidez SVG corregida**: raster a resolución FINAL vía envoltorio de 1024² (SVG con width/height chicos — o sin ellos, 300×150 por defecto — nacía borrado por estirado del bitmap) ✅ · **sin refuerzo alfa ×1.8 en SVG** (conserva anti-aliasing nativo; refuerzo SOLO para PNG) ✅ · **anisotropía máxima** en la CanvasTexture del grabado (virola de perfil sin desenfoque de mipmap) ✅ · canvas de trabajo intacto 1024² (R8) ✅ |
 | Git | ✅ `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅

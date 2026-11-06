@@ -9,9 +9,14 @@
  *   contain + centrado) y guardado SOLO en el asset de sesión (el archivo NO
  *   viaja al jsonb todavía: la rotación/escala/espejo persisten; el ciclo de
  *   vida del archivo llega con variantes A/B/C y links pos 10).
- *   — TRAZOS FINOS (técnica del prototipo Mate Studio): el rastercado realza
- *     la opacidad (×1.8) para que los hairline (ej. 0.05 mm) no desaparezcan
- *     sobre el metal; conserva bordes suavizados sin dentar.
+ *   — SVG (calidad máxima): el vector se rasteriza SIEMPRE a la resolución
+ *     FINAL vía envoltorio de 1024² (data-URI + preserveAspectRatio contain);
+ *     sin él, un SVG con width/height chicos (o sin ellos — el estándar cae a
+ *     300×150) nace rasterizado en su tamaño intrínseco y el agrandado del
+ *     bitmap borroso es la pérdida de calidad clásica al subirlo a la virola.
+ *     SIN refuerzo de alfa: el vector trae su anti-aliasing correcto.
+ *   — PNG: contain + REFUERZO de trazos finos (técnica del prototipo Mate
+ *     Studio, alfa ×1.8) para que los hairline no desaparezcan sobre el metal.
  *   Fallo de raster (archivo corrupto tras edición externa): se conserva la
  *   última textura válida y aviso inline (§6) — reintentar reactiva el diseño.
  * · R1 (pos 7): la CARGA congela la base del diseño en mm (baseSideMm = D_ext
@@ -31,9 +36,11 @@
  *   EXACTO con imán ON u OFF.
  * · Reset: vuelve a 0° escalar conservando imán, escala y espejo (R7).
  * · Escala R8 (pos 7, sección C): % en [70, 110] paso 0.5% con campo
- *   numérico sincrónico, presets 85/90/100 (SIN "Máx") y botón Auto (R7:
- *   mayor escala segura ≤ 110 % — hover muestra el número ANTES de aplicarlo
- *   y al aplicarlo el slider viaja animado 250 ms).
+ *   numérico sincrónico y presets 85/90/100 (SIN "Máx"). El botón Auto de la
+ *   spec (R7) quedó RETIRADO por decisión del titular (05-nov): la mayor
+ *   escala segura la elige el tallerista con el slider/banner;
+ *   `largestSafeScalePct` queda testeada en lib/overflow por si la reusan
+ *   ficha/variantes (pos 9–10).
  * · Desborde R4/R5 (pos 7): la envolvente de tinta se mide AL CARGAR (máscara
  *   alfa 512² R4), el chequeo re-evalúa por cambio de escala/diametros/carga
  *   — JAMÁS por ángulo/espejo (invariancia polar R3). Banner con la redacción
@@ -45,13 +52,12 @@
  * · R6 (pos 7): la decisión de export con desborde (modal con desvío medido)
  *   se conectará cuando exista el export (pos 8/9); la línea de ficha
  *   ("Margen: seguro" / "con riesgo (excede X mm)") ya vive en lib/overflow.
- * · Sin candado: rotación, espejo, escala, presets, Auto, banner y
- *   confirmación son FREE (§6 permisos); el Modo Cliente no muestra controles
- *   (llega con pos 10).
+ * · Sin candado: rotación, espejo, escala, presets, banner y confirmación son
+ *   FREE (§6 permisos); el Modo Cliente no muestra controles (pos 10).
  * ============================================================================ */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2, Scaling } from 'lucide-react';
+import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2 } from 'lucide-react';
 import { useEditorStore } from '@/lib/store/editor';
 import {
   applyMagnet,
@@ -67,7 +73,6 @@ import {
   evaluateOverflow,
   evaluateOverflowBBox,
   formatScaleLabel,
-  largestSafeScalePct,
   normalizeScale,
   overflowBannerText,
   parseScaleInput,
@@ -89,37 +94,97 @@ function fmtAngle(deg: number): string {
   return String(normalizeRotation(deg));
 }
 
+const WORK_SIZE = 1024; // R8: canvas de trabajo en vivo (Ficha HD: pos 9 ≥2048²)
+
+/** Carga un origen (data-URI / blob) en un <img> y resuelve al estar listo. */
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('símbolo ilegible'));
+    image.src = src;
+  });
+}
+
+/** Canvas de trabajo vacío (R8, 1024²) con contexto listo para getImageData. */
+function makeWorkCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  const canvas = document.createElement('canvas');
+  canvas.width = WORK_SIZE;
+  canvas.height = WORK_SIZE;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('canvas no disponible');
+  return { canvas, ctx };
+}
+
+/** Texto SVG ⇒ data-URI con payload codificado: segura dentro de atributos
+ * XML con comillas dobles (`"` ⇒ %22, `#` ⇒ %23, `<` ⇒ %3C…). */
+function svgDataUri(svgText: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
+}
+
+/**
+ * Envoltorio que OBLIGA al navegador a rasterizar el vector a la resolución
+ * FINAL (1024², contain): sin él, un SVG con width/height chicos — o sin
+ * ellos (el estándar cae a 300×150) — nace rasterizado en su tamaño
+ * intrínseco y el estirado posterior del bitmap es la pérdida de nitidez
+ * clásica al subirlo a la virola. La URI interior va codificada, así que el
+ * wrapper sigue siendo XML bien formado.
+ */
+function svgWrapperForRaster(svgText: string, size: number): string {
+  const inner = svgDataUri(svgText);
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"` +
+    ` viewBox="0 0 ${size} ${size}">` +
+    `<image href="${inner}" width="${size}" height="${size}"` +
+    ` preserveAspectRatio="xMidYMid meet"/></svg>`
+  );
+}
+
 /**
  * R8: rasteriza el archivo EN CLIENTE al canvas de trabajo 1024² (contain,
- * centrado) con REFUERZO de trazos finos (prototipo: alpha ×1.8 ⇒ los
- * hairline del SVG no desaparecen en el metal). El resultado vive SOLO en el
- * asset de sesión — jamás se envía al backend.
+ * centrado). El resultado vive SOLO en el asset de sesión — jamás se envía
+ * al backend.
+ * · SVG: rasteriza SIEMPRE a la resolución final vía el envoltorio de 1024²
+ *   y SIN refuerzo de alfa — el vector ya trae su anti-aliasing correcto y
+ *   el ×1.8 lo aterrona (bordes dentados).
+ * · PNG: contain + REFUERZO de trazos finos (prototipo: alpha ×1.8 ⇒ los
+ *   hairline no desaparecen sobre el metal).
+ * SVG que falle por el wrapper (XML exótico, recursos externos…): se cae al
+ * rasterizado clásico de bitmap — la carga jamás se bloquea; si ese camino
+ * también falla, el caller conserva la última textura válida (§6).
  */
 async function rasterizeDesignFile(file: File): Promise<HTMLCanvasElement> {
+  if (kindOf(file) === 'svg') {
+    try {
+      const svgText = await file.text();
+      if (!svgText.trim()) throw new Error('SVG vacío');
+      const img = await loadImageElement(svgDataUri(svgWrapperForRaster(svgText, WORK_SIZE)));
+      const { canvas, ctx } = makeWorkCanvas();
+      ctx.drawImage(img, 0, 0, WORK_SIZE, WORK_SIZE);
+      return canvas;
+    } catch {
+      /* §6 tolerante: sigue por el camino clásico. */
+    }
+  }
+  return rasterizeBitmapFile(file);
+}
+
+/** Camino clásico por URL de objeto (PNG y respaldo de SVG): contain + alfa ×1.8. */
+async function rasterizeBitmapFile(file: File): Promise<HTMLCanvasElement> {
   const url = URL.createObjectURL(file);
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('símbolo ilegible'));
-      image.src = url;
-    });
-    const size = 1024; // R8: canvas de trabajo en vivo (Ficha HD: pos 9 ≥2048²)
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) throw new Error('canvas no disponible');
-    const w = img.naturalWidth || img.width || size;
-    const h = img.naturalHeight || img.height || size;
-    const scale = Math.min(size / w, size / h);
+    const img = await loadImageElement(url);
+    const { canvas, ctx } = makeWorkCanvas();
+    const w = img.naturalWidth || img.width || WORK_SIZE;
+    const h = img.naturalHeight || img.height || WORK_SIZE;
+    const scale = Math.min(WORK_SIZE / w, WORK_SIZE / h);
     const dw = w * scale;
     const dh = h * scale;
-    ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+    ctx.drawImage(img, (WORK_SIZE - dw) / 2, (WORK_SIZE - dh) / 2, dw, dh);
 
     // Refuerzo de trazos finos (técnica del prototipo): α>0 ⇒ ×1.8 (max 255),
     // silueta, posición y colores respetados — los píxeles con α=0 no se tocan.
-    const imgData = ctx.getImageData(0, 0, size, size);
+    const imgData = ctx.getImageData(0, 0, WORK_SIZE, WORK_SIZE);
     const px = imgData.data;
     for (let i = 3; i < px.length; i += 4) {
       if (px[i] > 0) px[i] = Math.min(255, Math.round(px[i] * 1.8));
@@ -309,31 +374,6 @@ export default function DesignCard() {
     overflowing &&
     ((check?.overflowOuterMm ?? 0) >= OVERFLOW_SEVERE_MM ||
       (check?.overflowInnerMm ?? 0) >= OVERFLOW_SEVERE_MM);
-
-  // R7: mayor escala segura ≤ 110 % — hover-preview O(1) sobre la envolvente.
-  const autoPct = useMemo(() => {
-    if (!designAsset || !inkEnvelope) return null;
-    return largestSafeScalePct(inkEnvelope, rExtMm, rIntMm);
-  }, [designAsset, inkEnvelope, rExtMm, rIntMm]);
-
-  const scaleAnimRef = useRef(0);
-
-  function applyAuto(): void {
-    if (autoPct === null || autoPct === scale) return;
-    // §4: al aplicarlo, el slider viaja animado (250 ms) hasta el valor.
-    const from = scale;
-    const start = performance.now();
-    cancelAnimationFrame(scaleAnimRef.current);
-    const step = () => {
-      const t = Math.min(1, (performance.now() - start) / 250);
-      const eased = 1 - (1 - t) * (1 - t); // easeOutQuad (≈ CameraRefit)
-      setDesignScale(from + (autoPct - from) * eased);
-      if (t < 1) scaleAnimRef.current = requestAnimationFrame(step);
-    };
-    scaleAnimRef.current = requestAnimationFrame(step);
-  }
-
-  useEffect(() => () => cancelAnimationFrame(scaleAnimRef.current), []);
 
   return (
     <div className="rounded-xl border border-line bg-panel p-4 space-y-4">
@@ -614,7 +654,11 @@ export default function DesignCard() {
           </span>
         </div>
 
-        {/* Presets R7 (sin "Máx": el máximo real es 110%) + Auto destacado */}
+        {/* Presets de escala (sin "Máx": el máximo real es 110 %). El botón
+            Auto de la spec R7 quedó RETIRADO por decisión del titular
+            (05-nov): la mayor escala segura la elige el tallerista a ojo con
+            el slider y el banner; `largestSafeScalePct` queda en lib/overflow
+            (función testeada) por si la reusan ficha/variantes. */}
         <div className="flex flex-wrap items-center gap-1.5">
           {SCALE_PRESETS.map((preset) => (
             <button
@@ -632,25 +676,6 @@ export default function DesignCard() {
               {preset.pct}%
             </button>
           ))}
-          <button
-            type="button"
-            onClick={applyAuto}
-            disabled={autoPct === null || autoPct === scale}
-            title={
-              autoPct !== null
-                ? `Aplica la mayor escala segura sin desborde: ${formatScaleLabel(autoPct)}`
-                : 'Ninguna escala del rango 70–110% es segura con el diseño y medidas vigentes'
-            }
-            className={[
-              'ml-auto flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all focus:outline-none',
-              autoPct !== null && autoPct !== scale
-                ? 'border-gold/60 bg-gold/10 text-cream hover:bg-gold/20'
-                : 'border-line text-stone-500',
-            ].join(' ')}
-          >
-            <Scaling className="h-3.5 w-3.5" />
-            Auto{autoPct !== null ? ` ${formatScaleLabel(autoPct)}` : ''}
-          </button>
         </div>
       </section>
     </div>

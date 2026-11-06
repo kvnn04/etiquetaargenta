@@ -4,7 +4,7 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 7 de 10 — *Escala fina 70–110 % (paso 0.5 %) + motor de desborde "chorreo", espejo y botón Auto* implementadas sobre la 6 (rotación del grabado), la 5 (color PBR) y la 4 (medidas, 3 mallas, guías, cascada, auto-giro). **El editor queda completo**; siguen protección (8), ficha (9) y links/pagos (10).
+**Estado**: ✅ Posición 7 de 10 — *Escala fina 70–110 % (paso 0.5 %) + motor de desborde "chorreo", espejo* implementadas sobre la 6 (rotación del grabado), la 5 (color PBR) y la 4 (medidas, 3 mallas, guías, cascada, auto-giro). Post-entrega de la 7: **botón Auto retirado por decisión del titular** (la función sigue testeada en lib/overflow) y **nitidez del SVG corregida** (raster a resolución final + anisotropía). **El editor queda completo**; siguen protección (8), ficha (9) y links/pagos (10).
 162 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
@@ -50,7 +50,7 @@ simulador-mates/
     virola.ts        → MEDIDAS DE VIROLA: clamps R1, rangos dinámicos, métricas R2, triada guías R6
     color.ts         → COLOR INTELIGENTE (pos 5): tabla PBR + exclusividad/recientes + quemado R4 (L 0.55)
     design.ts        → DISEÑO DEL GRABADO (pos 6–7): rotación R3 0.5° + imán ±4° + design {rotation, scale, mirror} + asset con base mm congelada
-    overflow.ts      → MOTOR DESBORDE (pos 7): envolvente de tinta 512² α≥128 + chequeo 0 mm estricto + Auto R7 + textos banner/ficha
+    overflow.ts      → MOTOR DESBORDE (pos 7): envolvente de tinta 512² α≥128 + chequeo 0 mm estricto + largestSafeScalePct R7 (función testeada; UI retirada por decisión del titular) + textos banner/ficha
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
@@ -215,16 +215,23 @@ red un momento para ver el banner del borrador local.
 | Motor de desborde: escaneo polar exacto de la envolvente de tinta (512², α≥128, R4), tolerancia 0 mm ESTRICTA, desvío en mm (1 decimal), chequeo ≤ 25 ms | ✅ `lib/overflow.ts` (27 tests + QA2 del barrido en test) |
 | Disparadores: escala, D_ext/D_int y carga de diseño — girar/espejar JAMÁS re-chequean (invariancia polar R3) | ✅ chequeo O(1) por estado |
 | Banner con redacción EXACTA (R5) + guías afectadas con pulso rojo 500 ms | ✅ banner ámbar→rojo (@2 mm anotado) + `PulseGuideLine` `#FF3B30` en la escena |
-| Botón Auto (R7): mayor escala segura ≤ 110 %, forma cerrada exacta; hover "Auto 96.5 %" pre-calcula; slider animado 250 ms; sin escala segura ⇒ disabled | ✅ `largestSafeScalePct` |
+| Botón Auto (R7): retirado de la UI por decisión del titular (05-nov) — la mayor escala segura la elige el tallerista con slider/banner; `largestSafeScalePct` queda testeada en `lib/overflow` (pos 9/10 pueden reusarla) | 🚫 UI fuera · ✅ función conservada |
 | Ficha: "Margen: seguro" / "con riesgo (excede X mm)" (R6) | ✅ `marginSheetLine()` — consumo en la ficha, pos 9 |
 | §6 modo degradado: raster del chequeo falla ⇒ envolvente (bbox) conservadora + aviso "Detección aproximada" | ✅ `evaluateOverflowBBox` |
 | Persistencia: `design.scale`/`design.mirror` en `projects.state` (legacy ⇒ 100 %/OFF; 115⇒110 · 65⇒70 con aviso); el margen JAMÁS se persiste (R8) | ✅ normalize tolerante + envolvente derivada de sesión |
-| Escala/espejo/Auto/banner/confirmación 100 % FREE (sin candado) | ✅ matriz R2 sin capability nueva |
+| Escala/espejo/banner/confirmación 100 % FREE (sin candado) | ✅ matriz R2 sin capability nueva |
 
 > **Bug resuelto con la entrega**: el reporte *"el SVG cargado no se visualiza en la virola"* —
 > el compositor provisional de pos 6 inscribía el diseño en el hueco (centrado en el eje), la
 > máscara anular lo borraba íntegro. El anclaje real R1 de pos 7 (full-canvas, envolvente
 > tocando el anillo) lo corrige de raíz.
+>
+> **Post-entrega (05-nov)**: el reporte *"perdió calidad al subirlo a la virola"* — causas
+> diagnosticadas: (1) el SVG nacía rasterizado en su tamaño intrínseco (width/height chicos,
+> o 300×150 por defecto) y el bitmap se estiraba a 1024²; (2) el refuerzo de alfa ×1.8
+> rompía el anti-aliasing del vector; (3) la CanvasTexture carecía de anisotropía (mipmap
+> borroso en ángulos rasantes). Corregido: envoltorio de rasterizado a resolución FINAL,
+> refuerzo de alfa SOLO para PNG y anisotropía máxima de la GPU.
 
 ## Scripts
 

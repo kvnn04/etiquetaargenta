@@ -371,8 +371,10 @@ function GuidesLayer() {
 /* (baseSideMm = D_ext vigente al cargar) y el % multiplica SOLO esa base —   */
 /* editar D_ext/D_int después NO re-escala el diseño, solo re-chequea.        */
 /* R8: trabajo en vivo 1024² con smoothing 'high' (PNG bicúbico; el SVG llegó */
-/* pre-rasterizado canalizando su vectorización); Ficha HD re-proyecta        */
-/* ≥2048² (pos 9).                                                            */
+/* pre-rasterizado a la resolución FINAL vía envoltorio de 1024², design-card)*/
+/* ; Ficha HD re-proyecta ≥2048² (pos 9). La CanvasTexture del grabado usa    */
+/* anisotropía MÁXIMA (DesignEngravingLayer): la virola vista de perfil no    */
+/* se desenfoca por el mipmap en ángulos rasantes.                            */
 /* Clipping anular con máscara destination-in SOLO entre R_int y R_ext, y     */
 /* tinte ÚNICO con el tono del quemado adaptativo R4 (pos 5 → pos 7: el modo  */
 /* de quemado no altera la escala). El motor de desborde (R4 de               */
@@ -471,6 +473,15 @@ function DesignEngravingLayer() {
     tex.colorSpace = THREE.SRGBColorSpace;
     return { canvas: c, texture: tex };
   }, []);
+
+  // Nitidez de la virola vista de PERFIL (ángulo rasante): sin anisotropía el
+  // mipmap colapsa y el grabado se ve borroso al acercarse al borde — igual
+  // que hacía la textura del prototipo Mate Studio (máximo que dé la GPU).
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
+    texture.needsUpdate = true;
+  }, [texture, gl]);
 
   // (a)+(c) del flujo §3: cada cambio de ángulo/escala/espejo/diametros
   // NORMALIZADO re-composita y emite la textura — sin reconstruir virola ni
