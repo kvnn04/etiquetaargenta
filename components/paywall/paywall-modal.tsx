@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 /**
  * Modal Paywall (spec_autenticacion_y_modelo_freemium.md §4):
  * precio dinámico leído del backend, beneficios concretos y CTA único
- * hacia Mercado Pago. En posición 1 el checkout aún no existe (posiciones 8–10)
- * — el CTA queda deshabilitado con explicación honesta.
+ * hacia Mercado Pago. La pos 8 dejó encendida la seam de licencia real
+ * (`/api/exports/ticket` — 402 abre ESTE modal); el Checkout Pro se conecta
+ * en la posición 10 (spec_pagos) — el CTA sigue deshabilitado con
+ * explicación honesta mientras tanto.
  */
 export interface PriceInfo {
   amount: number;
@@ -101,11 +103,11 @@ export default function PaywallModal({
           )}
         </div>
 
-        <Button variant="green" size="lg" className="mt-4 w-full" disabled title="Se activa al implementar pagos (posición 8–10)">
+        <Button variant="green" size="lg" className="mt-4 w-full" disabled title="Se activa al conectar Checkout Pro (posición 10)">
           Pagar Suscripción con Mercado Pago
         </Button>
         <p className="mt-1 text-center text-[11px] text-stone-500">
-          (El Checkout Pro se conecta en posiciones 8–10 del{' '}
+          (El Checkout Pro se conecta con la posición 10 del{' '}
           <span className="font-mono">orden_de_implementacion.md</span>.)
         </p>
         <p className="mt-3 text-center text-[10px] leading-relaxed text-stone-600">

@@ -24,6 +24,7 @@ export default function TopBar({
   logoThumbUrl,
   graceDaysLeft,
   priceText,
+  demoUsed,
   onUnlockRequest,
 }: {
   plan: Plan;
@@ -31,6 +32,8 @@ export default function TopBar({
   logoThumbUrl?: string | null;
   graceDaysLeft: number | null;
   priceText: string | null;
+  /** R3 (pos 8): slot del demo — se agota al cargar el primer diseño. */
+  demoUsed: boolean;
   onUnlockRequest: () => void;
 }) {
   const router = useRouter();
@@ -74,7 +77,7 @@ export default function TopBar({
         {plan === 'free' && (
           <>
             <span className="hidden rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-300 sm:inline">
-              🔒 PLAN DEMO (1/1 Uso)
+              🔒 PLAN DEMO ({demoUsed ? '1/1' : '0/1'} Uso)
             </span>
             <Button variant="green" size="sm" onClick={onUnlockRequest}>
               Desbloquear Plan PRO{priceText ? ` (${priceText}/mes)` : ''}

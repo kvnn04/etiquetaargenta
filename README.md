@@ -4,8 +4,8 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 7 de 10 — *Escala fina 70–110 % (paso 0.5 %) + motor de desborde "chorreo", espejo* implementadas sobre la 6 (rotación del grabado), la 5 (color PBR) y la 4 (medidas, 3 mallas, guías, cascada, auto-giro). Post-entrega de la 7: **botón Auto retirado por decisión del titular** (la función sigue testeada en lib/overflow) y **nitidez del SVG corregida** (raster a resolución final + anisotropía). **El editor queda completo**; siguen protección (8), ficha (9) y links/pagos (10).
-162 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
+**Estado**: ✅ Posición 8 de 10 — *Protección FREE (auth paso B)*: watermark **"MODO DEMO · Suscribite para descargar en HD" cocida al render WebGL** (solo plan free), bloqueo de rutas DOM del lienzo (contextmenu/arrastre, cero blob URLs) y **`POST /api/exports/ticket`** con `402` PAYWALL para FREE / **ticket HMAC de 5 min** para PRO (forma exacta de la ficha, pos 9). Badge del demo reactivo 0/1→1/1 (R3). Sobre las 1–7: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación y escala/desborde (con post-entrega: Auto retirado por decisión del titular + nitidez SVG corregida). Quedan ficha (9) y links/pagos (10).
+169 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -19,7 +19,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
 | 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
-| Test unit | Vitest 4 (162 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6–7 + desborde pos 7 en `tests/unit/`) |
+| Test unit | Vitest 4 (169 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 en `tests/unit/`) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
 > `@supabase/ssr` y React 19; Next 16 puede migrar por su cuenta más adelante.
@@ -51,6 +51,7 @@ simulador-mates/
     color.ts         → COLOR INTELIGENTE (pos 5): tabla PBR + exclusividad/recientes + quemado R4 (L 0.55)
     design.ts        → DISEÑO DEL GRABADO (pos 6–7): rotación R3 0.5° + imán ±4° + design {rotation, scale, mirror} + asset con base mm congelada
     overflow.ts      → MOTOR DESBORDE (pos 7): envolvente de tinta 512² α≥128 + chequeo 0 mm estricto + largestSafeScalePct R7 (función testeada; UI retirada por decisión del titular) + textos banner/ficha
+    exports/ticket.ts → TICKET DE EXPORT pos 8: HMAC-SHA256 v1 (5 min EXACTOS + verify timing-safe) — la ficha pos 9 pide su descarga con el hash del snapshot
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
@@ -119,7 +120,7 @@ error ...`) — si algo sigue fallando, esa es la línea exacta a mirar.
 | Matriz R2 declarada como única fuente citable | ✅ `lib/permissions.ts` + test unit |
 | Gating de UI (🔒 decorativo; Paywall en cada intento) | ✅ `TopBar`/`EditorShell` |
 | Precio dinámico desde `pricing_config` (backend) | ✅ `GET /api/config/pricing` (200 verificado en runtime) |
-| `402` de export, watermark, links, MP | 🔜 posiciones 8–10 |
+| `402` de export (ticket 5 min), watermark cocida, bloqueo DOM, badge demo reactivo | ✅ posición 8 (links + MP: pos 10) |
 
 **Smoke test del trigger**: `select public.derive_base_name('kevin.firma@correo.com');` → `Kevin Firma`.
 
@@ -233,13 +234,25 @@ red un momento para ver el banner del borrador local.
 > borroso en ángulos rasantes). Corregido: envoltorio de rasterizado a resolución FINAL,
 > refuerzo de alfa SOLO para PNG y anisotropía máxima de la GPU.
 
+## ¿Qué quedó de la posición 8? (según `spec_autenticacion_y_modelo_freemium.md` — paso B)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Watermark "MODO DEMO · Suscribite para descargar en HD" (R4): semitransparente, cruzada, centrada, COCIDA AL RENDER (segunda pasada ortográfica en el mismo canvas WebGL — las capturas del SO la incluyen, límite declarado) | ✅ `WatermarkLayer` en escena — SOLO plan `free` (`gate('render.no-watermark')`: pro/pro_grace ven render limpio) |
+| Bloqueo de rutas DOM (R4): menú contextual del canvas, arrastre de imagen fuera y cero blob URLs expuestos | ✅ `onContextMenu`/`onDragStart` + `select-none` en la sección del estudio cuando FREE |
+| 402 en la API de export (R4/QA-3): FREE ⇒ 402 `PAYWALL_REQUIRED` (abre el Paywall, jamás error crudo §6); PRO ⇒ descarga habilitada | ✅ `POST /api/exports/ticket`: sesión por cookies (401/400), plan AUTHORITATIVO desde `users` vía service-role, fail-closed sin fila |
+| Ticket server-side firmado (R7 spec_detalle): vigencia EXACTA 5 min, ligado al hash del snapshot | ✅ `lib/exports/ticket.ts` HMAC-SHA256 `v1.<payload>.<mac>` (b64url, timing-safe, 7 tests) — el motor gráfico de la pos 9 lo consume |
+| R3 demo: contador que se agota al primer diseño, reemplazo libre dentro del slot | ✅ badge reactivo `(0/1)` → `(1/1)` cuenta el asset de sesión (cuota server-side con conteo en Storage: pos 10) |
+| 2do diseño/proyecto + "Reiniciar proyecto" bloqueados (R3) | 🔜 sin UI nueva por decisión del titular — ya conectables vía `gate()` cuando existan |
+| El precio JAMÁS hardcodeado y sin paywall técnico: CTA MP se activa con Checkout Pro (pos 10) | ✅ Paywall modal intacto (precio de `/api/config/pricing`), CTA deshabilitado honesto |
+
 ## Scripts
 
 ```bash
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde, 162 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export, 169 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -250,9 +263,9 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 4. ✅ **Medidas/guías + cascada + virola 3 mallas** — commiteada (`feca766`, 05-nov)
 5. ✅ **Color PBR + quemado adaptativo** — commiteada (`940e69c`, 05-nov)
 6. ✅ **Rotación del diseño (grabado)** — commiteada (`f31fa32`, 05-nov)
-7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo/Auto** — commiteada (`b8cb203`, 05-nov)
-8. ⬜ Protección (watermark cocida, 402) — auth paso B ← siguiente
-9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha`
+7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo** — commiteada (`b8cb203`; post-entrega `141f094`: Auto retirado por decisión del titular + nitidez SVG)
+8. ✅ **Protección FREE (watermark cocida, bloqueo DOM, 402 ticket)** — auth paso B, commiteada (05-nov)
+9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha` ← siguiente
 10. ⬜ Links comerciales + pagos MP — links + `spec_pagos`
 
 Cada bloque de trabajo se abre leyendo la spec fuente: los números (latencias,

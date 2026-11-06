@@ -591,6 +591,126 @@ function CameraRefit() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Marca de agua "MODO DEMO" (pos 8, spec_autenticacion §3-R4) — COCIDA AL     */
+/* RENDER: tras el pase principal, una segunda pasada ortográfica pinta la     */
+/* banda diagonal EN EL MISMO canvas WebGL (autoClear off + clearDepth + render*/
+/* del overlay). Las capturas del SO la incluyen (límite declarado R4) y no    */
+/* existe overlay DOM que arrancar. Se monta SOLO con plan 'free' (matriz R2:  */
+/* la shell griega la prop; pro/pro_grace ven el render limpio, gate()).       */
+/* -------------------------------------------------------------------------- */
+
+/** R4: texto EXACTO del demo. */
+const WATERMARK_TEXT_HEAD = 'MODO DEMO';
+const WATERMARK_TEXT_REST = ' · Suscribite para descargar en HD';
+const WATERMARK_BAND_FRACTION = 0.78; // ancho de la banda ≈ fracción del viewport
+const WATERMARK_SKEW_DEG = -9; // banda "cruzada" (R4) sobre el centro del render
+const WATERMARK_OPACITY = 0.3; // semitransparente: el producto sigue leyéndose
+
+/** Textura de la banda: texto diagonal con contorno oscuro suave (legible
+ * sobre metal claro y oscuro). Canvas transparente — sin fondo legal. */
+function buildWatermarkTexture(): THREE.CanvasTexture {
+  const w = 2048;
+  const h = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas no disponible');
+  const headPx = 128;
+  const restPx = 68;
+  const fontOf = (px: number, weight: number) =>
+    `${weight} ${px}px system-ui, 'Segoe UI', -apple-system, sans-serif`;
+
+  ctx.save();
+  ctx.font = fontOf(headPx, 800);
+  const headW = ctx.measureText(WATERMARK_TEXT_HEAD).width;
+  ctx.font = fontOf(restPx, 600);
+  const restW = ctx.measureText(WATERMARK_TEXT_REST).width;
+  const gapPx = 16;
+  const total = headW + restW + gapPx;
+  const fit = Math.min(1, (w * 0.94) / total); // nunca recortar texto: escalea
+  const headScale = headPx * fit;
+  const restScale = restPx * fit;
+  const gapScale = gapPx * fit;
+  const totalScale = (headW + restW) * fit + gapScale;
+
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate((WATERMARK_SKEW_DEG * Math.PI) / 180);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  // Halo oscuro + relleno cálido legible: la misma paleta de la escena.
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 16;
+  ctx.lineWidth = 9;
+  ctx.strokeStyle = 'rgba(11,11,13,0.45)';
+  ctx.fillStyle = 'rgba(255,244,224,0.94)';
+  let x = -(totalScale / 2);
+  ctx.font = fontOf(headScale, 800);
+  ctx.strokeText(WATERMARK_TEXT_HEAD, x, 0);
+  ctx.fillText(WATERMARK_TEXT_HEAD, x, 0);
+  x += headW * fit + gapScale;
+  ctx.font = fontOf(restScale, 600);
+  ctx.strokeText(WATERMARK_TEXT_REST, x, 0);
+  ctx.fillText(WATERMARK_TEXT_REST, x, 0);
+  ctx.restore();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function WatermarkLayer() {
+  /* Escena ortográfica PROPIA (2 NDC × 2 NDC): no vive en el árbol R3F, así el
+   * raycaster/pointer y el resto de capas jamás la ven. */
+  const overlay = useMemo(() => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const material = new THREE.MeshBasicMaterial({
+      map: buildWatermarkTexture(),
+      transparent: true,
+      opacity: WATERMARK_OPACITY,
+      depthTest: false, // pinta SIEMPRE sobre el render (es un sello, no una superficie)
+      depthWrite: false,
+      toneMapped: false, // texto puro del sello: sin tonemapping del pipeline PBR
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    mesh.renderOrder = 999;
+    scene.add(mesh);
+    return { scene, camera, mesh, material };
+  }, []);
+
+  useEffect(
+    () => () => {
+      (overlay.mesh.geometry as THREE.BufferGeometry).dispose();
+      overlay.material.map?.dispose();
+      overlay.material.dispose();
+    },
+    [overlay],
+  );
+
+  /* priority 1 ⇒ R3F delega el render a esto callback (patrón de pasadas
+   * custom): 1° la ESCENA principal (manual), 2° el sello por encima. */
+  useFrame(({ gl, scene, camera }) => {
+    const el = gl.domElement;
+    const aspect = el.height > 0 ? el.width / el.height : 1;
+    // PlaneGeometry(2,2) ⇒ ancho completo = 2 NDC: scale.x = fracción de ancho.
+    // scale.y preserva píxeles cuadrados: frac * (texH/texW) * aspect.
+    overlay.mesh.scale.set(
+      WATERMARK_BAND_FRACTION,
+      (512 / 2048) * WATERMARK_BAND_FRACTION * aspect,
+      1,
+    );
+    gl.render(scene, camera); // pase principal (manual: priority > 0)
+    gl.autoClear = false; // la pasada del sello NO borra el producto recién pintado
+    gl.clearDepth();
+    gl.render(overlay.scene, overlay.camera);
+    gl.autoClear = true; // restablece para el clear del frame siguiente
+  }, 1);
+
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Escena completa                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -599,9 +719,15 @@ export interface StudioSceneProps {
   spinning?: boolean;
   /** Pausa instantánea: OrbitControls 'start' (pointer-down/drag/pinch/scroll). */
   onUserInteracted?: () => void;
+  /** R4 (pos 8): marca de agua MODO DEMO cocida al render — SOLO plan free. */
+  watermark?: boolean;
 }
 
-export default function StudioScene({ spinning = false, onUserInteracted }: StudioSceneProps) {
+export default function StudioScene({
+  spinning = false,
+  onUserInteracted,
+  watermark = false,
+}: StudioSceneProps) {
   const groupRef = useRef<THREE.Group | null>(null);
 
   return (
@@ -634,6 +760,9 @@ export default function StudioScene({ spinning = false, onUserInteracted }: Stud
 
       <AutoSpin enabled={spinning} groupRef={groupRef} />
       <CameraRefit />
+      {/* Pos 8 R4: el sello MODO DEMO SOLO para plan free (prop de la shell:
+          gate('render.no-watermark') es falso ⇒ prop false ⇒ sin overlay). */}
+      {watermark && <WatermarkLayer />}
       <OrbitControls
         makeDefault
         enablePan

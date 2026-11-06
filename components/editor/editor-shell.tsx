@@ -59,9 +59,10 @@ export interface ShellProfile {
   logoThumbUrl?: string | null;
 }
 
-/** Acciones pay-gated visibles para probar el gating (posiciones 8–10 las implementan). */
+/** Acciones pay-gated: la SEAM de licencia ya vive (pos 8: /api/exports/ticket
+ * con 402 FREE); el ARTEFACTO gráfico llega con las posiciones 9–10. */
 const GATED_ACTIONS: Array<{ cap: Capability; label: string; icon: typeof Camera; future: string }> = [
-  { cap: 'export.hd', label: 'Foto HD', icon: Camera, future: '8' },
+  { cap: 'export.hd', label: 'Foto HD', icon: Camera, future: '9' },
   { cap: 'export.hd', label: 'Ficha PNG / PDF', icon: FileDown, future: '9' },
   { cap: 'links.generate', label: 'Generar Enlace Comercial', icon: Link2, future: '10' },
 ];
@@ -117,6 +118,11 @@ export default function EditorShell({
   const dirty = useEditorStore((s) => s.dirty);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const offlineDraft = useEditorStore((s) => s.offlineDraft);
+  /* R3 (pos 8): el contador del demo se AGOTA al cargar el primer diseño — el
+   * asset es de sesión (el upload real al Storage llega en pos 10), así que el
+   * badge cuenta el asset EN MEMORIA: reemplazo libre dentro del mismo slot. */
+  const designAsset = useEditorStore((s) => s.designAsset);
+  const freeDemo = profile.plan === 'free';
 
   /* Restore del proyecto más reciente (R1 Happy Path: "restaura su último
    * proyecto guardado… camionero por defecto si no existe estado"). El draft
@@ -175,6 +181,12 @@ export default function EditorShell({
     }
   }
 
+  /* R4 (pos 8): bloqueo de rutas DOM del lienzo SOLO en demo (la protección es
+   * honesta: capturas del SO quedan cubiertas por la marca de agua cocida).
+   * Blob URLs: NINGUNO se expone desde pos 8 — el asset vive como canvas en
+   * memoria de sesión (sin URL descargable que arrastrar). */
+  const blockFreeDownload = useCallback((e: React.SyntheticEvent) => e.preventDefault(), []);
+
   return (
     <div className="flex min-h-screen flex-col">
       <PlanWatcher userId={userId} />
@@ -184,14 +196,23 @@ export default function EditorShell({
         logoThumbUrl={profile.logoThumbUrl}
         graceDaysLeft={profile.plan === 'pro_grace' ? graceDaysLeft(profile.graceExpiresAt) : null}
         priceText={priceText}
+        demoUsed={designAsset != null}
         onUnlockRequest={() => setPaywallOpen(true)}
       />
 
       <main className="mx-auto grid w-full max-w-6xl flex-1 gap-6 px-4 py-6 lg:grid-cols-[1fr_340px]">
         {/* Estudio 3D (posiciones 4–7: catálogo + medidas + color + grabado con rotación/
-            escala + guías + auto-giro + pulso de desborde) */}
-        <section className="relative min-h-[420px] overflow-hidden rounded-2xl border border-line lg:min-h-0">
-          <StudioScene spinning={spinning} onUserInteracted={pauseSpin} />
+            escala + guías + auto-giro + pulso de desborde) · pos 8 R4: en demo, bloqueo
+            DOM del lienzo (contextmenu/arrastre) + watermark cocida (prop watermark). */}
+        <section
+          className={[
+            'relative min-h-[420px] overflow-hidden rounded-2xl border border-line lg:min-h-0',
+            freeDemo ? 'select-none' : '',
+          ].join(' ')}
+          onContextMenu={freeDemo ? blockFreeDownload : undefined}
+          onDragStart={freeDemo ? blockFreeDownload : undefined}
+        >
+          <StudioScene spinning={spinning} onUserInteracted={pauseSpin} watermark={freeDemo} />
           <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 backdrop-blur">
             Estudio 3D
           </div>
@@ -311,16 +332,18 @@ export default function EditorShell({
               })}
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-stone-600">
-              El cliente solo <b>decora</b>: en posiciones 8–10 cada acción exige ticket server-side
-              y un <span className="font-mono">402</span> abre este mismo Paywall (R7/R8).
+              El cliente solo <b>decora</b>: la ruta real <span className="font-mono">POST /api/exports/ticket</span> ya
+              está encendida (pos 8) — una cuenta FREE recibe <span className="font-mono">402</span> y este mismo
+              Paywall se abre (jamás un error crudo). El artefacto HD sale con la 9.
             </p>
           </div>
         </aside>
       </main>
 
       <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
-        Posición 7 del plan: escala fina + alerta de chorreo (fuente única:{' '}
-        <span className="font-mono">spec_escala_y_alerta_de_desborde.md</span>) · posición 6:{' '}
+        Posición 8 del plan: protección FREE (watermark cocida + bloqueo DOM + 402 en export — fuente
+        única: <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span>) · posición 7:{' '}
+        <span className="font-mono">spec_escala_y_alerta_de_desborde.md</span> · posición 6:{' '}
         <span className="font-mono">spec_rotacion_archivo_svg_png.md</span> · posición 5:{' '}
         <span className="font-mono">spec_seleccion_de_color.md</span>
       </footer>
