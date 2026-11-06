@@ -4,8 +4,8 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 8 de 10 — *Protección FREE (auth paso B)*: watermark **"MODO DEMO · Suscribite para descargar en HD" cocida al render WebGL** (solo plan free), bloqueo de rutas DOM del lienzo (contextmenu/arrastre, cero blob URLs) y **`POST /api/exports/ticket`** con `402` PAYWALL para FREE / **ticket HMAC de 5 min** para PRO (forma exacta de la ficha, pos 9). Badge del demo reactivo 0/1→1/1 (R3). Sobre las 1–7: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación y escala/desborde (con post-entrega: Auto retirado por decisión del titular + nitidez SVG corregida). Quedan ficha (9) y links/pagos (10).
-169 tests pasando en Vitest, build de producción 100% verde y TypeScript strict 0 errores.
+**Estado**: ✅ Posición 9 de 10 — *Ficha técnica + Foto HD (modal `#quoteModal`)*: snapshot inmutable al abrir (badge "Actualizado a las HH:MM" + Actualizar), grilla de **9 tarjetas / 3 secciones** con formatos exactos (`123.0 mm` siempre 1 decimal, banda auto W=(Dext−Dint)/2, `92%`/`92.5%`, `45°`/`45.5°`, faltante ⇒ `—`), descriptores fijos (`#2A2A2A · Anodizado Personalizado`, `#E6C48E · Color Libre`), observaciones (280 máx, ≤ 2 líneas con `…` preservando palabras, viven en sesión), export **PNG HD 2× lado mínimo 2160 px ≤ 5 MB** (`makeQuoteCanvas`, render con las 4 luces EXACTAS de la escena y sin watermark, vía el compositor compartido `lib/compose-engraving.ts`) + **PDF A4** envoltorio del mismo PNG (pdf-lib) + **Foto HD** (2560 px) y **ticket server-side verificado** (`/ticket` → `/ticket/verificar`, hash ligado, UNA re-emisión; FREE ⇒ 402 + Paywall) + registro QA (`GET /api/exports`). Confirmación de desborde ANTES de exportar con los CTA exactos "Exportar de todas formas" / "Volver a ajustar". Sobre las 1–8: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación, escala/desborde y protección FREE (watermark cocida + 402). Quedan links + Mercado Pago (10).
+209 tests pasando en Vitest, build de producción 14 rutas 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -19,7 +19,8 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
 | 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
-| Test unit | Vitest 4 (169 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 en `tests/unit/`) |
+| Test unit | Vitest 4 (209 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 en `tests/unit/`) |
+| PDF | pdf-lib 1.17 (pos 9: envoltorio A4 de la ficha; carga diferida con `import()`, fuera del chunk inicial) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
 > `@supabase/ssr` y React 19; Next 16 puede migrar por su cuenta más adelante.
@@ -38,11 +39,15 @@ simulador-mates/
     (editor)/editor/ → shell del editor con gating R2 (guard deleted_at; escena 3D real desde la posición 3)
     api/
       config/pricing/ → GET pricing (patrón: backend como única fuente del precio)
+      exports/        → POS 9: GET registro QA ?type=png|pdf (401 sin sesión · snippet {user, plan, artifact, at})
+      exports/ticket/ → POS 8: POST ticket de export — plan authoritativo ⇒ FREE 402 PAYWALL / PRO ⇒ HMAC 5 min
+      exports/ticket/verificar/ → POS 9: POST contra-verificación (HMAC timing-safe + TTL + hash ⇒ 403 TICKET_INVALIDO)
       profile/logo/   → POST/DELETE del logo (server revalida por magia de bytes)
       profile/delete/ → POST eliminar cuenta (soft + hard delete + signOut)
       auth/exit/      → GET signOut server + redirect con mensaje neutro
     setup/            → página amable si faltan env vars
-  components/        → auth / profile / editor / studio / paywall / session / ui
+  components/        → auth / profile / editor / studio / paywall / quote (pos 9) / session / ui
+    quote/           → quote-modal.tsx (modal #quoteModal completo) · ficha-render.ts (motor único makeQuoteCanvas) · ficha-pdf.ts (A4 pdf-lib) · foto-hd.ts (Foto HD)
   lib/
     permissions.ts   → MATRIZ R2 (única fuente, alineada a spec_auth §3-R2)
     branding.ts      → resolveBranding() + approvalCode() (fallbacks canónicos R3/R5)
@@ -51,7 +56,10 @@ simulador-mates/
     color.ts         → COLOR INTELIGENTE (pos 5): tabla PBR + exclusividad/recientes + quemado R4 (L 0.55)
     design.ts        → DISEÑO DEL GRABADO (pos 6–7): rotación R3 0.5° + imán ±4° + design {rotation, scale, mirror} + asset con base mm congelada
     overflow.ts      → MOTOR DESBORDE (pos 7): envolvente de tinta 512² α≥128 + chequeo 0 mm estricto + largestSafeScalePct R7 (función testeada; UI retirada por decisión del titular) + textos banner/ficha
+    compose-engraving.ts → compositor compartido del grabado (extraído en pos 9): Escala→Espejo→Rotación + tinte burn + máscara anular — escena y ficha usan EL MISMO pipeline
     exports/ticket.ts → TICKET DE EXPORT pos 8: HMAC-SHA256 v1 (5 min EXACTOS + verify timing-safe) — la ficha pos 9 pide su descarga con el hash del snapshot
+    exports/ticket-server.ts → POS 9: helpers de server compartidos (ticketSecret env + planOf fail-closed) — las 3 rutas de /api/exports usan EL MISMO
+    quote/           → POS 9: snapshot.ts (snapshot inmutable + formatos de tarjeta + hash f1 + currentOverflowCheck) · texts.ts (wrapObservations + nomenclatura de archivos) · export-flow.ts (ticket→verificar + cota 5MB + descarga + registro QA)
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
@@ -60,7 +68,7 @@ simulador-mates/
   supabase/
     migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default (idempotentes, sin DROP)
     ops/         → reparaciones re-ejecutables: 0901 backfill · 0910 grants · 0920 purga R8
-  tests/         → Vitest (unit); Playwright en la posición 8
+  tests/         → Vitest (unit; 10 archivos): quote-snapshot + quote-texts (pos 9) · export-ticket (pos 8) · overflow · design · color · virola · catalog · branding · matriz
   three/         → motor 3D (pos 3): lathe-builder.ts · visual-skeleton.ts (+ three/README.md)
 ```
 
@@ -186,7 +194,7 @@ red un momento para ver el banner del borrador local.
 | Cobertura integral de virola: el color tiñe las 3 mallas (corona + faldón + pared interior), guías intactas | ✅ material único memoizado en `VirolaGroup` |
 | Exclusividad mutua preset ⇄ color libre + colores recientes (máx 6, dedup, por zona) | ✅ (testeado) |
 | Quemado adaptativo R4: preset ⇒ oscuro #2B2118@0.88; hex con L ≥ 0.55 ⇒ oscuro · L < 0.55 ⇒ plateado #C9CCCF@0.92 | ✅ `adaptiveLaserBurn()` (su dibujo aplicado a la escena: pos 6) |
-| Descriptor canónico para Ficha/Cotización ("Virola: #2A2A2A · Anodizado Personalizado") | ✅ `formatColorDescriptor()` (consumo: pos 9) |
+| Descriptor canónico para Ficha/Cotización ("Virola: #2A2A2A · Anodizado Personalizado") | ✅ `formatColorDescriptor()` (consumido por las tarjetas de la ficha pos 9) |
 | Persistencia: bodyPreset/metalPreset/bodyColor/virolaColor/recentColors en `projects.state` + normalize tolerante (legacy `topFaceColor`) | ✅ |
 | Tarjeta "Materiales y Acabados" en panel apilado (decisión del titular: sin pestañas) | ✅ `components/studio/color-picker-card.tsx` |
 | Todo el módulo de color 100% FREE (sin candado) | ✅ (matriz R2 sin capability nueva) |
@@ -217,7 +225,7 @@ red un momento para ver el banner del borrador local.
 | Disparadores: escala, D_ext/D_int y carga de diseño — girar/espejar JAMÁS re-chequean (invariancia polar R3) | ✅ chequeo O(1) por estado |
 | Banner con redacción EXACTA (R5) + guías afectadas con pulso rojo 500 ms | ✅ banner ámbar→rojo (@2 mm anotado) + `PulseGuideLine` `#FF3B30` en la escena |
 | Botón Auto (R7): retirado de la UI por decisión del titular (05-nov) — la mayor escala segura la elige el tallerista con slider/banner; `largestSafeScalePct` queda testeada en `lib/overflow` (pos 9/10 pueden reusarla) | 🚫 UI fuera · ✅ función conservada |
-| Ficha: "Margen: seguro" / "con riesgo (excede X mm)" (R6) | ✅ `marginSheetLine()` — consumo en la ficha, pos 9 |
+| Ficha: "Margen: seguro" / "con riesgo (excede X mm)" (R6) | ✅ `marginSheetLine()` — consumido por la ficha pos 9 (tarjeta Margen) y la confirmación del export |
 | §6 modo degradado: raster del chequeo falla ⇒ envolvente (bbox) conservadora + aviso "Detección aproximada" | ✅ `evaluateOverflowBBox` |
 | Persistencia: `design.scale`/`design.mirror` en `projects.state` (legacy ⇒ 100 %/OFF; 115⇒110 · 65⇒70 con aviso); el margen JAMÁS se persiste (R8) | ✅ normalize tolerante + envolvente derivada de sesión |
 | Escala/espejo/banner/confirmación 100 % FREE (sin candado) | ✅ matriz R2 sin capability nueva |
@@ -246,13 +254,32 @@ red un momento para ver el banner del borrador local.
 | 2do diseño/proyecto + "Reiniciar proyecto" bloqueados (R3) | 🔜 sin UI nueva por decisión del titular — ya conectables vía `gate()` cuando existan |
 | El precio JAMÁS hardcodeado y sin paywall técnico: CTA MP se activa con Checkout Pro (pos 10) | ✅ Paywall modal intacto (precio de `/api/config/pricing`), CTA deshabilitado honesto |
 
+## ¿Qué quedó de la posición 9? (según `spec_detalle_del_modelo_en_ficha.md`)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Snapshot inmutable al abrir (R1): badge "Actualizado a las HH:MM" + botón Actualizar re-captura; JAMÁS en `projects.state` (sin entidades DB nuevas) | ✅ `lib/quote/snapshot.ts` (`captureFichaSnapshot`, transitorio en memoria) + hash `f1:` del contenido EXCLUYENDO `capturedAt` |
+| Grilla 9 tarjetas / 3 secciones con formatos EXACTOS (R2): `123.0 mm` SIEMPRE 1 decimal, banda auto W=(Dext−Dint)/2, `92%`/`92.5%`, `45°`/`45.5°`, faltante ⇒ `—` | ✅ formatos testeados (24 tests snapshot) + grilla React espejo + las MISMAS tarjetas dibujadas en `makeQuoteCanvas` |
+| Descriptores FIJOS (R3): `#2A2A2A · Anodizado Personalizado` / `#E6C48E · Color Libre`, presets por su nombre, NUNCA auto-nombres | ✅ consumidos de `formatColorDescriptor` (pos 5) por grilla y canvas |
+| Degradación de marca via `resolveBranding()` único (R4): white-label SOLO PRO, iniciales/fallback título, IG/WA removidos si faltan; jamás bloquea el export | ✅ `captureFichaSnapshot` con brand resuelto + pie condicional del canvas |
+| Observaciones máx 280 + contador (R5): canvas ≤ 2 líneas con `…` preservando palabras; sin texto ⇒ sin bloque; el texto de sesión sobrevive re-abrir + chip "sin capturar" | ✅ `wrapObservations` (`lib/quote/texts.ts`, 16 tests) + obsText en la shell |
+| Único motor `makeQuoteCanvas` (R6): PNG 2× lado mínimo 2160 px ≤ 5 MB; PDF = envoltorio A4 del MISMO PNG con pie del taller + linkId si corresponde | ✅ `ficha-render.ts` (render con las 4 luces EXACTAS de la escena, sin guías/watermark, JPEG intermedio con escalada .8/.6/.45) + `ficha-pdf.ts` (pdf-lib A4, fuentes estándar + saneo WinAnsi) |
+| Export con ticket server-side (R7): FREE ⇒ 402 + Paywall, PRO ⇒ descarga; ticket 5 min ligado al hash; verificar antes de adjuntar | ✅ `ensureVerifiedTicket` (`export-flow.ts`): `/ticket` → `/ticket/verificar` (403 TICKET_INVALIDO) + UNA re-emisión — el candado 🔒 de UI es decorativo, la decisión la toma el server |
+| Fallbacks (R8): modelo desconocido ⇒ "Mate Camionero", escala/rotación ausentes ⇒ 100 %/0°, datos inválidos ⇒ `—` + aviso en consola | ✅ `formatModeloCard` + `vigente()` con `console.warn` (testeado) |
+| Confirmación de desborde ANTES de exportar con CTA EXACTOS "Exportar de todas formas" / "Volver a ajustar" (Ficha Y Foto HD) | ✅ panel interno del modal (`overflowBannerText` pos 7) + mini-diálogo Promise-based en la shell |
+| Foto HD: render solo, misma infra de ticket+confirmación, sin grilla | ✅ `components/quote/foto-hd.ts` — 2560 px lado (escalado a 2160 exactos si excede 5 MB) |
+| "Sin diseño cargado" = sin archivo en slot de sesión: Grabado placeholder, Producto/Acabados imprimen igual (decisión del titular); el modal lo ofrece a FREE también | ✅ `grabadoSinDiseno` ⇒ tarjetas con placeholder; server decide via 402 |
+| Registro QA de exports: consola del server `{user, plan, artifact, at}` (sin tablas nuevas) | ✅ `GET /api/exports?type=png|pdf` + `POST /api/exports/ticket/verificar` (401/400/403/200) |
+| Nomenclatura §5: `{taller}-ficha-mate-{model}-{aaaammdd}.png\|pdf` y `{taller}-foto-mate-{model}-{aaaammdd}.png` | ✅ `slugTaller` + `formatFileDate` en `texts.ts` (testeado con el ejemplo exacto de la spec) |
+| La escena y la ficha comparten pipeline del grabado (un solo motor) | ✅ `composeEngravingCanvas` extraída a `lib/compose-engraving.ts` — studio-scene y ficha-render la importan |
+
 ## Scripts
 
 ```bash
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export, 169 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos, 209 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -265,8 +292,8 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 6. ✅ **Rotación del diseño (grabado)** — commiteada (`f31fa32`, 05-nov)
 7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo** — commiteada (`b8cb203`; post-entrega `141f094`: Auto retirado por decisión del titular + nitidez SVG)
 8. ✅ **Protección FREE (watermark cocida, bloqueo DOM, 402 ticket)** — auth paso B, commiteada (05-nov)
-9. ⬜ Ficha técnica export — `spec_detalle_del_modelo_en_ficha` ← siguiente
-10. ⬜ Links comerciales + pagos MP — links + `spec_pagos`
+9. ✅ **Ficha técnica + Foto HD + registro QA** — modal `#quoteModal` (snapshot + 9 tarjetas + PNG 2160 ≤5MB + PDF A4 + ticket verificar), commiteada (06-nov)
+10. ⬜ Links comerciales + pagos MP — links + `spec_pagos` ← siguiente
 
 Cada bloque de trabajo se abre leyendo la spec fuente: los números (latencias,
 límites, constantes) solo se cambian allí y de ahí se re-verifican los consumidores.

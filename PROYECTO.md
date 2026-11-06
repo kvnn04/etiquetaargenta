@@ -36,7 +36,7 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 7 de 10 ✅
+## 2. Dónde estamos: posición 9 de 10 ✅
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
@@ -48,8 +48,8 @@ El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero
 5. ✅ Editor 3D: color PBR + quemado adaptativo (cuerpo/virola #HEX)
 6. ✅ Editor 3D: rotación del diseño SVG/PNG (imán ±4°, presets)
 7. ✅ Editor 3D: escala fina 70–110 % + motor de desborde "chorreo" + espejo (botón Auto retirado por decisión del titular 05-nov)
-8. ✅ Protección FREE: watermark cocida al render + bloqueo de rutas DOM + 402 en la API de export ← ESTAMOS ACÁ
-9. ⬜ Ficha técnica export (PNG ≥2160px + PDF A4)
+8. ✅ Protección FREE: watermark cocida al render + bloqueo de rutas DOM + 402 en la API de export
+9. ✅ Ficha técnica: snapshot inmutable + grilla de 9 tarjetas + PNG HD + PDF A4 + Foto HD + registro QA ← ESTAMOS ACÁ
 10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
 ```
 
@@ -141,6 +141,42 @@ llega con el ciclo de vida de archivos, pos 10). Los bloques R3 de "2do proyecto
 cuando existan se conectan al `gate()` ya montado). El límite declarado se respeta: las
 capturas del SO no se bloquean — el sello cocido las rinde inservibles limpias.
 
+La posición 9 entrega el **motor gráfico de salida** (fuente única `spec_detalle_del_modelo_en_-
+fica.md`): el **modal `#quoteModal`** — "Ficha Técnica (PNG / PDF)" del panel — captura al abrir un
+**snapshot inmutable** (`lib/quote/snapshot.ts`: todo derivado del estado vivo, transitorio,
+jamás en `projects.state`) con badge **"Actualizado a las HH:MM"** + botón **Actualizar** que
+re-captura (R1). El panel imprime la **grilla React de las 9 tarjetas** — Producto (Modelo /
+D_ext / D_int / **banda auto W=(Dext−Dint)/2**), Grabado (Escala / Rotación / **Margen** via
+`marginSheetLine()` pos 7) y Acabados (Virola / Cuerpo) — con los **formatos EXACTOS R2**
+(`123.0 mm` SIEMPRE 1 decimal; `92%`/`92.5%`; `45°`/`45.5°`; faltante ⇒ `—`) y los
+**descriptores fijos R3** (`#2A2A2A · Anodizado Personalizado`, `#E6C48E · Color Libre`,
+presets por su nombre — jamás auto-nombres). Sin archivo en el slot de sesión las 3 tarjetas de
+Grabado muestran "Sin diseño cargado" y Producto/Acabados siguen imprimiendo (decisión del
+titular). Las **observaciones** (R5, máx 280 + contador) viven en la shell (sesión):
+sobreviven a cerrar/reabrir el modal, un chip "sin capturar" pide Actualizar, y el canvas las
+imprime en ≤ 2 líneas con `…` preservando palabras enteras. El único motor
+`makeQuoteCanvas` (`components/quote/ficha-render.ts`) dibuja ficha PNG **2× ⇒ lado mínimo
+2160 px ≤ 5 MB** (alto dinámico según contenido; el render embebido pasa por un JPEG intermedio
+q .92 con escalada .8/.6/.45 si excede la cota): paleta clara premium, **placa del render
+re-proyectada con las 4 luces EXACTAS de la escena** (sin guías, sin pulso, sin watermark) vía
+`renderMateView` three offscreen con el **compositor compartido** `lib/compose-engraving.ts`
+(pipeline Escala→Espejo→Rotación idéntico a la escena; grabado re-proyectado ≥2048² R8), escudo
+logo/iniciales R4 (`resolveBranding` único: white-label SOLO PRO, fallback "MOCAP 3D · MATE
+PERSONALIZADO", IG/WA removidos si faltan) y pie del taller con IG/WhatsApp pill/linkId/firma.
+El **PDF A4** (`ficha-pdf.ts` + pdf-lib) es un **envoltorio 595.28×841.89 pt del MISMO PNG** con
+pie del taller (fuentes estándar + saneo WinAnsi) — jamás re-comprime la imagen. La **Foto HD**
+reusa el mismo motor sin grilla (1280 CSS × dpr 2 = 2560 px de lado, escalado a 2160 exactos si
+supera 5 MB) con nombre `{taller}-foto-mate-{model}-{aaaammdd}.png`. **Todo export (ficha y
+foto) pide y verifica el ticket server-side R7** (`ensureVerifiedTicket` en
+`lib/quote/export-flow.ts`: `POST /api/exports/ticket` ⇒ contra-verificación
+`/api/exports/ticket/verificar` con hash ligado + UNA re-emisión ante TTL vencido; FREE accede a
+la grilla y al export pero el server responde `402` y se abre el Paywall — el candado es
+decoración de UI, la decisión la toma el server), confirma el desborde ANTES de bajar
+cualquier artefacto con los CTA EXACTOS de la spec R5 ("Exportar de todas formas" / "Volver a
+ajustar" — panel propio del modal y mini-diálogo de la shell para Foto HD), registra el QA en
+consola via `GET /api/exports?type=png|pdf` (snippet `{user, plan, artifact, at}`) y descarga con
+nombre `{taller}-ficha-mate-{model}-{aaaammdd}.png|pdf`.
+
 La posición 3 reemplazó el placeholder 3D por la **primera escena real**: el catálogo de
 productos (Camionero ⇄ Imperial) como **registro central solo-datos** (`lib/catalog.ts`), el
 motor de torno (`three/lathe-builder.ts`) con el **contrato de costura UV** anclado para las
@@ -173,10 +209,11 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: 162 tests (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7) |
+| Test unit | Vitest | 4.1.12 | hoy: **209 tests** (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7 + ticket pos 8 + ficha snapshot/textos pos 9) |
 | 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
+| PDF | pdf-lib | 1.17 (instalado en la posición 9) | envoltorio A4 de la ficha; carga diferida con `import()` |
 | Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
-| Se instalan SOLO al llegar su posición | `zod`, `pdf-lib`, `sharp`, `mercadopago`, Playwright | — | regla vigente: no adelantar deps |
+| Se instalan SOLO al llegar su posición | `zod`, `sharp`, `mercadopago`, Playwright | — | regla vigente: no adelantar deps |
 
 **Decisión de alias:** TS ≥6 eliminó `baseUrl`, y Next 15.5 no translada `paths` de tsconfig sin
 ese prefijo: el alias `@/*` está declarado explícitamente en `next.config.mjs` (webpack +
@@ -214,6 +251,8 @@ simulador-mates/
 │   └── api/
 │       ├── config/pricing/route.ts ← GET precio del plan desde pricing_config (200; 404 si no hay fila)
 │       ├── exports/ticket/route.ts ← ★ POS 8: POST ticket de export — sesión 401 · plan desde users (service-role) ⇒ FREE 402 PAYWALL_REQUIRED / pro ⇒ HMAC 5 min
+│       ├── exports/ticket/verificar/route.ts ← ★ POS 9: POST contra-verificación del ticket (HMAC timing-safe + TTL + hash del snapshot ⇒ 403 TICKET_INVALIDO)
+│       ├── exports/route.ts        ← ★ POS 9: GET registro QA ?type=png|pdf — 401 sin sesión · plan autoritativo · console.log {user, plan, artifact, at}
 │       ├── profile/logo/route.ts   ← POST subida (server revalida por magia de bytes) / DELETE quita logo
 │       ├── profile/delete/route.ts ← POST eliminar cuenta: soft-delete + hard-delete proyectos + signOut
 │       └── auth/exit/route.ts      ← GET signOut server + redirect /auth?cuenta=inhabilitada
@@ -222,11 +261,15 @@ simulador-mates/
 │   ├── auth/auth-overlay.tsx      ← Google OAuth + email/contraseña + olvidaste tu contraseña
 │   ├── profile/profile-panel.tsx  ← tarjetas con guardado inline, indicador 5×20 %, drag&drop del logo
 │   ├── profile/danger-confirm.tsx ← doble confirmación R8 (palabra ELIMINAR + botón final)
-│   ├── editor/editor-shell.tsx    ← top bar + escena 3D (dynamic ssr:false) + restore + panel gated + watermark/bloqueo DOM por plan (pos 8)
+│   ├── editor/editor-shell.tsx    ← top bar + escena 3D (dynamic ssr:false) + restore + panel gated + watermark/bloqueo DOM por plan (pos 8) + modal #quoteModal y foto HD (pos 9)
 │   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans) + badge demo reactivo 0/1→1/1 (pos 8 R3)
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado hasta Checkout Pro: pos 10)
+│   ├── quote/quote-modal.tsx      ← ★ POS 9: MODAL #quoteModal — snapshot inmutable + grilla 9 tarjetas + observaciones (sesión) + confirmación de desborde + export PNG/PDF con ticket R7
+│   ├── quote/ficha-render.ts      ← ★ POS 9: ÚNICO MOTOR — renderMateView (3 luces de escena, sin guías/watermark) + makeQuoteCanvas (PNG 2× ≥2160 ≤5MB) FUERA del chunk inicial (import() dinámico)
+│   ├── quote/ficha-pdf.ts         ← ★ POS 9: envoltorio A4 del MISMO PNG (pdf-lib, pie del taller, saneo WinAnsi) — import() diferido
+│   ├── quote/foto-hd.ts           ← ★ POS 9: flujo Foto HD (confirmación de desborde + ticket + render 2560 px + descarga fotoFileName)
 │   ├── session/plan-watcher.tsx   ← Realtime: UPDATE en users ⇒ router.refresh() (sin reload)
-│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 4–8: cuerpo lathe + virola 3 mallas PBR + grabado (escala→espejo→rotación) + guías + pulso de desborde + auto-giro + WATERMARK cocida (pos 8)
+│   ├── studio/studio-scene.tsx    ← ESCENA 3D pos 4–8: cuerpo lathe + virola 3 mallas PBR + grabado (escala→espejo→rotación via compositor compartido) + guías + pulso de desborde + auto-giro + WATERMARK cocida (pos 8)
 │   ├── studio/product-selector.tsx ← radio-cards (radiogroup) con siluetas SVG derivadas del catálogo
 │   ├── studio/dimensions-card.tsx ← TARJETA MEDIDAS pos 4: D_ext/D_int + steppers + sliders dinámicos + métricas + guías
 │   ├── studio/color-picker-card.tsx ← TARJETA COLOR pos 5: presets PBR + #HEX (dot nativo) + recientes + quemado
@@ -244,6 +287,11 @@ simulador-mates/
 │   ├── design.ts                  ← ★ DISEÑO DEL GRABADO pos 6–7: rotación R3 canónico 0.5° + imán R4 ±4° (dispositivo) + estado design {rotation, scale, mirror} + asset con baseSideMm (R1)
 │   ├── overflow.ts                 ← ★ MOTOR DESBORDE pos 7: envolvente de tinta R4 + evaluación 0 mm estricta + bbox degradado §6 + largestSafeScalePct R7 (función testeada; UI retirada por decisión del titular) + textos banner/ficha R5/R6
 │   ├── exports/ticket.ts           ← ★ POS 8: ticket de export HMAC-SHA256 v1 (5 min EXACTOS, b64url) + verify timing-safe — forma de spec_detalle R7 que ficha pos 9 consume
+│   ├── exports/ticket-server.ts    ← ★ POS 9: helpers de server compartidos (ticketSecret env + planOf fail-closed service-role) — las 3 rutas de /api/exports usan EL MISMO
+│   ├── quote/snapshot.ts           ← ★ POS 9: SNAPSHOT INMUTABLE R1/R2/R3/R5/R8 (captureFichaSnapshot + formatos de tarjeta + hash FNV f1: EXCLUYENDO capturedAt + currentOverflowCheck derivación única)
+│   ├── quote/texts.ts              ← ★ POS 9: wrapObservations (≤2 líneas `…` preserva palabras) + MCU 280 + nomenclatura §5 ficha/foto
+│   ├── quote/export-flow.ts        ← ★ POS 9: flujo de export compartido cliente (ticket→verificar con UNA re-emisión R7 · cota 5MB · downloadBlob · registro QA)
+│   ├── compose-engraving.ts        ← ★ compositor compartido del grabado (extraído de studio-scene en pos 9): Escala→Espejo→Rotación + tinte burn + máscara anular — la escena y la ficha usan EL MISMO pipeline
 │   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color/diseño pos 5–6 + escala/espejo/inkEnvelope pos 7)
 │   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
 │   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
@@ -275,6 +323,8 @@ simulador-mates/
 │   ├── unit/design.test.ts        ← 28 tests: R3 normalización/módulo, parseo del campo °, imán R4 ±4° (QA3), persistencia design pos 6–7 + envolvente de sesión
 │   ├── unit/overflow.test.ts      ← 27 tests: escaneo polar R4 (0 mm estricto; dentada/muesca QA2), evaluación lineal R2/R3, bbox §6, Auto R7, textos R5/R6
 │   ├── unit/export-ticket.test.ts ← 7 tests pos 8: ida/vuelta HMAC, vigencia 5 min exacta, forjado/otro secreto, tamper de UN byte, replanificación de JSON ⇒ null, cotas de datos
+│   ├── unit/quote-texts.test.ts     ← 16 tests pos 9: wrapObservations R5 (≤2 líneas, `…` preserva palabras, overlong word), MCU 280, slug/nomenclatura §5 EXACTA ficha/foto
+│   ├── unit/quote-snapshot.test.ts  ← 24 tests pos 9: formatos R2 EXACTOS, descriptores R3 (sin auto-nombres), margen canónico R5, R8 fallbacks + warns, hash estable excluyendo capturedAt, currentOverflowCheck
 │   └── unit/virola.test.ts        ← 31 tests: R1 clamps/rangos dinámicos, R2 métricas, R3 cascada <100ms, R4/R5 guías coplanares, R6 triada, R7 auto-giro
 ├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
 ├── three/visual-skeleton.ts       ← constantes visuales pos 4 + LATHE_SEAM_PHI_START
@@ -285,7 +335,7 @@ simulador-mates/
 
 ---
 
-## 5. Lo que quedó implementado (posiciones 1–3) — con su criterio QA
+## 5. Lo que quedó implementado (posición por posición) — con su criterio QA
 
 **Fuente:** `spec_autenticacion_y_modelo_freemium.md` §7 (aceptación) + spec registro §3-R1.
 
@@ -388,7 +438,7 @@ protección de la posición 8.
 | R2 | Cobertura integral de virola: el color tiñe corona + faldón + pared interior sin tocar guías/cuerpo | un único material memoizado en `VirolaGroup` (`resolveVirolaPbr`) compartido por las 3 mallas; overlays intactos | ✅ |
 | R3 | Exclusividad mutua preset ⇄ color libre + historial de recientes (máx 6, dedup, por zona) | `setBodyPreset/setMetalPreset` limpian el hex; `addRecentColor` por zona | ✅ (testeado) |
 | R4 | Quemado adaptativo del grabado: preset metálico ⇒ oscuro; color libre ⇒ L ≥ 0.55 oscuro #2B2118@0.88 · L < 0.55 plateado #C9CCCF@0.92 | `adaptiveLaserBurn()` (luminancia BT.709, threshold 0.55) en `lib/color.ts` | ✅ (QA tabla de casos) |
-| R5 | Descriptor canónico para Ficha/Cotización | `formatColorDescriptor()` (ej. `"Virola: #2A2A2A · Anodizado Personalizado"`) | ✅ (su CONSUMO: pos 9) |
+| R5 | Descriptor canónico para Ficha/Cotización | `formatColorDescriptor()` (ej. `"Virola: #2A2A2A · Anodizado Personalizado"`) | ✅ (consumido por la ficha pos 9: tarjetas con descriptores FIJOS, sin auto-nombres) |
 | R7 | Persistencia del color (bodyPreset/metalPreset/bodyColor/virolaColor/recentColors) | 5 claves nuevas del snapshot + `normalizeState` tolerante (legacy `topFaceColor` ⇒ `virolaColor`) | ✅ |
 | §4 | Tarjeta "Materiales y Acabados" (tercera del panel — decisión del titular: sin pestañas) | `components/studio/color-picker-card.tsx` (dot nativo + swatches + recientes) | ✅ |
 
@@ -431,10 +481,29 @@ diseño.
 | R3 | Motor único con disparadores escala/D_ext-D_int/carga de diseño; invariancia polar (ángulo/espejo jamás re-chequean) | envolvente de tinta (2 escalares) + `evaluateOverflow` O(1) por estado | ✅ (arquitectural, testeado) |
 | R4 | Escaneo polar exacto 512² (α ≥ 128), tolerancia 0 mm ESTRICTA (tocar ≠ desbordar), desvío en mm (1 decimal), chequeo ≤ 25 ms | `scanInkEnvelope` + `measureInkEnvelopeMm` al cargar (QA2: barrido ≤ 25 ms, test) | ✅ (27 tests) |
 | R5 | Banner con redacción EXACTA (mm 1 decimal); estados Seguro/Desborde + guías afectadas en rojo con pulso 500 ms | `overflowBannerText` + `PulseGuideLine` (`#FF3B30`, overlay en `GuidesLayer`) | ✅ (ámbar→rojo @2 mm: nota visual anotada) |
-| R6 | Ficha: "Margen: seguro" / "con riesgo (excede X mm)"; export con desborde exige confirmación | `marginSheetLine()` lista para pos 9 (el modal de export llega con el export, pos 9) | ✅ función (consumo pos 9) |
+| R6 | Ficha: "Margen: seguro" / "con riesgo (excede X mm)"; export con desborde exige confirmación | `marginSheetLine()` consumido por la ficha pos 9 (grilla + canvas) y la confirmación del export usa los CTA exactos | ✅ función + consumo pos 9 |
 | R7 | Botón Auto: mayor escala segura ≤ 110 % (binaria descendente con forma exacta) + presets 85/90/100 sin "Máx" | **UI RETIRADA por decisión del titular (05-nov)**: la mayor escala segura la elige el tallerista con slider/banner; `largestSafeScalePct` (forma cerrada O(1)) queda testeada en `lib/overflow` y pos 9/10 pueden reusarla | ✅ función · 🚫 UI retirada |
 | R8 | `design.scale`/`design.mirror` persisten (legacy ⇒ 100 % / OFF); el estado de margen JAMÁS se persiste | snapshot + `normalizeState` tolerante (115⇒110 · 65⇒70 con aviso) + `inkEnvelope`/`inkScanDegraded` de sesión | ✅ |
 | §6 | Raster del chequeo falla ⇒ modo envolvente (bbox) CONSERVADOR con aviso "Detección aproximada" | `evaluateOverflowBBox` + flag `inkScanDegraded` | ✅ |
+
+### Posición 9 — Ficha técnica + Foto HD + registro QA (según `spec_detalle_del_modelo_en_ficha.md`)
+
+| Ref | Requisito | Implementación | Estado |
+| :--- | :--- | :--- | :--- |
+| R1 | Snapshot inmutable al abrir (badge "Actualizado a las HH:MM" + Actualizar re-captura); JAMÁS en `projects.state` | `captureFichaSnapshot` (`lib/quote/snapshot.ts`) en `quote-modal.tsx` — transitorio en memoria + hash f1: del contenido | ✅ |
+| R2 | Grilla 9 tarjetas / 3 secciones con formatos EXACTOS (`123.0 mm` SIEMPRE 1 dec; `92%`/`92.5%`; `45°`/`45.5°`; bandería auto W=(Dext−Dint)/2; faltante ⇒ `—`) | formatos en `snapshot.ts` + grilla React espejo + las MISMAS tarjetas dibujadas en `makeQuoteCanvas` (medición en pasada 1, dibujo en pasada 2) | ✅ (40 tests) |
+| R3 | Descriptores FIJOS (`#2A2A2A · Anodizado Personalizado` / `#E6C48E · Color Libre`); presets por su nombre; NUNCA auto-nombres | `stripZonePrefix` + `formatColorDescriptor` único consumido por grilla y canvas | ✅ |
+| R4 | Degradación de marca via `resolveBranding()` (white-label SOLO PRO; sin logo ⇒ escudo iniciales; título fallback MOCAP 3D; IG/WA removidos si faltan); jamás bloquea el export | `captureFichaSnapshot` con `brand` resuelto; canvas: escudo logo/iniciales + pie condicional (IG en línea + pill WhatsApp solo con E.164) | ✅ |
+| R5 | Observaciones máx 280 + contador; canvas ≤ 2 líneas con `…` preservando palabras; sin texto ⇒ sin bloque; el texto de sesión sobrevive re-abrir | `wrapObservations` (`lib/quote/texts.ts`, inyectable) + textarea en modal con obsText en la shell + chip "sin capturar" | ✅ |
+| R6 | Único motor `makeQuoteCanvas`: PNG 2× lado mínimo 2160 px ≤ 5 MB; PDF = envoltorio A4 del MISMO PNG con pie del taller + linkId si corresponde | `ficha-render.ts` (2 pasadas; JPEG intermedio del render con escalada .8/.6/.45) + `ficha-pdf.ts` (A4 595.28×841.89, `embedPng`, fuentes estándar + WinAnsi) | ✅ |
+| R7 | Export con ticket server-side: FREE ⇒ 402 + Paywall; PRO ⇒ descarga; ticket 5 min ligado al hash; verificar antes de adjuntar | `ensureVerifiedTicket` (`export-flow.ts`): `/ticket` → `/ticket/verificar` (403 TICKET_INVALIDO) + UNA re-emisión; FREE entra a la grilla y al export — el server decide (candado decorativo) | ✅ |
+| R8 | Fallbacks: modelo desconocido ⇒ "Mate Camionero"; escala/rotación ausentes ⇒ 100 %/0°; datos inválidos ⇒ `—` + aviso en consola | `formatModeloCard` (catálogo pos 3) + normalizadores pos 6/7 + `vigente()` con `console.warn` | ✅ |
+| §4 | Confirmación de desborde ANTES de exportar (Ficha y Foto HD) con CTA EXACTOS "Exportar de todas formas"/"Volver a ajustar" | panel interno del modal (`overflowBannerText` pos 7 + CTAs) y mini-diálogo Promise-based en la shell para Foto HD | ✅ |
+| §4 | Foto HD: render solo, misma infra de ticket+confirmación, sin grilla | `components/quote/foto-hd.ts`: `runFotoHdExport` — render 2560 px lado (dpr escalado a 2160 si excede 5 MB), nombre `{taller}-foto-mate-…` | ✅ |
+| §6 | "Sin diseño cargado" = slot de sesión vacío: Grabado con placeholder, Producto/Acabados imprimen igual | `grabadoSinDiseno` (snapshot) ⇒ tarjetas con placeholder; modal sin error | ✅ |
+| §5 | Sin entidades DB nuevas (snapshot transitorio); nombre de archivo `{taller}-ficha-mate-{model}-{aaaammdd}.png|pdf` | nada nuevo en migraciones; `slugTaller`+`formatFileDate` en `texts.ts` | ✅ |
+| §7 | Registro QA de exports: consola del server `{user, plan, artifact, at}` + JSON 200 | `GET /api/exports?type=png|pdf` + `POST /api/exports/ticket/verificar` (401/400/403/200) | ✅ (401 smoke) |
+| §3 | La escena y la ficha comparten pipeline del grabado (un solo motor, jamás duplicado) | `composeEngravingCanvas` extraída a `lib/compose-engraving.ts` — studio-scene y ficha-render la importan | ✅ |
 
 ---
 
@@ -546,9 +615,9 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–7 adentro) |
-| `npm run test` (Vitest) | ✅ **169/169** — 8 de matriz R2 + 23 de branding + 13 de catálogo + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + **7 de ticket export pos 8** |
-| `npm run build` (producción) | ✅ **12 rutas** — `/editor` 22.3 kB + `/api/exports/ticket` (seam de licencia pos 8); el motor 3D sigue en su propio chunk (`dynamic` `ssr:false`, nunca dentro del HTML inicial) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–9 adentro) |
+| `npm run test` (Vitest) | ✅ **209/209** — 8 de matriz R2 + 23 de branding + 13 de catálogo + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + **16 de textos ficha pos 9 + 24 de snapshot ficha pos 9** |
+| `npm run build` (producción) | ✅ **14 rutas** — `/editor` 29.9 kB + las 3 de `/api/exports` (ticket / verificar / registro QA); el motor 3D y pdf-lib siguen en chunks propios (`import()` dinámico desde el modal — nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
@@ -563,7 +632,8 @@ select column_name from information_schema.columns
 | **QA Posición 7** (05-nov, técnica) | R8 clamp/paso ✅ (115⇒110 · 65⇒70 · 92.25⇒92.5 · legacy ⇒ 100 %) · escaneo polar R4 con tolerancia 0 estricta ✅ (tocar ≠ desbordar, píxel a radio exacto) · corona dentada y muesca cóncava cruzan R_ext/R_int ✅ (QA2) · barrido ≤ 25 ms ✅ · Auto forma cerrada ✅ (100 % / tope 110 % / banda exacta 92.5 % / dip estructural ⇒ null) · bbox degradado §6 conservador ✅ · textos banner/ficha EXACTOS ✅ · envelope de sesión fuera del snapshot ✅ |
 | **Post-entrega pos 7** (05-nov, decisión del titular) | Botón **Auto retirado de la UI** (solo UI: `largestSafeScalePct` + sus 5 tests siguen en `lib/overflow` para pos 9/10) ✅ · **nitidez SVG corregida**: raster a resolución FINAL vía envoltorio de 1024² (SVG con width/height chicos — o sin ellos, 300×150 por defecto — nacía borrado por estirado del bitmap) ✅ · **sin refuerzo alfa ×1.8 en SVG** (conserva anti-aliasing nativo; refuerzo SOLO para PNG) ✅ · **anisotropía máxima** en la CanvasTexture del grabado (virola de perfil sin desenfoque de mipmap) ✅ · canvas de trabajo intacto 1024² (R8) ✅ |
 | **QA Posición 8** (05-nov, técnica) | Ticket HMAC v1 ✅ (ida/vuelta, vigencia 5 min EXACTOS, firma con otro secreto ⇒ null, tamper de 1 byte ⇒ null, payload re-serializado ⇒ null, cotas de datos) ✅ · ruta `/api/exports/ticket`: 401 sin sesión (smoke), plan desde `users` con service-role, FREE ⇒ 402 PAYWALL_REQUIRED, pro/grace ⇒ 200 ticket (QA con sesión real + flip de plan en DB: corre el titular) · watermark cocida: doble pasada WebGL (pase principal manual priority 1 + autoClear off + clearDepth), banda diagonal semitransparente centrada SOLO plan free · bloqueo DOM `contextmenu`/`dragstart` + select-none SOLO demo · badge demo reactivo (0/1 → 1/1 al primer diseño) · desbloqueo realtime: plan-watcher ya refresca sin reload (el flip de plan lo demuestra) |
-| Git | ✅ `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
+| **QA Posición 9** (06-nov, técnica) | Snapshot R1 inmutable ✅ (badge + Actualizar; hash f1 EXCLUYE capturedAt ⇒ ticket sobrevive Actualizar sin cambios) ✅ · formatos R2 EXACTOS ✅ (`123.0 mm` · banda auto 14.0 · `92%`/`92.5%` · `45°`/`45.5°` · faltante ⇒ `—`) · descriptores R3 sin auto-nombres ✅ · margen canónico R5 ✅ (`Seguro` / `con riesgo (excede X mm por fuera / excede Y mm hacia la boca)`) · wrapObservations R5 ✅ (≤2 líneas, `…` preserva palabra entera, palabra overlong sin seguir texto ⇒ sin elipsis) · R8 fallbacks + warns ✅ (NaN ⇒ `—`, modelo desconocido ⇒ Camionero) · hash estable ✅ (mismo contenido/reloj distinto ⇒ mismo hash; cambio de contenido/logo ⇒ otro) · currentOverflowCheck derivación única ✅ (== evaluateOverflow / bbox §6 conservador / null sin asset) · nomenclatura §5 EXACTA ✅ (`etiqueta-argenta-ficha-mate-imperial-20261103.png|pdf`, foto análoga) · build: motor three + pdf-lib en chunks separados ✅ |
+| Git | ✅ `094e73b` **posición 9** (ficha: modal #quoteModal + PNG HD 2160 + PDF A4 + Foto HD + ticket verificar + registro QA) · `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
 · los 5 campos del panel ✅ (ambos flujos tras ampliar los grants de `ops/0910`) · autosave en
@@ -594,33 +664,32 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 9 — Ficha técnica + infra de export** (fuente: `spec_detalle_del_modelo_en_ficha.md`):
-modal `#quoteModal` con **snapshot inmutable al abrir** (grilla Producto/Grabado/Acabados +
-observaciones), export **PNG HD** (`makeQuoteCanvas`, 2× ⇒ lado mínimo 2160 px, ≤ 5 MB),
-**PDF A4** envolviendo el mismo PNG, y el **ticket server-side** YA VIVO (pos 8) pidiéndose a
-`POST /api/exports/ticket` con el hash real del snapshot (FREE ⇒ `402` ⇒ Paywall; PRO ⇒
-descarga). Branding de la ficha via `resolveBranding()` (pos 2, white-label solo PRO) y
-los descriptores fijos de color (pos 5). La confirmación de desborde
-(*"Exportar de todas formas"*) se conecta acá con `marginSheetLine()` (pos 7).
+**Posición 10 — Links comerciales + Mercado Pago** (fuentes: `spec_ficha_comercial_interactiva_shareable_link.md` + `spec_pagos.md`):
+generación de **enlaces con variante A/B/C** (`variants[n].scale`/`mirror`/`rotation` — el
+pipeline comercial fija aquí lo que el editor ya persiste), **brand congelado por versión de
+link**, `linkId` para el pie de la ficha (el PASSTHROUGH null de pos 9 se enchufa ahí), envío
+por WhatsApp, modo cliente (visitante gira el mate sin controles) y el **Checkout Pro**
+(Paso C: se cobra recién cuando existe todo lo que se vende).
 
-Conexiones listas que van a consumir las siguientes:
+Conexiones listas que la posición 10 consume:
 
-- El **ticket de export** pos 8 (`lib/exports/ticket.ts` + ruta con 402/watermark) es la underlayer
-  de la ficha: la descarga adjunta el artefacto SOLO con ticket vigente (`/api/exports/ticket`).
-- La línea de ficha **"Margen: con riesgo (excede X mm)"** (`marginSheetLine()`) y la
-  confirmación *"Exportar de todas formas"* se conectan con el export de la ficha (pos 9).
-- El estado de margen **jamás se persiste** (R8 pos 7): al exportar se recalcula al vuelo con
-  la envolvente de sesión (o su modo degradado §6).
+- El **ticket de export** ya despacha ficha/foto con hash ligado (`/api/exports/ticket` +
+  `/verificar`) — el ciclo de vida de archivos por variante reusa este server-side.
+- La ficha imprime `Enlace comercial {linkId}` SOLO si existe el link activo (hoy siempre
+  `null`): resolverlo es enchufar el id del link a `captureFichaSnapshot.linkId`.
+- Los botones "Generar Enlace Comercial" / "Enviar por WhatsApp" del modal `#quoteModal`
+  tapan hoy el hint honesto de pos 10 (PRO) o abren el Paywall por `links.generate` (FREE) —
+  nada del modal cambia en su lógica del export.
 - El pipeline comercial (`variants[n].scale`/`mirror` en el payload, R8) se ensambla con el
-  resto de campos por variante en la posición 10.
+  resto de campos por variante en esta posición.
 
 *(Pendiente anotado de pos 7: la QA visual con el archivo real del taller — repro
 `Naruto/svg_naruto/primero diseño de naruto y sasuke.svg` — abre la escena, carga el SVG,
-gira y escala. Pendiente pos 8: QA 402/ticket con sesión real + flip de
-`users.plan` en DB para ver el desbloqueo realtime y el render limpio.)*
+gira y escala. Pendiente pos 8: QA 402/ticket con sesión real + flip de `users.plan` en DB.
+Pendiente pos 9: QA visual de ficha/foto con diseño real y sesión PRO (render del plate, PNG
+≤ 5 MB in situ, PDF A4 imprimible) — la técnica ya pasó con 209/209 tests + build verde.)*
 
-Y después: links + Mercado Pago (10) — `spec_ficha_comercial_interactiva_shareable_link.md`
-+ `spec_pagos.md` (Paso C: se cobra recién cuando existe todo lo que se vende).
+Y después: nada — la posición 10 cierra el plan de 10.
 
 ---
 
