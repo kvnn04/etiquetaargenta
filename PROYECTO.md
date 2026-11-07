@@ -735,7 +735,11 @@ fixture de salida limpia (`programada_cierre` + `period_end` vencido), en orden:
    `188361624478` de 20.000) — `users.plan='pro'` desde el evento, fila en `payments` con
    `price_frozen` = monto del pago y `cycle_anchor` = día de la primera aprobación;
    `receipt_url: null` (MP no lo trae — R6 permite). *(Visual del Centro de Suscripción y del
-   broadcast Realtime: al titular.)*
+   broadcast Realtime: al titular.)* **Ida del CTA en vivo (07-nov)**: el titular clickeó el CTA
+   del paywall tras la salida limpia — sesión ✓, email ✓, precio leído de `pricing_config` ✓
+   (2× `GET /api/config/pricing 200`), fila `inactiva` ✓, intent auditado (`e7286839…`, R10) ✓
+   — y MP devolvió el 400 pelado del modo TEST ⇒ la app tradujo a **502 honesto** ("MP no
+   respondió") sin crash ni éxito falso; el route NO cambió (correcto para prod, §8).
 6. **QA3 — webhook repetido** ✅ (07-nov en vivo) — re-envío del MISMO evento ⇒
    `200 {dedupe}` sin duplicar ni mutar (dedupe `mp_payment_id` + compare-and-set); y un pago
    aprobado dentro de `programada_cierre` vuelve a activa (QA3.2 live: `187300201985`).
@@ -752,8 +756,10 @@ fixture de salida limpia (`programada_cierre` + `period_end` vencido), en orden:
    precio — `update pricing_config set amount=25000 where key='pro_monthly_ars';`
    (service-role quedó RLS-bloqueado `42501` por diseño) ⇒ `GET /api/config/pricing` = 25000
    y el paywall muestra 25000 SOLO a estados free mientras el suscriptor conserva el congelado
-   (20000 con tag); opcional revert a 20000. **Salida limpia ya sembrada**: `period_end`
-   vencido ⇒ al recargar `/perfil` el reconcile baja a FREE (sin borrar NADA de contenido).
+   (20000 con tag); opcional revert a 20000. **Salida limpia consumida ✅ (07-nov)**: al
+   recargar `/perfil` el reconcile bajó la fila vencida a `inactiva` (`period_end` null,
+   `price_frozen` y `cycle_anchor` preservados) con `users.plan='free'` — proyectos/assets/
+   links intactos; la fila queda legible para el historial del Centro de Suscripción.
 
 QA manual del webhook sin túnel también vale: `tests/unit/payments-webhook.test.ts` documenta
 el manifiesto exacto `id:{dataId};request-id:{rid};ts:{ts};` para firmarlo a mano con
