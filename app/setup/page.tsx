@@ -21,6 +21,7 @@ const row = (ok: boolean, name: string) => (
 export default function SetupPage() {
   const publicOk = envStatus('NEXT_PUBLIC_SUPABASE_URL') && envStatus('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   const serviceOk = envStatus('SUPABASE_SERVICE_ROLE_KEY');
+  const pagosOk = envStatus('MP_ACCESS_TOKEN') && envStatus('MP_WEBHOOK_SECRET');
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-14">
@@ -33,10 +34,30 @@ export default function SetupPage() {
       </p>
 
       <table className="mt-6 w-full rounded-xl border border-line bg-panel p-4 text-left">
+        <thead className="px-4 text-[10px] uppercase tracking-[.24em] text-stone-500">
+          <tr>
+            <th className="pb-2 pr-3 font-medium">Variable</th>
+            <th className="pb-2 font-medium">Estado</th>
+          </tr>
+        </thead>
         <tbody className="px-4">
+          <tr className="border-b border-line/50">
+            <td className="py-2 pr-3 text-[10px] uppercase tracking-[.24em] text-gold-soft" colSpan={2}>
+              Posición 1 — Auth (obligatorias)
+            </td>
+          </tr>
           {row(envStatus('NEXT_PUBLIC_SUPABASE_URL'), 'NEXT_PUBLIC_SUPABASE_URL')}
           {row(envStatus('NEXT_PUBLIC_SUPABASE_ANON_KEY'), 'NEXT_PUBLIC_SUPABASE_ANON_KEY')}
           {row(serviceOk, 'SUPABASE_SERVICE_ROLE_KEY (server-side)')}
+          <tr className="border-b border-line/50">
+            <td className="py-2 pr-3 text-[10px] uppercase tracking-[.24em] text-gold-soft" colSpan={2}>
+              Posición 10 — Pagos (opcional para el resto del app)
+            </td>
+          </tr>
+          {row(pagosOk, 'MP_ACCESS_TOKEN + MP_WEBHOOK_SECRET (spec_pagos)')}
+          {row(envStatus('NEXT_PUBLIC_MP_PUBLIC_KEY'), 'NEXT_PUBLIC_MP_PUBLIC_KEY')}
+          {row(envStatus('RESEND_API_KEY'), 'RESEND_API_KEY (emails transaccionales)')}
+          {row(envStatus('EMAIL_FROM'), 'EMAIL_FROM (remitente verificado)')}
         </tbody>
       </table>
 
@@ -49,6 +70,11 @@ export default function SetupPage() {
         </li>
         <li className="rounded-lg bg-panel px-4 py-3">
           3. Reiniciar <code className="font-mono text-xs">npm run dev</code> y recargar.
+        </li>
+        <li className="rounded-lg bg-panel px-4 py-3">
+          4. Pagos (posición 10): correr también{' '}
+          <code className="font-mono text-xs">supabase/migrations/0005_subscriptions.sql</code>
+          {' '}y completar las llaves de Mercado Pago / Resend de la tabla.
         </li>
       </ol>
 
