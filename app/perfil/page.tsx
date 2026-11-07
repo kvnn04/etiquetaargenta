@@ -3,6 +3,7 @@ import type { Plan } from '@/lib/permissions';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { signedBrandingUrl } from '@/lib/supabase/service';
 import ProfilePanel from '@/components/profile/profile-panel';
+import { reconcileUserCycle } from '@/lib/payments/reconcile';
 import type {
   PaymentRowView,
   PagoBanner,
@@ -35,6 +36,15 @@ export default async function ProfilePage({
   } = await supabase.auth.getUser();
 
   if (!user) redirect('/auth');
+
+  /* DUNNING AL-VUELO (10B): el Centro de Suscripción muestra siempre el estado
+   * RECONCILIADO (ventanas de gracia/cierres vencidos aplicados, drift de MP
+   * lavado). Sin fila de subscriptions ⇢ la llamada no-op honesta. */
+  try {
+    await reconcileUserCycle(user.id);
+  } catch (e) {
+    console.error('[reconcile perfil]:', e instanceof Error ? e.message : e); // el render sigue igual
+  }
 
   const { data: row } = await supabase
     .from('users')

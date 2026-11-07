@@ -4,6 +4,7 @@ import { signedBrandingUrl } from '@/lib/supabase/service';
 import EditorShell, { type ShellProfile } from '@/components/editor/editor-shell';
 import type { Plan } from '@/lib/permissions';
 import type { UserRecord } from '@/lib/types/db';
+import { reconcileUserCycle } from '@/lib/payments/reconcile';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,17 @@ export default async function EditorPage() {
   } = await supabase.auth.getUser();
 
   if (!user) redirect('/auth');
+
+  /* DUNNING AL-VUELO (10B, R8): antes de leer users.plan, el estado del ciclo
+   * se reconcilia contra subscriptions/MP (ventanas vencidas → downgrade,
+   * drift de cancelaciones, realineo del gating). Así el drift no sobrevive a
+   * un solo render — la decisión del titular reemplaza al job nocturno mientras
+   * no hay dominio/pg_cron. */
+  try {
+    await reconcileUserCycle(user.id);
+  } catch (e) {
+    console.error('[reconcile editor]:', e instanceof Error ? e.message : e); // fail-soft: el render sigue
+  }
 
   const { data } = await supabase
     .from('users')
