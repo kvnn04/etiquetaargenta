@@ -17,6 +17,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import DangerConfirm from '@/components/profile/danger-confirm';
+import SubscriptionCard, {
+  type PaymentRowView,
+  type PagoBanner,
+  type SubscriptionView,
+} from '@/components/profile/subscription-card';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
   encodeLogo,
@@ -90,12 +95,20 @@ export default function ProfilePanel({
   userId,
   displayName,
   emailVerified,
+  billing,
   initial,
   logo,
 }: {
   userId: string;
   displayName: string;
   emailVerified: boolean;
+  /** Ciclo de cobro (10B): la CARD renderiza badges/banners; acá solo passthrough. */
+  billing: {
+    sub: SubscriptionView | null;
+    payments: PaymentRowView[];
+    pago: PagoBanner;
+    nowMs: number;
+  };
   initial: EditableFields;
   logo: LogoProps;
 }) {
@@ -255,6 +268,16 @@ export default function ProfilePanel({
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-stone-500">{completionCopy(completeness)}</p>
       </section>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* CENTRO DE SUSCRIPCIÓN (10B — spec_pagos §4)                       */}
+      {/* ---------------------------------------------------------------- */}
+      <SubscriptionCard
+        sub={billing.sub}
+        payments={billing.payments}
+        pago={billing.pago}
+        nowMs={billing.nowMs}
+      />
 
       {/* ---------------------------------------------------------------- */}
       {/* Logo (R4): re-encodado en cliente; preview del editable exact     */}
