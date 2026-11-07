@@ -14,7 +14,7 @@
 select table_name, grantee, privilege_type
 from information_schema.role_table_grants
 where table_schema = 'public'
-  and table_name in ('users', 'projects', 'pricing_config')
+  and table_name in ('users', 'projects', 'pricing_config', 'links', 'link_approvals')
 order by table_name, grantee;
 
 -- 2) Grants base (sin DROP, re-ejecutable — sumativos: no quitan nada previo)
@@ -36,6 +36,32 @@ grant select, update on public.users
 grant select, insert, update, delete on public.projects
   to authenticated;
 
+-- POS 10A (06-nov): el ciclo de enlaces corre server-side con service-role —
+-- publish (ownership + INSERT de la versión, congela state de projects), panel
+-- de versiones (links + link_approvals con agregados) y visor /v/[linkId].
+-- Misma quirk que motivó este script: `projects` no tenía grant para
+-- service_role y `links`/`link_approvals` nacieron SIN grants ⇒
+-- "permission denied" TRAGADO por el 404 PROJECT_NOT_FOUND del publish.
+-- BYPASSRLS salta la política pero NO el GRANT: sin esto ninguna ruta server
+-- llega ni a la RLS. El ALCANCE lo fija el código (eq user_id / RLS), no el grant.
+--
+-- FIX v2 (mismo día, tras el retry del titular): el primer bloque olvidó
+-- EXACTAMENTE el grant que causaba el 404 — el ownership del publish lee
+-- `projects` (id + state) con service-role. La fila es SUYA (eq user_id),
+-- pero sin el grant ni siquiera llega a evaluarse: permission denied antes
+-- de la policy.
+grant select on public.projects
+  to service_role;
+
+grant select, insert, update, delete on public.links
+  to service_role;
+grant select on public.link_approvals
+  to service_role;
+-- POST público de aprobaciones (client ANÓNIMO ⇒ pasa por la policy
+-- approvals_public_insert + link_open_for_approval — la DB fija el alcance): 
+grant insert on public.link_approvals
+  to anon;
+
 grant select on public.pricing_config
   to service_role;
 
@@ -43,6 +69,6 @@ grant select on public.pricing_config
 select table_name, grantee, string_agg(privilege_type, ', ') as privileges
 from information_schema.role_table_grants
 where table_schema = 'public'
-  and table_name in ('users', 'projects', 'pricing_config')
+  and table_name in ('users', 'projects', 'pricing_config', 'links', 'link_approvals')
 group by table_name, grantee
 order by table_name, grantee;

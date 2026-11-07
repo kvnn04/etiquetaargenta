@@ -210,6 +210,11 @@ export async function POST(request: NextRequest) {
     .eq('id', body.projectId)
     .eq('user_id', user.id)
     .maybeSingle<{ id: string; state: unknown }>();
+  if (owned.error) {
+    // Pos 10A QA: este error tragado fue el diagnóstico del 404 mudo del
+    // publish (grants faltantes = "permission denied for table projects", ops/0910).
+    console.error('[links ownership]:', owned.error.message);
+  }
   if (owned.error || !owned.data) {
     return NextResponse.json({ error: 'PROJECT_NOT_FOUND' }, { status: 404 });
   }
@@ -369,6 +374,10 @@ export async function GET(request: NextRequest) {
     .eq('id', projectId)
     .eq('user_id', user.id)
     .maybeSingle<{ id: string }>();
+  if (owned.error) {
+    // Misma visibilidad que el POST: grants faltantes jamás vuelven a 404 mudo.
+    console.error('[links ownership]:', owned.error.message);
+  }
   if (owned.error || !owned.data) {
     return NextResponse.json({ error: 'PROJECT_NOT_FOUND' }, { status: 404 });
   }
