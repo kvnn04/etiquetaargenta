@@ -1,33 +1,39 @@
 'use client';
 
-import { X, ShieldCheck, Link2, FileDown, BadgeCheck, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  X,
+  ShieldCheck,
+  Link2,
+  FileDown,
+  BadgeCheck,
+  Loader2,
+  MailCheck,
+  Send,
+  AlertTriangle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { formatArs } from '@/lib/payments/core';
 
 /**
- * Modal Paywall (spec_autenticacion_y_modelo_freemium.md §4):
- * precio dinámico leído del backend, beneficios concretos y CTA único
- * hacia Mercado Pago. La pos 8 dejó encendida la seam de licencia real
- * (`/api/exports/ticket` — 402 abre ESTE modal); el Checkout Pro se conecta
- * en la posición 10 (spec_pagos) — el CTA sigue deshabilitado con
- * explicación honesta mientras tanto.
+ * Modal Paywall (spec_autenticacion_y_modelo_freemium §4 + spec_pagos §4):
+ * precio dinámico leído del backend, beneficios concretos y CTA único hacia
+ * Mercado Pago. La pos 10B conecta el Checkout Pro REAL:
+ *   · CTA → POST /api/billing/checkout (gates server-side: sesión, email,
+ *     precio, suscripción viva) → redirección al `init_point` de MP.
+ *   · 409 EMAIL_NOT_VERIFIED ⇒ PASO INTERMEDIO inline (spec_pagos §4:
+ *     "Confirmá tu email para continuar", token 24 h) con reenvío y
+ *     re-verificación sin perder el flujo.
+ *   · 409 SUSCRIPCION_VIVA ⇒ cerrar + router.refresh() (el webhook puede
+ *     haber llegado tarde: "Activando…" honesto, no se duplican cargas).
+ * Sin countdown ni urgencia artificial (R5 de dark patterns cerradas).
  */
 export interface PriceInfo {
   amount: number;
   currency: string;
   updatedAt: string;
-}
-
-function formatArs(price: PriceInfo | null): string | null {
-  if (!price) return null;
-  try {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: price.currency,
-      maximumFractionDigits: 0,
-    }).format(price.amount);
-  } catch {
-    return `${price.currency} ${price.amount}`;
-  }
 }
 
 const BENEFITS = [
@@ -36,6 +42,16 @@ const BENEFITS = [
   { icon: FileDown, text: 'Fichas en HD (PNG / PDF)' },
   { icon: BadgeCheck, text: 'Tu logo en la cabecera (white-label)' },
 ];
+
+type CheckoutPhase = 'idle' | 'starting' | 'redirecting' | 'email' | 'already_active' | 'error';
+
+const ERROR_BY_CODE: Record<string, string> = {
+  PRECIO_NO_DISPONIBLE:
+    'El precio del plan no está disponible en este momento — reintentá en un rato.',
+  PAGOS_NO_CONFIGURADOS:
+    'La caja de pagos aún no está configurada (faltan las credenciales de Mercado Pago).',
+  MP_UNAVAILABLE: 'Mercado Pago no respondió — reintentá en unos minutos.',
+};
 
 export default function PaywallModal({
   open,
@@ -48,8 +64,75 @@ export default function PaywallModal({
   priceError: boolean;
   onClose: () => void;
 }) {
+  const [phase, setPhase] = useState<CheckoutPhase>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  const router = useRouter();
+
+  /* Reabrir limpio: cada intento de pago arranca desde idle. */
+  useEffect(() => {
+    if (!open) {
+      setPhase('idle');
+      setErrorMsg(null);
+      setResendState('idle');
+    }
+  }, [open]);
+
+  const startCheckout = useCallback(async () => {
+    setPhase('starting');
+    setErrorMsg(null);
+    try {
+      const res = await fetch('/api/billing/checkout', { method: 'POST' });
+      if (res.ok) {
+        const body = (await res.json().catch(() => null)) as { initPoint?: string } | null;
+        if (body?.initPoint) {
+          // Checkout Pro: salida del app — MP hospeda el alta de tarjeta.
+          setPhase('redirecting');
+          window.location.assign(body.initPoint);
+          return;
+        }
+      }
+      if (res.status === 409) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        if (body?.error === 'EMAIL_NOT_VERIFIED') {
+          setPhase('email'); // paso intermedio inline (§4)
+          return;
+        }
+        if (body?.error === 'SUSCRIPCION_VIVA') {
+          setPhase('already_active'); // webhook tarde o página vieja
+          return;
+        }
+      }
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      setErrorMsg(
+        (body?.error && ERROR_BY_CODE[body.error]) ?? 'No pudimos iniciar el pago — reintentá.',
+      );
+      setPhase('error');
+    } catch {
+      setErrorMsg('No pudimos contactar la caja — revisá tu conexión y reintentá.');
+      setPhase('error');
+    }
+  }, []);
+
+  const resendVerification = useCallback(async () => {
+    setResendState('sending');
+    const supabase = createSupabaseBrowserClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user?.email) {
+      setResendState('failed');
+      setErrorMsg('No encontramos el email de tu sesión — volvé a entrar y reintentá.');
+      return;
+    }
+    // Token de 24 h (spec usuario R7). Con confirm OFF en Supabase el envío
+    // real solo ocurre si la dirección quedó sin confirmar (QA: seed NULL).
+    const { error } = await supabase.auth.resend({ type: 'signup', email: user.email });
+    setResendState(error ? 'failed' : 'sent');
+  }, []);
+
   if (!open) return null;
-  const priceText = formatArs(price);
+  const priceText = price ? formatArs(price.amount, price.currency) : null;
 
   return (
     <div
@@ -103,16 +186,87 @@ export default function PaywallModal({
           )}
         </div>
 
-        <Button variant="green" size="lg" className="mt-4 w-full" disabled title="Se activa al conectar Checkout Pro (posición 10)">
-          Pagar Suscripción con Mercado Pago
-        </Button>
-        <p className="mt-1 text-center text-[11px] text-stone-500">
-          (El Checkout Pro se conecta con la posición 10 del{' '}
-          <span className="font-mono">orden_de_implementacion.md</span>.)
-        </p>
-        <p className="mt-3 text-center text-[10px] leading-relaxed text-stone-600">
-          Cobro automático por tarjeta. Cancelable cuando quieras desde el Portal de Mercado Pago.
-        </p>
+        {phase === 'email' ? (
+          <div className="mt-4 rounded-xl border border-gold/25 bg-black/30 p-4">
+            <div className="flex items-start gap-3">
+              <MailCheck className="mt-0.5 h-5 w-5 shrink-0 text-gold-soft" />
+              <div>
+                <p className="text-sm font-semibold text-cream">Confirmá tu email para continuar</p>
+                <p className="mt-1 text-xs text-stone-400">
+                  Te manda un token de 24 h al email de tu taller. Confirmalo y volvé acá — el
+                  flujo sigue donde quedó.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="green"
+              size="lg"
+              className="mt-4 w-full"
+              onClick={resendVerification}
+              disabled={resendState === 'sending' || resendState === 'sent'}
+            >
+              {resendState === 'sending' && <Loader2 className="h-4 w-4 animate-spin" />}
+              {resendState === 'sent' ? 'Email enviado ✓' : <><Send className="h-4 w-4" /> Reenviar email de verificación</>}
+            </Button>
+            {resendState === 'failed' && (
+              <p className="mt-2 text-center text-[11px] text-red-400">
+                No se pudo reenviar — esperá un par de minutos y tocá de nuevo.
+              </p>
+            )}
+            <Button variant="outline" className="mt-2 w-full" onClick={startCheckout}>
+              Ya lo confirmé — verificar de nuevo
+            </Button>
+          </div>
+        ) : phase === 'already_active' ? (
+          <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-950/20 p-4">
+            <p className="text-sm font-semibold text-cream">Ya tenés una suscripción en curso</p>
+            <p className="mt-1 text-xs text-stone-400">
+              Si recién la activaste, esta vista puede estar desactualizada — refrescá el
+              estado sin recargar todo.
+            </p>
+            <Button
+              variant="green"
+              className="mt-3 w-full"
+              onClick={() => {
+                onClose();
+                router.refresh();
+              }}
+            >
+              Actualizar estado
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Button
+              variant="green"
+              size="lg"
+              className="mt-4 w-full"
+              disabled={!priceText || phase === 'starting'}
+              onClick={startCheckout}
+            >
+              {phase === 'starting' && (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Abriendo Mercado Pago…
+                </>
+              )}
+              {phase === 'redirecting' && (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Conectando con Mercado Pago…
+                </>
+              )}
+              {(phase === 'idle' || phase === 'error') && <>Pagar Suscripción con Mercado Pago</>}
+            </Button>
+            {phase === 'error' && (
+              <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] text-red-400">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {errorMsg}
+              </p>
+            )}
+            <p className="mt-3 text-center text-[10px] leading-relaxed text-stone-600">
+              Cobro automático por tarjeta. Cancelable cuando quieras desde el Portal de Mercado
+              Pago.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
