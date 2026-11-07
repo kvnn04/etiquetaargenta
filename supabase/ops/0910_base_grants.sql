@@ -58,7 +58,10 @@ grant select, insert, update, delete on public.links
 grant select on public.link_approvals
   to service_role;
 -- POST público de aprobaciones (client ANÓNIMO ⇒ pasa por la policy
--- approvals_public_insert + link_open_for_approval — la DB fija el alcance): 
+-- approvals_public_insert + link_open_for_approval — la DB fija el alcance).
+-- SOLO insert: 0004 revoca SELECT de anon POR DISEÑO y el route NO usa
+-- RETURNING (QA 06-nov: insert().select() pedía el privilegio SELECT para el
+-- RETURNING ⇒ permission denied; eco del timestamp lo resuelve el route).
 grant insert on public.link_approvals
   to anon;
 

@@ -78,25 +78,31 @@ export async function POST(
   }
 
   /* INSERT con CLIENTE ANÓNIMO ⇒ la policy approvals_public_insert de RLS
-   * (link_open_for_approval: existe + vigente) aplica ANTES de grabar. */
+   * (link_open_for_approval: existe + vigente) aplica ANTES de grabar.
+   * SIN RETURNING: 0004 revoca SELECT de anon POR DISEÑO ("SELECT jamás para
+   * anon") y un `insert().select()` obliga a Postgres a pedir el privilegio
+   * SELECT para el RETURNING (QA 06-nov: permission denied de anon ya con los
+   * grants). La verdad queda en la fila; el badge del panel la lee con
+   * service-role (GET /api/links). */
   const anon = createSupabasePublicClient();
   const userAgent = request.headers.get('user-agent')?.slice(0, UA_MAX) ?? null;
-  const insert = await anon
-    .from('link_approvals')
-    .insert({ link_id: linkId, variant_id: variantId, user_agent: userAgent })
-    .select('approved_at')
-    .single();
-  if (insert.error || !insert.data) {
+  const insert = await anon.from('link_approvals').insert({
+    link_id: linkId,
+    variant_id: variantId,
+    user_agent: userAgent,
+  });
+  if (insert.error) {
     // Un rechazo de RLS acá = link vencido entre el chequeo y el insert (o
-    // anon key sin grants): se logea con el motivo exacto para el QA.
+    // anon sin grant de insert — ver ops/0910): se logea con el motivo exacto.
     console.error('[link approvals insert]:', insert.error?.message);
     return NextResponse.json({ error: 'APPROVAL_UNAVAILABLE' }, { status: 503 });
   }
+  const approvedAt = new Date().toISOString(); // eco del visor: la fila real la lee el panel
 
   /* QA registro (complemento de '[links QA registro]': la decisión del cliente) */
   console.log(
     '[link approvals QA registro]',
-    JSON.stringify({ artifact: 'approval', linkId, variantId, at: insert.data.approved_at }),
+    JSON.stringify({ artifact: 'approval', linkId, variantId, at: approvedAt }),
   );
 
   return NextResponse.json(
@@ -104,7 +110,7 @@ export async function POST(
       ok: true as const,
       linkId,
       variantId,
-      approvedAt: insert.data.approved_at,
+      approvedAt,
     },
     { status: 201 },
   );
