@@ -657,9 +657,9 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–10A adentro) |
-| `npm run test` (Vitest) | ✅ **242/242** — 8 de matriz R2 + 23 de branding + 13 de catálogo (+`linkDraft`) + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + 16 de textos ficha pos 9 + 24 de snapshot ficha pos 9 + **23 de links core + 10 de visor pos 10A** |
-| `npm run build` (producción) | ✅ **17 rutas** — `/v/[linkId]` 5.41 kB / 125 kB First Load (el Modo Cliente NO hincha el editor: escena R3F por `dynamic ssr:false`) + `/api/links` + `/api/links/[linkId]/approvals`; el motor 3D y pdf-lib siguen en chunks propios (`import()` dinámico desde el modal — nunca dentro del HTML inicial) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–10B adentro) |
+| `npm run test` (Vitest) | ✅ **285/285** — 8 de matriz R2 + 23 de branding + 13 de catálogo (+`linkDraft`) + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + 16 de textos ficha pos 9 + 24 de snapshot ficha pos 9 + 23 de links core + 10 de visor pos 10A + **32 de pagos core + 11 de webhook/firma pos 10B** |
+| `npm run build` (producción) | ✅ **19 rutas** — nuevas `/api/billing/checkout` + `/api/webhooks/mercadopago`; `/editor` 29.3 kB / 221 kB First Load y `/perfil` 10.3 kB / 196 kB (el Centro de Suscripción se lee server-side con la RLS del dueño); `/v/[linkId]` 5.41 kB / 125 kB (el Modo Cliente NO hincha el editor: escena R3F por `dynamic ssr:false`); el motor 3D y pdf-lib siguen en chunks propios y los módulos de pagos server-only no se infiltran en bundles cliente (`import()` dinámico del modal — nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
@@ -676,7 +676,8 @@ select column_name from information_schema.columns
 | **QA Posición 8** (05-nov, técnica) | Ticket HMAC v1 ✅ (ida/vuelta, vigencia 5 min EXACTOS, firma con otro secreto ⇒ null, tamper de 1 byte ⇒ null, payload re-serializado ⇒ null, cotas de datos) ✅ · ruta `/api/exports/ticket`: 401 sin sesión (smoke), plan desde `users` con service-role, FREE ⇒ 402 PAYWALL_REQUIRED, pro/grace ⇒ 200 ticket (QA con sesión real + flip de plan en DB: corre el titular) · watermark cocida: doble pasada WebGL (pase principal manual priority 1 + autoClear off + clearDepth), banda diagonal semitransparente centrada SOLO plan free · bloqueo DOM `contextmenu`/`dragstart` + select-none SOLO demo · badge demo reactivo (0/1 → 1/1 al primer diseño) · desbloqueo realtime: plan-watcher ya refresca sin reload (el flip de plan lo demuestra) |
 | **QA Posición 9** (06-nov, técnica) | Snapshot R1 inmutable ✅ (badge + Actualizar; hash f1 EXCLUYE capturedAt ⇒ ticket sobrevive Actualizar sin cambios) ✅ · formatos R2 EXACTOS ✅ (`123.0 mm` · banda auto 14.0 · `92%`/`92.5%` · `45°`/`45.5°` · faltante ⇒ `—`) · descriptores R3 sin auto-nombres ✅ · margen canónico R5 ✅ (`Seguro` / `con riesgo (excede X mm por fuera / excede Y mm hacia la boca)`) · wrapObservations R5 ✅ (≤2 líneas, `…` preserva palabra entera, palabra overlong sin seguir texto ⇒ sin elipsis) · R8 fallbacks + warns ✅ (NaN ⇒ `—`, modelo desconocido ⇒ Camionero) · hash estable ✅ (mismo contenido/reloj distinto ⇒ mismo hash; cambio de contenido/logo ⇒ otro) · currentOverflowCheck derivación única ✅ (== evaluateOverflow / bbox §6 conservador / null sin asset) · nomenclatura §5 EXACTA ✅ (`etiqueta-argenta-ficha-mate-imperial-20261103.png|pdf`, foto análoga) · build: motor three + pdf-lib en chunks separados ✅ |
 | **QA Posición 10A** (06-nov, técnica) | Núcleo puro ✅ (R2: 6 chars/canónico/colisiones inyectadas · R4: fracción ×100 → % canónico, módulo 360, labels ≤40 truncado elegante · R5: 30 d + ≤5 d con prioridad aprobado>vencido>por_vencer · código `APROBADA-{VARIANTE}-{LINKID}` EXACTO de spec usuario · wa.me de aprobación nombra la opción y pelea los símbolos del E.164) ✅ · `buildPublicView` ✅ (re-arbitra contratos: presets VÁLIDOS `bronce`/`algarrobo`, diámetros saneados con hueco < corona, legacy 1:1 con `textureDataUrl` ⇒ variante A, jsonb basura ⇒ vista sin lanzar, ids inválidos/duplicados fuera) ✅ · 402 FREE server-side ✅ (plan desde `users` con service-role fail-closed en POST — decisión del cliente jamás paga) · aprobación pública ✅ (404 inexistente / 410 vencido / variante validada contra payload + INSERT con cliente anónimo ⇒ RLS `approvals_public_insert` + trigger `link_open_for_approval`; CTA registra ANTES de `wa.me` con backoff y wa.me garantizado con número válido) ✅ · Storage ✅ (textura PNG escalera ≤300 KB + original ≤10 MB + logo por versión, buckets `link-assets` público / `designs` privado) · visor ✅ (crossfade ≤300 ms por capas de la MISMA textura sin resetear cámara/giro/ritmo, 0.5 RPM pausable que reanuda al soltar, sin guías/medidas/marca de agua, descarga sin margen) · `/v` pública POR DISEÑO ✅ (fuera del redirect a `/auth`, con comentario deliberado). Smoke del 401 sin sesión en `POST /api/links` con curl + QA visual completa (publish PRO real, badge APROBADO, layout WhatsApp) ⇒ pendiente del titular con el diseño real. **Avance QA en vivo (06-nov):** tras `3782470`, `POST /api/links` ⇒ **200** (publish real, linkId `qo6khn`, registro QA con plan `pro`) y `GET /v/qo6khn` ⇒ **200** (visor público compila y sirve) — el circuito de publicación + visor quedó verificado end-to-end en dev |
-| Git | ✅ `7d81e73` **posición 10A** (enlace comercial compartible + Modo Cliente: variantes A/B/C del mismo diseño, publish inmutable versionado + Storage re-encodado, aprobación R6 ANTES de wa.me, visor `/v/[linkId]` con crossfade ≤300 ms) · `b385c00` 10A paso 3 (rutas API links + service-role — titular) · `676fefa` 10A paso 2 (identity/payload/estados + migración 0004 — titular) · `094e73b` **posición 9** (ficha: modal #quoteModal + PNG HD 2160 + PDF A4 + Foto HD + ticket verificar + registro QA) · `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
+| **QA Posición 10B** (06-nov, técnica) | Núcleo puro ✅ (32 tests: máquina R1/R4/R8/R9 — gracia 5 días corridos NO re-abrible desde el PRIMER rechazo, `resolvePlan` activa⇒pro / gracia viva⇒pro_grace / programada pre-`period_end`⇒pro / vencidas⇒free, ciclo anclado a 00:00 AR `America/Argentina/Buenos_Aires` con clamp a meses cortos —ancla 31 ⇒ 28 feb—, `freezePrice` SOLO alta/re-activación R4, `formatArs` es-AR con NBSP U+00A0 documentado) ✅ · webhook/firma ✅ (11 tests: manifiesto HMAC `id;request-id;ts` timing-safe con cualquier v1 vigente, data-id/ts/request-id/secreto retocados ⇒ false, piezas faltantes ⇒ fail-close, query legada `?topic=&id=` para curl QA) ✅ · dedupe R7 (`mp_payment_id` UNIQUE: re-envío ⇒ 200 `dedupe` sin insertar ni mutar) + compare-and-set (`WHERE status = current`; CAS perdido logea y queda a la reconciliación) ✅ · mutación autoritativa: `price_frozen` = monto DEL PAGO aprobado y `cycle_anchor` re-anclado SOLO en alta/re-activación + autoheal de fila `subscriptions` si el seed del checkout falló ✅ · dunning al-vuelo SIN pg_cron (decisión del titular): editor y perfil reconcilian el ciclo ANTES de leer `users.plan` — ventanas vencidas ⇒ `gracia_vencida` ⇒ FREE preservando proyectos/assets/links, drift MP (cancelled/paused no notificado) ⇒ `programada_cierre`, realineo del gating con `resolvePlan`; fallo suave con try/catch ✅ · Centro de Suscripción leído con la RLS DEL DUEÑO (historial estrictamente privado, §5) ✅ · paywall con paso "Confirmá tu email" (409 `EMAIL_NOT_VERIFIED`; Confirm email sigue OFF ⇒ el QA fuerza seed `email_confirmed_at = NULL`) y `checkout_intents` cero emails de abandono (R10) ✅ · build 19 rutas sin leaks server-only en bundles cliente ✅. QA del titular de punta a punta (sandbox MP + túnel + 0005) ⇒ pendiente, checklist en §10 |
+| Git | ✅ `43e27cd` **posición 10B** (dunning al-vuelo: reconcile en editor + perfil con corte de ventanas y realineo de plan) · `04273e3` 10B paso 4 (Centro de Suscripción: tarjeta + historial con constancia + Portal MP) · `e56ca32` 10B paso 3 (webhook blindado `/api/webhooks/mercadopago` + mailer Resend) · `9c31f79` 10B paso 2 (Checkout Pro: wrapper REST MP + `POST /api/billing/checkout` + paywall con CTA real) · `8bf0d25` 10B paso 1 (núcleo puro de pagos + migración 0005 + envs MP/Resend) · `4f35790` fix 10A (aprobación pública sin RETURNING — select de anon revocado por diseño) · `3782470` fix 10A (grants service-role projects/links/link_approvals + log `[links ownership]`) · `7d81e73` **posición 10A** (enlace comercial compartible + Modo Cliente: variantes A/B/C del mismo diseño, publish inmutable versionado + Storage re-encodado, aprobación R6 ANTES de wa.me, visor `/v/[linkId]` con crossfade ≤300 ms) · `b385c00` 10A paso 3 (rutas API links + service-role — titular) · `676fefa` 10A paso 2 (identity/payload/estados + migración 0004 — titular) · `094e73b` **posición 9** (ficha: modal #quoteModal + PNG HD 2160 + PDF A4 + Foto HD + ticket verificar + registro QA) · `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
 · los 5 campos del panel ✅ (ambos flujos tras ampliar los grants de `ops/0910`) · autosave en
@@ -707,42 +708,56 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 10B — Mercado Pago: Pagos, Suscripción y Comprobantes del plan PRO** (fuente única:
-`spec_pagos.md`): la caja cierra el ciclo de vida completo de la suscripción —
-**Checkout Pro** con las credenciales MP del titular y alta protegida (email verificado ANTES
-del primer cobro; el checkout abandonado genera **cero emails automáticos** y una fila en
-`checkout_intents`), **`subscriptions` con `price_frozen`/`cycle_anchor`** (grandfathering de
-`pricing_config`: el suscriptor vigente mantiene su precio congelado con tag visible y el
-paywall muestra el precio nuevo SOLO a estados libres; re-activación tras downgrade toma el
-precio vigente), fila nueva en `payments` con `receipt_url` accesible, **webhook blindado**
-(firma inválida ⇒ `403` + log; evento duplicado ⇒ ni inserta ni muta por dedupe de
-`mp_payment_id`; pago aprobado en `programada_cierre` re-activa extendiendo `period_end`),
-**dunning fiel** (rechazo ⇒ `gracia` con banner que decrementa cada día; pago dentro de la
-ventana ⇒ PRO instantáneo; ventana vencida ⇒ downgrade a FREE preservando proyectos, assets y
-links — estos caducan por su propio cronograma de 10A; reconciliación nocturna anti-drift) y
-**salida limpia** (cancelación desde el portal ⇒ `programada_cierre` hasta `period_end` sin
-cobros extra y con banner de fecha exacta; terminado el ciclo, los candados reaparecen).
+**QA del titular de la posición 10B** — la caja ya está commiteada (tanda `8bf0d25` → `43e27cd`:
+núcleo puro + 0005 → Checkout Pro → webhook + mailer → Centro de Suscripción → dunning
+al-vuelo; hashes en la fila Git de §8). La verificación técnica pasó (285/285 tests, typecheck
+0 con strict, build de 19 rutas con exit 0); lo que queda es el circuito REAL con el sandbox
+de Mercado Pago, en orden:
 
-Conexiones que la 10B consume (quedaron listas en 10A / anteriores):
+1. **Base de datos**: correr `supabase/migrations/0005_subscriptions.sql` en el SQL Editor
+   (idempotente — puede re-correrse sin romper nada).
+2. **Credenciales sandbox MP** en `.env.local`: `MP_ACCESS_TOKEN` + `NEXT_PUBLIC_MP_PUBLIC_KEY`
+   (credenciales de PRUEBA de la app de MP) y `MP_WEBHOOK_SECRET` (secreto del webhooks del
+   panel). Reiniciar `npm run dev` (las envs se leen solo al boot).
+3. **Túnel local** (ngrok/Cloudflare) apuntando al dev server ⇒ poner la URL en
+   `MP_PUBLIC_ORIGIN` — es la `notification_url` del preapproval en dev (en prod, el dominio).
+   Los `back_urls` siguen apuntando al origin de NAVEGACIÓN (el retorno del Checkout cae en el
+   `/perfil?pago=…` del localhost del taller).
+4. **QA1 — alta protegida**: forzar `email_confirmed_at = NULL` en la fila de `auth.users` ⇒
+   CTA del paywall ⇒ 409 `EMAIL_NOT_VERIFIED` (paso "Confirmá tu email" con reenvío inline) +
+   fila nueva en `checkout_intents` y CERO emails de abandono (R10); confirmado el token de
+   24 h, "verificar de nuevo" avanza al Checkout Pro.
+5. **QA2 — ida feliz**: tarjeta de prueba del sandbox ⇒ evento `payment`/approved ⇒
+   `users.plan='pro'` broadcast Realtime (todas las pestañas desbloqueadas sin reload), fila en
+   `payments` con `receipt_url` (constancia visible en el historial de /perfil), `price_frozen`
+   = monto del pago y `cycle_anchor` = día de la primera aprobación.
+6. **QA3 — webhook repetido**: re-enviar el MISMO evento (misma firma) ⇒ 200 `{dedupe}`: ni
+   duplica el `payment` ni muta el estado (dedupe `mp_payment_id` + compare-and-set). Y un
+   pago aprobado dentro de `programada_cierre` vuelve a activa (QA3 de la spec, R9).
+7. **QA4 — dunning**: rechazo forzado ⇒ `gracia` + cuenta regresiva en el Centro + email de
+   aviso (si Resend está configurado); ventana vencida ⇒ al próximo render de editor/perfil el
+   reconcile baja a FREE preservando proyectos/assets/links y el Centro lo dice; pago DENTRO
+   de la ventana ⇒ PRO instantáneo SIN re-congelar el precio; un segundo rechazo dentro de la
+   ventana NO re-abre los 5 días (R8, corridos desde el PRIMER rechazo).
+8. **QA5 — grandfathering + salida limpia**: cambiar `pro_monthly_ars` en `pricing_config` ⇒
+   el paywall muestra el precio nuevo SOLO a estados free (el vigente conserva el suyo
+   congelado con tag); cancelación desde el Portal de MP ⇒ `programada_cierre` hasta
+   `period_end` con banner de fecha exacta y sin cobros extra (una pausa hecha directo en MP
+   y no notificada también termina en `programada_cierre` al reconciliarse). Extra de
+   seguridad: `curl` al webhook SIN firma ⇒ 403 fail-close.
 
-- El **Paywall ya abre con el precio real** desde `/api/config/pricing` (`pro_monthly_ars` en
-  `pricing_config`, NUNCA hardcodeado) — al CTA de Mercado Pago desactivado ("llega con la pos
-  10") solo le falta el backend del cobro.
-- La **matriz R2** ya concede `pro:true` y el flip de plan está demostrado en QA (badge DEMO
-  reactivo 0/1→1/1 + `PlanWatcher` refresca sin reload).
-- `resolveBranding()` ya degrada white-label a valores neutrales — el plan `gracia` reutiliza
-  esa librería de fallbacks en vez de parchear pantallas.
+QA manual del webhook sin túnel también vale: `tests/unit/payments-webhook.test.ts` documenta
+el manifiesto exacto `id:{dataId};request-id:{rid};ts:{ts};` para firmarlo a mano con
+`MP_WEBHOOK_SECRET` y mandarlo como header `x-signature: ts=…,v1=…`.
 
-*(Pendiente anotado de pos 10A: QA manual del titular con el diseño real — publish FREE ⇒ 402
-→ Paywall (flip `update public.users set plan='pro'`); happy path PRO de publish; badge
-"APROBADO Opción B" en el panel tras aprobar desde el visor; smoke 401 de `POST /api/links`
-con `curl.exe`; abrir `/v/{id}` desde el layout de WhatsApp para QA visual del crossfade y el
-giro. Arrastran de posiciones previas: QA visual de escena/ficha/foto con el archivo real del
-taller — repro `Naruto/svg_naruto/primero diseño de naruto y sasuke.svg` — y el QA 402/ticket
-con sesión real de pos 8/9. La técnica de 10A ya pasó con 242/242 tests + build de 17 rutas
-verde.)*
+Arrastran (no bloquean, de 10A y anteriores): QA visual de escena/ficha/foto con el archivo
+real del taller — repro `Naruto/svg_naruto/primero diseño de naruto y sasuke.svg` —, smoke 401
+de `POST /api/links` con `curl.exe`, badge "APROBADO Opción B" + QA visual del crossfade del
+visor con el flujo real de WhatsApp, y el QA 402/ticket con sesión real de pos 8/9.
 
-Y después: nada — con 10B cierra el plan de 10 posiciones; queda iterar con feedback del taller.
+Y después: nada más de plan — las 10 posiciones del `orden_de_implementacion.md` están
+commiteadas (10B cierra el ciclo: `8bf0d25` → `43e27cd`); queda iterar con feedback del taller
+real.
 
 ---
 

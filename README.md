@@ -4,8 +4,8 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 10A de 10 — *Enlace Comercial compartible + Modo Cliente*: publish PRO server-side (`POST /api/links` con service-role; FREE ⇒ **402** `links.generate` + Paywall), **links versionados inmutables** (`linkId` 6 chars `[a-z0-9]` con reintentos de colisión, `version=max+1`, jamás UPDATE), **payload `schemaVersion 2`** con variantes A/B/C (configs del MISMO diseño: label ≤40 truncado elegante, escala %⇒fracción 0–1.10 3 dec, rotación módulo 360, espejo — el `mateConfig` se construye SERVER-SIDE desde `projects.state`), assets re-encodados (textura PNG ≤300 KB escalera 1024/768/512 a `link-assets/{id}/` público + original ≤10 MB a `designs/` privado + logo del taller copiado POR VERSIÓN), **desborde R7**: confirmación con CTAs "Publicar de todas formas"/"Volver a ajustar" y `risk` congelado por variante (marca INTERNA del editor), vigencia **30 días** + "por vencer" ≤5, **aprobación pública acumulable** (`POST /approvals` 404/410 + INSERT con cliente anónimo ⇒ RLS `approvals_public_insert`) que se registra ANTES de abrir WhatsApp, y **Modo Cliente** `/v/[linkId]` (server service-role, páginas amables para inexistente/vencido/sin-assets, escena 3D sin guías/medidas/watermark, giro 0.5 RPM pausable, crossfade ≤300 ms sin resetear cámara, acordeón Modelo/Virola-mm/Cuerpo, código `APROBADA-{VARIANTE}-{LINKID}` copiable cuando el taller no tiene WhatsApp). Sobre las 1–9: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación, escala/desborde, protección FREE y ficha técnica/PNG HD/PDF/Foto HD. Queda Mercado Pago (10B: caja + webhook + dunning).
-242 tests pasando en Vitest, build de producción 17 rutas 100% verde y TypeScript strict 0 errores.
+**Estado**: ✅ Posición 10B de 10 — *Mercado Pago: Pagos, Suscripción y Comprobantes del plan PRO* (cierra el plan). **Checkout Pro real**: el CTA del paywall llama `POST /api/billing/checkout` (gates server-side en orden: sesión ⇒ 401 · `email_confirmed_at` vacío ⇒ 409 `EMAIL_NOT_VERIFIED` con paso "Confirmá tu email" inline en el modal — Confirm email sigue OFF en Supabase: la verificación real ocurre SOLO al pagar — · credenciales/precio `pro_monthly_ars` ⇒ 503 · suscripción viva ⇒ 409 race · fila `checkout_intents` de auditoría, R10: **cero emails de abandono**) y redirige al `init_point` del preapproval (wrapper REST v1 propio con `X-Idempotency-Key`, sin SDK nuevo). **Migración `0005_subscriptions`**: `subscriptions` (ciclo R1 `inactiva→activa→gracia→activa|FREE` + `programada_cierre`; **grandfathering R4** — `price_frozen` SOLO en alta/re-activación, con el monto del pago aprobado y `cycle_anchor` anclado al día del primer pago en `America/Argentina/Buenos_Aires`), `payments` (`mp_payment_id` UNIQUE para dedupe + `receipt_url` = constancia MP, R6; la factura ARCA sigue a mano) y `checkout_intents` — escritura solo service-role, lecturas privadas por RLS del dueño, **grants inline** (lección 10A/0910). **Webhook blindado** `/api/webhooks/mercadopago`: firma HMAC contra el manifiesto oficial `id;request-id;ts` con `MP_WEBHOOK_SECRET` (inválida ⇒ **403** fail-close), pull del recurso real (el body jamás decide dinero), dedupe + compare-and-set (re-envío sin mutar nada), transiciones del núcleo puro y broadcast Realtime vía `users.plan`; **mailer Resend** con degradación honesta a log (recibo/gracia/cierre — lista cerrada de emails). **Dunning al-vuelo** (sin pg_cron): editor y perfil reconcilian el ciclo ANTES de leer el plan — gracia 5 días corridos desde el PRIMER rechazo (no re-abrible), ventana vencida ⇒ downgrade a FREE preservando proyectos/assets/links, drift de cancelaciones de MP y realineo del gating con `resolvePlan`. **Centro de Suscripción** en `/perfil`: badge por estado, precio congelado con tag, próximo cobro, historial con constancia y botón único al Portal de MP (R9: cancelación/tarjeta SOLO ahí). Sobre las 1–10A: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación, escala/desborde, protección FREE, ficha técnica/PDF/HD y Enlace Comercial + Modo Cliente. Queda: QA del titular con sandbox MP (credenciales + 0005 + túnel — plan detallado en `PROYECTO.md` §10).
+285 tests pasando en Vitest, build de producción 19 rutas 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -19,7 +19,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
 | 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
-| Test unit | Vitest 4 (242 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A en `tests/unit/`) |
+| Test unit | Vitest 4 (285 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A + **pagos core 32 + webhook/firma 11 pos 10B** en `tests/unit/`) |
 | PDF | pdf-lib 1.17 (pos 9: envoltorio A4 de la ficha; carga diferida con `import()`, fuera del chunk inicial) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
@@ -35,7 +35,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 simulador-mates/
   app/
     auth/            → Auth Overlay + callback OAuth (PKCE) + banner neutro de cuenta baja (R8)
-    perfil/          → PANEL DE PERFIL (posición 2): 5 campos + indicador 5×20 % + zona de peligro
+    perfil/          → PANEL DE PERFIL (posición 2): 5 campos + indicador 5×20 % + zona de peligro + CENTRO DE SUSCRIPCIÓN (10B: badge, precio congelado, historial con constancia, Portal MP)
     (editor)/editor/ → shell del editor con gating R2 (guard deleted_at; escena 3D real desde la posición 3)
     api/
       config/pricing/ → GET pricing (patrón: backend como única fuente del precio)
@@ -47,6 +47,8 @@ simulador-mates/
       auth/exit/      → GET signOut server + redirect con mensaje neutro
       links/          → POS 10A: POST publish (plan autoritativo ⇒ FREE 402 / inmutable versionado + Storage) · GET versiones+aggregados de aprobaciones
       links/[id]/approvals/ → POS 10A: POST pública sin sesión (404/410 + RLS insert-only)
+      billing/checkout/     → POS 10B: POST alta de suscripción (gates sesión → email → precio → viva ⇒ preapproval MP + seed `subscriptions` inactiva)
+      webhooks/mercadopago/ → POS 10B: ÚNICO webhook de dinero (firma HMAC fail-close 403 · pull del recurso · dedupe `mp_payment_id` + CAS · emails legítimos R10)
     v/[linkId]/       → POS 10A: MODO CLIENTE (server service-role + páginas amables + /v público)
     setup/            → página amable si faltan env vars
   components/        → auth / profile / editor / studio / paywall / quote (pos 9) / links (pos 10A) / session / ui
@@ -65,15 +67,16 @@ simulador-mates/
     exports/ticket-server.ts → POS 9: helpers de server compartidos (ticketSecret env + planOf fail-closed) — las 3 rutas de /api/exports usan EL MISMO
     quote/           → POS 9: snapshot.ts (snapshot inmutable + formatos de tarjeta + hash f1 + currentOverflowCheck) · texts.ts (wrapObservations + nomenclatura de archivos) · export-flow.ts (ticket→verificar + cota 5MB + descarga + registro QA)
     links/           → POS 10A: identity.ts (linkId R2 + colisiones) · payload.ts (schemaVersion 2 + risk R7 + linkDraft) · states.ts (estados/vigencia + wa.me share/aprobación + código APROBADA) · asset-encode.ts (≤300 KB escalera PNG) · view-shape.ts (buildPublicView tolerante + legacy 1:1)
+    payments/        → POS 10B (sin SDK de MP; PURO el core): core.ts (máquina R1/R4/R8/R9 + gracia 5 d corridos + ciclo anclado tz AR + formatos ARS + resolvePlan) · mercadopago.ts (REST v1 preapproval/payments) · webhook.ts (firma HMAC manifiesto `id;request-id;ts` timing-safe) · mail.ts (Resend + degradación honesta a log) · reconcile.ts (dunning al-vuelo: ventanas vencidas + drift MP + realineo del plan)
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state (+ linkDraft pos 10A)
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
     encode-logo.ts   → pipeline del logo en CLIENTE (webp ≤512 + thumb 144)
     supabase/        → client / server / service (+ Storage branding + client anónimo para RLS de aprobaciones) / middleware
   supabase/
-    migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default · 0004_shareable_links (links + link_approvals RLS pública + buckets) (idempotentes, sin DROP)
+    migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default · 0004_shareable_links (links + link_approvals RLS pública + buckets) · 0005_subscriptions (ciclo de cobro: subscriptions + payments + checkout_intents, RLS owner select, grants inline) (idempotentes, sin DROP)
     ops/         → reparaciones re-ejecutables: 0901 backfill · 0910 grants · 0920 purga R8
-  tests/         → Vitest (unit; 12 archivos): links-core + links-view (pos 10A) · quote-snapshot + quote-texts (pos 9) · export-ticket (pos 8) · overflow · design · color · virola · catalog · branding · matriz
+  tests/         → Vitest (unit; 14 archivos): payments-core + payments-webhook (pos 10B) · links-core + links-view (pos 10A) · quote-snapshot + quote-texts (pos 9) · export-ticket (pos 8) · overflow · design · color · virola · catalog · branding · matriz
   three/         → motor 3D (pos 3): lathe-builder.ts · visual-skeleton.ts (+ three/README.md)
 ```
 
@@ -81,7 +84,7 @@ simulador-mates/
 
 1. **Paquetes**: `npm install` (Node ≥ 20; probado con Node 24 / npm 12).
 2. **Supabase** → crear proyecto en [supabase.com] con región **sa-east-1** (latencia regional, §6 de la guía).
-3. **Migraciones** (SQL Editor, en orden — las tres idempotentes, sin DROP):
+3. **Migraciones** (SQL Editor, en orden — todas idempotentes, sin DROP):
    1. `supabase/migrations/0001_auth_skeleton.sql` — users/projects/pricing + trigger + RLS.
    2. `supabase/migrations/0002_profile_fields.sql` — columnas de perfil (brand_name, logo_url,
       logo_thumb_url, whatsapp_e164, instagram_handle, location, deleted_at) + CHECKs.
@@ -90,13 +93,20 @@ simulador-mates/
       > El bucket de Storage `branding` **no se crea a mano**: la app lo crea sola en la primera
       > subida de logo (service role). Es **privado**: en la base solo quedan PATHS; las vistas
       > usan URLs firmadas de 1 h.
+   4. `supabase/migrations/0004_shareable_links.sql` — `links` + `link_approvals` (RLS pública
+      insert-only) + buckets `link-assets`/`designs` (posición 10A).
+   5. `supabase/migrations/0005_subscriptions.sql` — ciclo de cobro `subscriptions`/`payments`/
+      `checkout_intents` con RLS del dueño y grants inline (posición 10B).
 4. **Dashboard (Auth)**
    - Providers → **Google**: activarlo (Client ID/Secret de Google Cloud) + Redirect URLs:
      `http://localhost:3000/auth/callback`.
    - **Confirm email: OFF** — es la regla "fricción cero" (R1 spec usuario); la verificación
      real ocurre solo al pagar (R7, token 24 h — posición 8–10).
    - Database → Replication → activar **public.users** (desbloqueo realtime sin reload, R6 spec_auth).
-5. **Env**: `cp .env.local.example .env.local` y completar las 3 variables.
+5. **Env**: `cp .env.local.example .env.local` y completar las 3 variables de Supabase.
+   Para la posición 10B (pagos) añadir las llaves de Mercado Pago / Resend cuando se corra ese QA:
+   `MP_ACCESS_TOKEN`, `NEXT_PUBLIC_MP_PUBLIC_KEY`, `MP_WEBHOOK_SECRET`, `RESEND_API_KEY`,
+   `EMAIL_FROM` y `MP_PUBLIC_ORIGIN` (URL del túnel del webhook en dev).
    (un archivo llamado `.env` también vale — Next lo carga igual; `.env.local` únicamente gana
    si existieran ambos)
 6. **Dev**: `npm run dev` → `http://localhost:3000/auth`.
@@ -303,7 +313,7 @@ red un momento para ver el banner del borrador local.
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links, 242 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links + pagos, 285 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -318,7 +328,7 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 8. ✅ **Protección FREE (watermark cocida, bloqueo DOM, 402 ticket)** — auth paso B, commiteada (05-nov)
 9. ✅ **Ficha técnica + Foto HD + registro QA** — modal `#quoteModal` (snapshot + 9 tarjetas + PNG 2160 ≤5MB + PDF A4 + ticket verificar), commiteada (06-nov)
 10. ✅ **10A — Enlace Comercial compartible + Modo Cliente** — links con variantes A/B/C + `linkId` al DNA de la ficha + `/v/[linkId]` público, commiteada (`7d81e73`)
-11. ⬜ **10B — Mercado Pago** (caja + webhook + dunning, `spec_pagos.md`) ← siguiente
+11. ✅ **10B — Mercado Pago: pagos, suscripción y comprobantes** — Checkout Pro + `price_frozen` grandfathering + webhook HMAC con dedupe + dunning al-vuelo + Centro de Suscripción, commiteada (`43e27cd`, 06-nov; QA del titular con sandbox pendiente — plan en `PROYECTO.md` §10)
 
 Cada bloque de trabajo se abre leyendo la spec fuente: los números (latencias,
 límites, constantes) solo se cambian allí y de ahí se re-verifican los consumidores.
