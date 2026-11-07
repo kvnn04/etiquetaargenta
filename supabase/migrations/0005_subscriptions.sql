@@ -28,8 +28,13 @@ create table if not exists public.subscriptions (
   currency       text not null default 'ARS',
   cycle_anchor   date,               -- día del mes de cobro (R1)
   period_end     timestamptz,        -- fin del ciclo ya pago (programada_cierre, R9)
+  grace_expires_at timestamptz,      -- ventana de gracia (R8; espejo del cursor)
   created_at     timestamptz not null default now()
 );
+
+-- Idempotencia para bases donde la tabla ya nació sin la columna (proyectos
+-- que corrieron la 0005 original): sin esto el reconcile/webhook fallan la lectura.
+alter table public.subscriptions add column if not exists grace_expires_at timestamptz;
 
 create table if not exists public.payments (
   id            uuid primary key default gen_random_uuid(),
