@@ -760,6 +760,16 @@ fixture de salida limpia (`programada_cierre` + `period_end` vencido), en orden:
    recargar `/perfil` el reconcile bajó la fila vencida a `inactiva` (`period_end` null,
    `price_frozen` y `cycle_anchor` preservados) con `users.plan='free'` — proyectos/assets/
    links intactos; la fila queda legible para el historial del Centro de Suscripción.
+9. **Exploración visual MP (07-nov, titular)** ✅ — alta REAL en la página del plan hospedada
+   por MP (Checkout Pro de suscripciones): comprador-test + tarjeta APRO ⇒ preapproval
+   `1bfa10ce…` **authorized** con primer cobro de 20.000 acreditado (semáforo verde en
+   `summarized`; el índice `/payments/search` del sandbox tenga lag — la verdad es la del
+   preapproval) y retorno al taller con `?preapproval_id=…` en la `back_url` del plan.
+   Confirmación extra del binding: `external_reference` es inmutable post-alta (PUT ⇒ 400) —
+   el circuito del app NO se engancha con alta hospedada (correcto: el alta de prod nace CON
+   la ref desde el route del app vía Checkout Pro). La suscripción queda viva para explorar
+   la gestión del comprador en el portal de MP; el interstitial de ngrok (free) es solo el
+   once-per-visitor del túnel, sin impacto de la app.
 
 QA manual del webhook sin túnel también vale: `tests/unit/payments-webhook.test.ts` documenta
 el manifiesto exacto `id:{dataId};request-id:{rid};ts:{ts};` para firmarlo a mano con
