@@ -4,8 +4,8 @@ Simulador 3D para talleres de grabado láser: configuran el mate, lo comparten c
 cliente por enlace y cierran la venta. Implementación del paquete de especificaciones
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
-**Estado**: ✅ Posición 9 de 10 — *Ficha técnica + Foto HD (modal `#quoteModal`)*: snapshot inmutable al abrir (badge "Actualizado a las HH:MM" + Actualizar), grilla de **9 tarjetas / 3 secciones** con formatos exactos (`123.0 mm` siempre 1 decimal, banda auto W=(Dext−Dint)/2, `92%`/`92.5%`, `45°`/`45.5°`, faltante ⇒ `—`), descriptores fijos (`#2A2A2A · Anodizado Personalizado`, `#E6C48E · Color Libre`), observaciones (280 máx, ≤ 2 líneas con `…` preservando palabras, viven en sesión), export **PNG HD 2× lado mínimo 2160 px ≤ 5 MB** (`makeQuoteCanvas`, render con las 4 luces EXACTAS de la escena y sin watermark, vía el compositor compartido `lib/compose-engraving.ts`) + **PDF A4** envoltorio del mismo PNG (pdf-lib) + **Foto HD** (2560 px) y **ticket server-side verificado** (`/ticket` → `/ticket/verificar`, hash ligado, UNA re-emisión; FREE ⇒ 402 + Paywall) + registro QA (`GET /api/exports`). Confirmación de desborde ANTES de exportar con los CTA exactos "Exportar de todas formas" / "Volver a ajustar". Sobre las 1–8: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación, escala/desborde y protección FREE (watermark cocida + 402). Quedan links + Mercado Pago (10).
-209 tests pasando en Vitest, build de producción 14 rutas 100% verde y TypeScript strict 0 errores.
+**Estado**: ✅ Posición 10A de 10 — *Enlace Comercial compartible + Modo Cliente*: publish PRO server-side (`POST /api/links` con service-role; FREE ⇒ **402** `links.generate` + Paywall), **links versionados inmutables** (`linkId` 6 chars `[a-z0-9]` con reintentos de colisión, `version=max+1`, jamás UPDATE), **payload `schemaVersion 2`** con variantes A/B/C (configs del MISMO diseño: label ≤40 truncado elegante, escala %⇒fracción 0–1.10 3 dec, rotación módulo 360, espejo — el `mateConfig` se construye SERVER-SIDE desde `projects.state`), assets re-encodados (textura PNG ≤300 KB escalera 1024/768/512 a `link-assets/{id}/` público + original ≤10 MB a `designs/` privado + logo del taller copiado POR VERSIÓN), **desborde R7**: confirmación con CTAs "Publicar de todas formas"/"Volver a ajustar" y `risk` congelado por variante (marca INTERNA del editor), vigencia **30 días** + "por vencer" ≤5, **aprobación pública acumulable** (`POST /approvals` 404/410 + INSERT con cliente anónimo ⇒ RLS `approvals_public_insert`) que se registra ANTES de abrir WhatsApp, y **Modo Cliente** `/v/[linkId]` (server service-role, páginas amables para inexistente/vencido/sin-assets, escena 3D sin guías/medidas/watermark, giro 0.5 RPM pausable, crossfade ≤300 ms sin resetear cámara, acordeón Modelo/Virola-mm/Cuerpo, código `APROBADA-{VARIANTE}-{LINKID}` copiable cuando el taller no tiene WhatsApp). Sobre las 1–9: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación, escala/desborde, protección FREE y ficha técnica/PNG HD/PDF/Foto HD. Queda Mercado Pago (10B: caja + webhook + dunning).
+242 tests pasando en Vitest, build de producción 17 rutas 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -19,7 +19,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
 | 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
-| Test unit | Vitest 4 (209 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 en `tests/unit/`) |
+| Test unit | Vitest 4 (242 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A en `tests/unit/`) |
 | PDF | pdf-lib 1.17 (pos 9: envoltorio A4 de la ficha; carga diferida con `import()`, fuera del chunk inicial) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
@@ -45,8 +45,12 @@ simulador-mates/
       profile/logo/   → POST/DELETE del logo (server revalida por magia de bytes)
       profile/delete/ → POST eliminar cuenta (soft + hard delete + signOut)
       auth/exit/      → GET signOut server + redirect con mensaje neutro
+      links/          → POS 10A: POST publish (plan autoritativo ⇒ FREE 402 / inmutable versionado + Storage) · GET versiones+aggregados de aprobaciones
+      links/[id]/approvals/ → POS 10A: POST pública sin sesión (404/410 + RLS insert-only)
+    v/[linkId]/       → POS 10A: MODO CLIENTE (server service-role + páginas amables + /v público)
     setup/            → página amable si faltan env vars
-  components/        → auth / profile / editor / studio / paywall / quote (pos 9) / session / ui
+  components/        → auth / profile / editor / studio / paywall / quote (pos 9) / links (pos 10A) / session / ui
+    links/           → variants-card.tsx (borrador A/B/C del panel) · link-modal.tsx (publish+versiones) · client-viewer.tsx (Modo Cliente UI) · viewer-scene.tsx (escena 3D pública)
     quote/           → quote-modal.tsx (modal #quoteModal completo) · ficha-render.ts (motor único makeQuoteCanvas) · ficha-pdf.ts (A4 pdf-lib) · foto-hd.ts (Foto HD)
   lib/
     permissions.ts   → MATRIZ R2 (única fuente, alineada a spec_auth §3-R2)
@@ -60,15 +64,16 @@ simulador-mates/
     exports/ticket.ts → TICKET DE EXPORT pos 8: HMAC-SHA256 v1 (5 min EXACTOS + verify timing-safe) — la ficha pos 9 pide su descarga con el hash del snapshot
     exports/ticket-server.ts → POS 9: helpers de server compartidos (ticketSecret env + planOf fail-closed) — las 3 rutas de /api/exports usan EL MISMO
     quote/           → POS 9: snapshot.ts (snapshot inmutable + formatos de tarjeta + hash f1 + currentOverflowCheck) · texts.ts (wrapObservations + nomenclatura de archivos) · export-flow.ts (ticket→verificar + cota 5MB + descarga + registro QA)
-    store/editor.ts  → zustand: estado del editor = snapshot de projects.state
+    links/           → POS 10A: identity.ts (linkId R2 + colisiones) · payload.ts (schemaVersion 2 + risk R7 + linkDraft) · states.ts (estados/vigencia + wa.me share/aprobación + código APROBADA) · asset-encode.ts (≤300 KB escalera PNG) · view-shape.ts (buildPublicView tolerante + legacy 1:1)
+    store/editor.ts  → zustand: estado del editor = snapshot de projects.state (+ linkDraft pos 10A)
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
     profile.ts       → completitud 5×20 % + copy dinámico
     encode-logo.ts   → pipeline del logo en CLIENTE (webp ≤512 + thumb 144)
-    supabase/        → client / server / service (+ Storage branding) / middleware
+    supabase/        → client / server / service (+ Storage branding + client anónimo para RLS de aprobaciones) / middleware
   supabase/
-    migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default (idempotentes, sin DROP)
+    migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default · 0004_shareable_links (links + link_approvals RLS pública + buckets) (idempotentes, sin DROP)
     ops/         → reparaciones re-ejecutables: 0901 backfill · 0910 grants · 0920 purga R8
-  tests/         → Vitest (unit; 10 archivos): quote-snapshot + quote-texts (pos 9) · export-ticket (pos 8) · overflow · design · color · virola · catalog · branding · matriz
+  tests/         → Vitest (unit; 12 archivos): links-core + links-view (pos 10A) · quote-snapshot + quote-texts (pos 9) · export-ticket (pos 8) · overflow · design · color · virola · catalog · branding · matriz
   three/         → motor 3D (pos 3): lathe-builder.ts · visual-skeleton.ts (+ three/README.md)
 ```
 
@@ -273,13 +278,32 @@ red un momento para ver el banner del borrador local.
 | Nomenclatura §5: `{taller}-ficha-mate-{model}-{aaaammdd}.png\|pdf` y `{taller}-foto-mate-{model}-{aaaammdd}.png` | ✅ `slugTaller` + `formatFileDate` en `texts.ts` (testeado con el ejemplo exacto de la spec) |
 | La escena y la ficha comparten pipeline del grabado (un solo motor) | ✅ `composeEngravingCanvas` extraída a `lib/compose-engraving.ts` — studio-scene y ficha-render la importan |
 
+## ¿Qué quedó de la posición 10A? (según `spec_ficha_comercial_interactiva_shareable_link.md`)
+
+| Requisito | Estado |
+| :--- | :--- |
+| Links versionados inmutables (R1): cada publish crea `linkId` nuevo, jamás UPDATE de payload; historial con agregados de aprobaciones | ✅ tabla `links` insert-only (`0004`), `POST /api/links` con `version=max+1`, `GET /api/links?projectId=` para el panel |
+| `linkId` 6 chars `[a-z0-9]` (R2) canónico case-insensitive con reintentos de colisión; URL `/v/{id}` desde el origin del request | ✅ `lib/links/identity.ts` (`generateUniqueLinkId` inyectable, 23 tests) |
+| Payload `schemaVersion 2` (R4): labels ≤40 truncado elegante, escala %⇒fracción 0–1.10 3 dec, rotación módulo 360, espejo; compat legacy 1:1 | ✅ `lib/links/payload.ts` + `buildPublicView` (`view-shape.ts`) re-arbitra todo en el visor (10 tests) |
+| Assets re-encodados (R3): ≤1024²/≤300 KB por variante en URLs de larga vida; `mateConfig` construido SERVER-SIDE desde `projects.state` | ✅ PNG escalera 1024/768/512 (`asset-encode.ts`, alpha intacto) → `link-assets/{id}/design.ext` público + original ≤10 MB → `designs/{user}/{project}` privado + logo del taller copiado POR VERSIÓN (`{id}/logo.png`, degrada a iniciales si falla) |
+| Vigencia 30 días + "por vencer" ≤5 días (R5); estados del editor con prioridad aprobado>vencido>por_vencer>vigente | ✅ `lib/links/states.ts` (`linkEditionState`/`editionBadgeText`) + badge en el modal de versiones |
+| Publicación con desborde documentado (R7): confirmación por variante + `risk` congelado INTERNO (el cliente jamás lo ve) | ✅ `currentOverflowCheck` por `scalePct` de cada variante + mini-diálogo de la shell reutilizado con CTAs "Publicar de todas formas"/"Volver a ajustar" + `LinkVariantRisk` en el payload |
+| Paywall server-side (R8): FREE ⇒ 402 `links.generate` + Paywall; abrir/ver/aprobar público SIN sesión | ✅ plan desde `users` con service-role (fail-closed) en POST; middleware: `/v` deliberadamente fuera del redirect a /auth |
+| Aprobación registrada ANTES de abrir WhatsApp (R6), acumulable, badge "APROBADO Opción B" | ✅ `POST /api/links/[id]/approvals` (404 inexistente / 410 vencido / variante validada contra el payload) + INSERT con cliente ANÓNIMO ⇒ la DB (`approvals_public_insert` + `link_open_for_approval`) es la última palabra; texto de WhatsApp nombra la opción EXACTA |
+| Export del panel completo: Copiar Enlace / Enviar por WhatsApp con mensaje pre-armado EXACTO / vence el DD/AA | ✅ `link-modal.tsx` (draft+versiones+resultado; sin WhatsApp ⇒ "Copiar Enlace" solitario, R8) |
+| Borrador de variantes persiste en `projects.state.linkDraft` (labels/configs sobreviven la recarga) | ✅ `StoredVariantRow`/`normalizeVariantRows` (`payload.ts`) + `setLinkDraft` en el store + normalizador jsonb |
+| Modo Cliente §4: top bar marca + "Vista Previa Oficial", giro 0.5 RPM pausable por el dedo, zoom/pinche, selector A/B/C + acordeón (Modelo/Virola mm/Cuerpo) + CTA verde full-width | ✅ `client-viewer.tsx` + `viewer-scene.tsx` (misma librería 3D del editor, SIN guías/medidas/watermark; crossfade ≤300 ms por capas de la textura — cámara y ritmo del giro jamás se resetean) |
+| Páginas amables §6: inexistente/vencido/no disponible; variante con asset caído queda deshabilitada y las demás siguen | ✅ `app/v/[linkId]/page.tsx` (service-role, expiración ANTES de servir contenido) + `not-found.tsx` + gating por `assets` fallidos en el visor |
+| Fallback sin WhatsApp (spec usuario R5): código `APROBADA-{VARIANTE}-{LINKID}` copiable + "Ponete en contacto con tu vendedor…" | ✅ `approvalCode()` + panel del código en el visor (el evento IGUAL registra, R6); con número `wa.me` directo tras el POST (reintentos con backoff en red rota) |
+| linkId vigente ligado al DNA de la ficha (PASSTHROUGH de pos 9) | ✅ la shell consulta el link activo al abrir `#quoteModal` y lo pasa a `captureFichaSnapshot.linkId` |
+
 ## Scripts
 
 ```bash
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos, 209 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links, 242 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -293,7 +317,8 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo** — commiteada (`b8cb203`; post-entrega `141f094`: Auto retirado por decisión del titular + nitidez SVG)
 8. ✅ **Protección FREE (watermark cocida, bloqueo DOM, 402 ticket)** — auth paso B, commiteada (05-nov)
 9. ✅ **Ficha técnica + Foto HD + registro QA** — modal `#quoteModal` (snapshot + 9 tarjetas + PNG 2160 ≤5MB + PDF A4 + ticket verificar), commiteada (06-nov)
-10. ⬜ Links comerciales + pagos MP — links + `spec_pagos` ← siguiente
+10. ✅ **10A — Enlace Comercial compartible + Modo Cliente** — links con variantes A/B/C + `linkId` al DNA de la ficha + `/v/[linkId]` público, commiteada (`7d81e73`)
+11. ⬜ **10B — Mercado Pago** (caja + webhook + dunning, `spec_pagos.md`) ← siguiente
 
 Cada bloque de trabajo se abre leyendo la spec fuente: los números (latencias,
 límites, constantes) solo se cambian allí y de ahí se re-verifican los consumidores.

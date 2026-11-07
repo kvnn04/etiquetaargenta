@@ -36,7 +36,7 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 9 de 10 ✅
+## 2. Dónde estamos: posición 10A de 10 ✅
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
@@ -49,8 +49,9 @@ El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero
 6. ✅ Editor 3D: rotación del diseño SVG/PNG (imán ±4°, presets)
 7. ✅ Editor 3D: escala fina 70–110 % + motor de desborde "chorreo" + espejo (botón Auto retirado por decisión del titular 05-nov)
 8. ✅ Protección FREE: watermark cocida al render + bloqueo de rutas DOM + 402 en la API de export
-9. ✅ Ficha técnica: snapshot inmutable + grilla de 9 tarjetas + PNG HD + PDF A4 + Foto HD + registro QA ← ESTAMOS ACÁ
-10. ⬜ Links comerciales + Mercado Pago (se cobra recién cuando existe todo)
+9. ✅ Ficha técnica: snapshot inmutable + grilla de 9 tarjetas + PNG HD + PDF A4 + Foto HD + registro QA
+10. ✅ 10A — Enlace Comercial compartible + Modo Cliente /v/[linkId] ← ESTAMOS ACÁ
+    ⬜ 10B — Mercado Pago: caja + webhook + dunning (se cobra recién cuando existe todo)
 ```
 
 La posición 4 entregó la **edición milimétrica de virola**, la **anatomía formal en 3 mallas**
@@ -261,8 +262,12 @@ simulador-mates/
 │   ├── auth/auth-overlay.tsx      ← Google OAuth + email/contraseña + olvidaste tu contraseña
 │   ├── profile/profile-panel.tsx  ← tarjetas con guardado inline, indicador 5×20 %, drag&drop del logo
 │   ├── profile/danger-confirm.tsx ← doble confirmación R8 (palabra ELIMINAR + botón final)
-│   ├── editor/editor-shell.tsx    ← top bar + escena 3D (dynamic ssr:false) + restore + panel gated + watermark/bloqueo DOM por plan (pos 8) + modal #quoteModal y foto HD (pos 9)
+│   ├── editor/editor-shell.tsx    ← top bar + escena 3D (dynamic ssr:false) + restore + panel gated + watermark/bloqueo DOM por plan (pos 8) + modal #quoteModal y foto HD (pos 9) + tarjeta variantes + modal del Enlace (10A)
 │   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans) + badge demo reactivo 0/1→1/1 (pos 8 R3)
+│   ├── links/link-modal.tsx       ← ★ POS 10A: MODAL del ENLACE — vista draft+versiones (badges R5, copiar, WhatsApp) + publish (402⇒Paywall, confirm de desborde R7 con CTAs, re-encode R3) + resultado (Copiar/Enviar/vence)
+│   ├── links/variants-card.tsx    ← ★ POS 10A: tarjeta "Variantes del Enlace" (A/B/C incluidas/label≤40/escala/rotación/espejo + "Usar diseño actual") — persiste via setLinkDraft en projects.state
+│   ├── links/client-viewer.tsx    ← ★ POS 10A: MODO CLIENTE UI — assets×URL única (fail⇒"no disponible"), crossfade ≤300 ms, chips A/B/C, acordeón, CTA R6 (POST ANTES de wa.me · reintentos backoff · código APROBADA literal) + págs amables
+│   ├── links/viewer-scene.tsx     ← ★ POS 10A: ESCENA 3D PÚBLICA — mismas libs del editor (lathe+PBR+compositor) pero para el payload congelado; giro 0.5 RPM pausable, cámara fijada por silueta, SIN guías/medidas/watermark
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado hasta Checkout Pro: pos 10)
 │   ├── quote/quote-modal.tsx      ← ★ POS 9: MODAL #quoteModal — snapshot inmutable + grilla 9 tarjetas + observaciones (sesión) + confirmación de desborde + export PNG/PDF con ticket R7
 │   ├── quote/ficha-render.ts      ← ★ POS 9: ÚNICO MOTOR — renderMateView (3 luces de escena, sin guías/watermark) + makeQuoteCanvas (PNG 2× ≥2160 ≤5MB) FUERA del chunk inicial (import() dinámico)
@@ -292,6 +297,11 @@ simulador-mates/
 │   ├── quote/texts.ts              ← ★ POS 9: wrapObservations (≤2 líneas `…` preserva palabras) + MCU 280 + nomenclatura §5 ficha/foto
 │   ├── quote/export-flow.ts        ← ★ POS 9: flujo de export compartido cliente (ticket→verificar con UNA re-emisión R7 · cota 5MB · downloadBlob · registro QA)
 │   ├── compose-engraving.ts        ← ★ compositor compartido del grabado (extraído de studio-scene en pos 9): Escala→Espejo→Rotación + tinte burn + máscara anular — la escena y la ficha usan EL MISMO pipeline
+│   ├── links/identity.ts           ← ★ POS 10A: linkId R2 (6 chars [a-z0-9], canónico case-insensitive) + colisiones inyectadas
+│   ├── links/payload.ts            ← ★ POS 10A: payload schemaVersion 2 (R4 fracción/rotación/labels≤40) + risk R7 congelado + linkDraft A/B/C (StoredVariantRow)
+│   ├── links/states.ts             ← ★ POS 10A: vigencia/estados R5 (prioridad aprobado>vencido>por_vencer) + URL canónica + wa.me share/aprobación R6/R8 + código APROBADA + RPM del visor
+│   ├── links/asset-encode.ts       ← ★ POS 10A: re-encode client-only (PNG ≤300 KB escalera 1024/768/512 con alpha) + original ≤10 MB
+│   ├── links/view-shape.ts         ← ★ POS 10A: buildPublicView (jsonb ⇒ vista del visor: re-arbitra contratos, presets válidos, gating por asset, legado 1:1)
 │   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color/diseño pos 5–6 + escala/espejo/inkEnvelope pos 7)
 │   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
 │   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
@@ -310,6 +320,7 @@ simulador-mates/
 │   │   ├── 0001_auth_skeleton.sql     ← users + trigger nombre derivado + projects + pricing_config + RLS + Realtime
 │   │   └── 0002_profile_fields.sql    ← columnas de branding + CHECKs + deleted_at (aplicada 04-nov)
 │   │   └── 0003_projects_owner_default.sql ← default auth.uid() en projects (aplicada 04-nov)
+│   │   └── 0004_shareable_links.sql     ← POS 10A: links (insert-only, RLS owner select) + link_approvals (INSERT público con link_open_for_approval) + buckets link-assets (público lectura) / designs (privado) (aplicada 06-nov)
 │   └── ops/
 │       ├── 0901_backfill_user_rows.sql ← reparación: fila faltante en public.users (cuenta nacida pre-migración)
 │       ├── 0910_base_grants.sql        ← grants ampliados users/projects/pricing (aplicada 04-nov)
@@ -317,6 +328,7 @@ simulador-mates/
 │
 ├── tests/
 │   ├── unit/permissions.test.ts   ← 8 tests: invariantes de la matriz R2
+│   ├── unit/links-core.test.ts    ← 23 tests pos 10A: R2 (6 chars/canónico/colisiones), R4 (fracción/módulo/labels truncado), R5 (30 d + ≤5 d con prioridad), R6 texto, R8 wa.me EXACTO
 │   ├── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
 │   ├── unit/catalog.test.ts       ← 13 tests: QA1 matemático, labio anti-fuga R4, R8, corrupción §6
 │   ├── unit/color.test.ts         ← 32 tests: tabla PBR R1, exclusividad/recientes R3, quemado R4 (luminancia), descriptores R5
@@ -325,6 +337,7 @@ simulador-mates/
 │   ├── unit/export-ticket.test.ts ← 7 tests pos 8: ida/vuelta HMAC, vigencia 5 min exacta, forjado/otro secreto, tamper de UN byte, replanificación de JSON ⇒ null, cotas de datos
 │   ├── unit/quote-texts.test.ts     ← 16 tests pos 9: wrapObservations R5 (≤2 líneas, `…` preserva palabras, overlong word), MCU 280, slug/nomenclatura §5 EXACTA ficha/foto
 │   ├── unit/quote-snapshot.test.ts  ← 24 tests pos 9: formatos R2 EXACTOS, descriptores R3 (sin auto-nombres), margen canónico R5, R8 fallbacks + warns, hash estable excluyendo capturedAt, currentOverflowCheck
+│   ├── unit/links-view.test.ts    ← 10 tests pos 10A: buildPublicView re-arbitra contratos (v2 + basura polite + presets válidos + legado 1:1 + ids inválidos fuera), código APROBADA EXACTO + texto/href wa.me de aprobación
 │   └── unit/virola.test.ts        ← 31 tests: R1 clamps/rangos dinámicos, R2 métricas, R3 cascada <100ms, R4/R5 guías coplanares, R6 triada, R7 auto-giro
 ├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
 ├── three/visual-skeleton.ts       ← constantes visuales pos 4 + LATHE_SEAM_PHI_START
@@ -505,6 +518,33 @@ diseño.
 | §7 | Registro QA de exports: consola del server `{user, plan, artifact, at}` + JSON 200 | `GET /api/exports?type=png|pdf` + `POST /api/exports/ticket/verificar` (401/400/403/200) | ✅ (401 smoke) |
 | §3 | La escena y la ficha comparten pipeline del grabado (un solo motor, jamás duplicado) | `composeEngravingCanvas` extraída a `lib/compose-engraving.ts` — studio-scene y ficha-render la importan | ✅ |
 
+### Posición 10A — Enlace comercial compartible + Modo Cliente (según `spec_ficha_comercial_interactiva_shareable_link.md`)
+
+La posición 10 se separó por decisión del titular (06-nov): **10A** entrega el ciclo completo
+de los enlaces (publish versionado + visor público + aprobación por WhatsApp) y **10B** queda
+para Mercado Pago (`spec_pagos.md`).
+
+| Ref | Requisito | Implementación | Estado |
+| :--- | :--- | :--- | :--- |
+| R1 | Links versionados inmutables: cada regeneración crea `linkId` NUEVO (`version=max+1`), jamás UPDATE de payload; panel de versiones con historial y agregados de aprobaciones | tabla `links` insert-only (0004 con RLS owner) + `POST /api/links` + `GET /api/links?projectId=` (desc, con counts de aprobaciones por versión) | ✅ |
+| R2 | `linkId` 6 chars `[a-z0-9]`, canónico case-insensitive, colisiones con reintentos; URL `/v/{id}` canónica desde el origin del request | `lib/links/identity.ts` (`generateUniqueLinkId` inyectable) + `canonicalLinkUrl` | ✅ |
+| R4 | Payload `schemaVersion 2` por variante: label ≤40 truncado elegante, escala %⇒fracción 0–1.10 (3 dec), rotación módulo 360°, espejo; legacy inline ⇒ renderiza 1:1 | `lib/links/payload.ts` + `buildPublicView` (`view-shape.ts`) re-arbitra TODOS los contratos server-side al leer el jsonb (23 tests core + 10 de visor) | ✅ |
+| R3 | Assets re-encodados ≤1024²/≤300 KB en URLs de larga vida (adiós al base64 de MB); original preservado; brand congelado POR VERSIÓN de link | textura: PNG escalera 1024/768/512 (alpha intacto) → `link-assets/{id}/` público + original ≤10 MB → `designs/{user}/{project}` privado + logo del taller copiado a `{id}/logo.png` (fallo ⇒ degrada a iniciales); `mateConfig` armado SERVER-SIDE desde `projects.state` (el cliente no manda config) | ✅ |
+| R5 | Vigencia 30 días + "por vencer" ≤5 días (badge ámbar + sugerir regenerar); prioridad aprobado>vencido>por_vencer>vigente; vencido ⇒ página amable (jamás redirect a otra versión) | `lib/links/states.ts` (`linkEditionState`/`editionBadgeText`) + `ExpiredNotice` en `/v` (marca del taller + CTA de contacto) | ✅ |
+| R7 | Publicar con desborde exige confirmación + `risk` CONGELADO INTERNO por variante (el cliente jamás lo lee) | `currentOverflowCheck` por variante + mini-diálogo de la shell reutilizado con CTAs "Publicar de todas formas"/"Volver a ajustar" + `LinkVariantRisk` en el payload (accesible solo desde el panel del editor) | ✅ |
+| R8 | Paywall server-side al publicar (FREE ⇒ **402** + Paywall); abrir/ver/aprobar el enlace NO paga ni loguea | plan desde `users` con service-role fail-closed en POST; el middleware deja `/v` deliberadamente FUERA del redirect a `/auth` (comentario documentado) | ✅ |
+| R6 | Aprobación pública acumulable registra ANTES de abrir WhatsApp; valida la variante contra el payload; texto nombra la opción EXACTA; badge "APROBADO Opción B" en editor; sin número ⇒ código `APROBADA-{VARIANTE}-{LINKID}` copiable (spec usuario R5) + "Ponete en contacto con tu vendedor…" | `POST /api/links/[linkId]/approvals` (404 inexistente / 410 vencido) + INSERT con cliente ANÓNIMO ⇒ la DB (RLS `approvals_public_insert`) es la última palabra; CTA del visor con reintentos backoff y `wa.me` garantizado si hay E.164 válido | ✅ |
+| Decisión | Variantes = configs del MISMO diseño (label ≤40 + escala/rotación/espejo por variante A–C); borrador persiste y sobrevive la recarga | tarjeta `variants-card.tsx` ("Variantes del Enlace" + "Usar diseño actual") + `setLinkDraft` en el store + `normalizeVariantRows` del jsonb | ✅ |
+| §4 | Modal de generación: URL + `[Copiar Enlace]` + `[Enviar por WhatsApp]` con mensaje EXACTO de la spec; panel de versiones con estado vigente/por vencer/vencido/aprobado, fechas y regeneración | `link-modal.tsx` — share via `whatsappShareHref` (R8: sin número válido ⇒ "Copiar Enlace" solitario) + badges del panel | ✅ |
+| §4 | Modo Cliente: top bar glassmorphism (logo+nombre+“Vista Previa Oficial”), giro 0.5 RPM pausable por el dedo (reanuda al soltar), crossfade ≤300 ms sin resetear cámara/giro, chips A/B/C + acordeón Modelo/Virola (mm)/Cuerpo — JAMÁS margen/medidas técnicas/marca de agua | `client-viewer.tsx` + `viewer-scene.tsx` (misma librería 3D del editor — lathe/PBR/compositor/cámara por silueta — parameterizada por payload; fade por capas de la MISMA textura) | ✅ |
+| §6 | Páginas amables del visor: inexistente/vencido/no disponible; variante con asset caído queda deshabilitada y las demás siguen operando | `app/v/[linkId]/page.tsx` (service-role, `expires_at` ANTES de servir contenido) + `not-found.tsx` propio del segmento + gating de assets en el visor | ✅ |
+| Passthrough | La Ficha técnica imprime `Enlace comercial {linkId}` del enlace VIGENTE (hueco dejado en pos 9) | la shell consulta `GET /api/links` al abrir `#quoteModal` y estampa `captureFichaSnapshot.linkId` | ✅ |
+
+Desviaciones documentadas (todas MÁS estrictas que la spec): lectura del link con **service-role**
+en la página pública (la spec proponía "vista segura"; el server nunca expone el jsonb), y
+`mateConfig` construido server-side (el cliente solo manda el borrador de variantes). Evidencia
+en la fila QA del §8.
+
 ---
 
 ## 6. Cómo fluye en runtime (recorrido de un usuario real)
@@ -615,9 +655,9 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–9 adentro) |
-| `npm run test` (Vitest) | ✅ **209/209** — 8 de matriz R2 + 23 de branding + 13 de catálogo + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + **16 de textos ficha pos 9 + 24 de snapshot ficha pos 9** |
-| `npm run build` (producción) | ✅ **14 rutas** — `/editor` 29.9 kB + las 3 de `/api/exports` (ticket / verificar / registro QA); el motor 3D y pdf-lib siguen en chunks propios (`import()` dinámico desde el modal — nunca dentro del HTML inicial) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–10A adentro) |
+| `npm run test` (Vitest) | ✅ **242/242** — 8 de matriz R2 + 23 de branding + 13 de catálogo (+`linkDraft`) + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + 16 de textos ficha pos 9 + 24 de snapshot ficha pos 9 + **23 de links core + 10 de visor pos 10A** |
+| `npm run build` (producción) | ✅ **17 rutas** — `/v/[linkId]` 5.41 kB / 125 kB First Load (el Modo Cliente NO hincha el editor: escena R3F por `dynamic ssr:false`) + `/api/links` + `/api/links/[linkId]/approvals`; el motor 3D y pdf-lib siguen en chunks propios (`import()` dinámico desde el modal — nunca dentro del HTML inicial) |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
@@ -633,7 +673,8 @@ select column_name from information_schema.columns
 | **Post-entrega pos 7** (05-nov, decisión del titular) | Botón **Auto retirado de la UI** (solo UI: `largestSafeScalePct` + sus 5 tests siguen en `lib/overflow` para pos 9/10) ✅ · **nitidez SVG corregida**: raster a resolución FINAL vía envoltorio de 1024² (SVG con width/height chicos — o sin ellos, 300×150 por defecto — nacía borrado por estirado del bitmap) ✅ · **sin refuerzo alfa ×1.8 en SVG** (conserva anti-aliasing nativo; refuerzo SOLO para PNG) ✅ · **anisotropía máxima** en la CanvasTexture del grabado (virola de perfil sin desenfoque de mipmap) ✅ · canvas de trabajo intacto 1024² (R8) ✅ |
 | **QA Posición 8** (05-nov, técnica) | Ticket HMAC v1 ✅ (ida/vuelta, vigencia 5 min EXACTOS, firma con otro secreto ⇒ null, tamper de 1 byte ⇒ null, payload re-serializado ⇒ null, cotas de datos) ✅ · ruta `/api/exports/ticket`: 401 sin sesión (smoke), plan desde `users` con service-role, FREE ⇒ 402 PAYWALL_REQUIRED, pro/grace ⇒ 200 ticket (QA con sesión real + flip de plan en DB: corre el titular) · watermark cocida: doble pasada WebGL (pase principal manual priority 1 + autoClear off + clearDepth), banda diagonal semitransparente centrada SOLO plan free · bloqueo DOM `contextmenu`/`dragstart` + select-none SOLO demo · badge demo reactivo (0/1 → 1/1 al primer diseño) · desbloqueo realtime: plan-watcher ya refresca sin reload (el flip de plan lo demuestra) |
 | **QA Posición 9** (06-nov, técnica) | Snapshot R1 inmutable ✅ (badge + Actualizar; hash f1 EXCLUYE capturedAt ⇒ ticket sobrevive Actualizar sin cambios) ✅ · formatos R2 EXACTOS ✅ (`123.0 mm` · banda auto 14.0 · `92%`/`92.5%` · `45°`/`45.5°` · faltante ⇒ `—`) · descriptores R3 sin auto-nombres ✅ · margen canónico R5 ✅ (`Seguro` / `con riesgo (excede X mm por fuera / excede Y mm hacia la boca)`) · wrapObservations R5 ✅ (≤2 líneas, `…` preserva palabra entera, palabra overlong sin seguir texto ⇒ sin elipsis) · R8 fallbacks + warns ✅ (NaN ⇒ `—`, modelo desconocido ⇒ Camionero) · hash estable ✅ (mismo contenido/reloj distinto ⇒ mismo hash; cambio de contenido/logo ⇒ otro) · currentOverflowCheck derivación única ✅ (== evaluateOverflow / bbox §6 conservador / null sin asset) · nomenclatura §5 EXACTA ✅ (`etiqueta-argenta-ficha-mate-imperial-20261103.png|pdf`, foto análoga) · build: motor three + pdf-lib en chunks separados ✅ |
-| Git | ✅ `094e73b` **posición 9** (ficha: modal #quoteModal + PNG HD 2160 + PDF A4 + Foto HD + ticket verificar + registro QA) · `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
+| **QA Posición 10A** (06-nov, técnica) | Núcleo puro ✅ (R2: 6 chars/canónico/colisiones inyectadas · R4: fracción ×100 → % canónico, módulo 360, labels ≤40 truncado elegante · R5: 30 d + ≤5 d con prioridad aprobado>vencido>por_vencer · código `APROBADA-{VARIANTE}-{LINKID}` EXACTO de spec usuario · wa.me de aprobación nombra la opción y pelea los símbolos del E.164) ✅ · `buildPublicView` ✅ (re-arbitra contratos: presets VÁLIDOS `bronce`/`algarrobo`, diámetros saneados con hueco < corona, legacy 1:1 con `textureDataUrl` ⇒ variante A, jsonb basura ⇒ vista sin lanzar, ids inválidos/duplicados fuera) ✅ · 402 FREE server-side ✅ (plan desde `users` con service-role fail-closed en POST — decisión del cliente jamás paga) · aprobación pública ✅ (404 inexistente / 410 vencido / variante validada contra payload + INSERT con cliente anónimo ⇒ RLS `approvals_public_insert` + trigger `link_open_for_approval`; CTA registra ANTES de `wa.me` con backoff y wa.me garantizado con número válido) ✅ · Storage ✅ (textura PNG escalera ≤300 KB + original ≤10 MB + logo por versión, buckets `link-assets` público / `designs` privado) · visor ✅ (crossfade ≤300 ms por capas de la MISMA textura sin resetear cámara/giro/ritmo, 0.5 RPM pausable que reanuda al soltar, sin guías/medidas/marca de agua, descarga sin margen) · `/v` pública POR DISEÑO ✅ (fuera del redirect a `/auth`, con comentario deliberado). Smoke del 401 sin sesión en `POST /api/links` con curl + QA visual completa (publish PRO real, badge APROBADO, layout WhatsApp) ⇒ pendiente del titular con el diseño real |
+| Git | ✅ `7d81e73` **posición 10A** (enlace comercial compartible + Modo Cliente: variantes A/B/C del mismo diseño, publish inmutable versionado + Storage re-encodado, aprobación R6 ANTES de wa.me, visor `/v/[linkId]` con crossfade ≤300 ms) · `b385c00` 10A paso 3 (rutas API links + service-role — titular) · `676fefa` 10A paso 2 (identity/payload/estados + migración 0004 — titular) · `094e73b` **posición 9** (ficha: modal #quoteModal + PNG HD 2160 + PDF A4 + Foto HD + ticket verificar + registro QA) · `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
 · los 5 campos del panel ✅ (ambos flujos tras ampliar los grants de `ops/0910`) · autosave en
@@ -651,7 +692,7 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 3. **Cada regla vive en UNA spec** (README §5): nombres de eventos/constantes se implementan citándolas (ej. `permissions.ts` — citado por todas).
 4. **Números inmutables en su spec de origen**: ej. `D_int ≤ D_ext − 8 mm` (guías), imán ±4° (rotación),
    escaneo 512² α≥128 ≤25ms (escala), threshold L=0.55 (color), ticket 5min (ficha), gracia 5 días (pagos).
-5. **Brand congelado por versión de link** (falta llegar) — los cambios de perfil no mutan links vivos.
+5. **Brand congelado por versión de link** (pos 10A ✅) — los cambios de perfil no mutan links vivos.
 6. **El precio del plan NUNCA se hardcodea**: vive en `pricing_config` y se imprime desde el backend.
 7. **Guías/watermark jamás salen en outputs** ni en el visor de cliente (contrato compartido entre specs).
 8. **`location` nunca se imprime** y el **logo original jamás se persiste**: solo el re-encoded
@@ -664,32 +705,42 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
-**Posición 10 — Links comerciales + Mercado Pago** (fuentes: `spec_ficha_comercial_interactiva_shareable_link.md` + `spec_pagos.md`):
-generación de **enlaces con variante A/B/C** (`variants[n].scale`/`mirror`/`rotation` — el
-pipeline comercial fija aquí lo que el editor ya persiste), **brand congelado por versión de
-link**, `linkId` para el pie de la ficha (el PASSTHROUGH null de pos 9 se enchufa ahí), envío
-por WhatsApp, modo cliente (visitante gira el mate sin controles) y el **Checkout Pro**
-(Paso C: se cobra recién cuando existe todo lo que se vende).
+**Posición 10B — Mercado Pago: Pagos, Suscripción y Comprobantes del plan PRO** (fuente única:
+`spec_pagos.md`): la caja cierra el ciclo de vida completo de la suscripción —
+**Checkout Pro** con las credenciales MP del titular y alta protegida (email verificado ANTES
+del primer cobro; el checkout abandonado genera **cero emails automáticos** y una fila en
+`checkout_intents`), **`subscriptions` con `price_frozen`/`cycle_anchor`** (grandfathering de
+`pricing_config`: el suscriptor vigente mantiene su precio congelado con tag visible y el
+paywall muestra el precio nuevo SOLO a estados libres; re-activación tras downgrade toma el
+precio vigente), fila nueva en `payments` con `receipt_url` accesible, **webhook blindado**
+(firma inválida ⇒ `403` + log; evento duplicado ⇒ ni inserta ni muta por dedupe de
+`mp_payment_id`; pago aprobado en `programada_cierre` re-activa extendiendo `period_end`),
+**dunning fiel** (rechazo ⇒ `gracia` con banner que decrementa cada día; pago dentro de la
+ventana ⇒ PRO instantáneo; ventana vencida ⇒ downgrade a FREE preservando proyectos, assets y
+links — estos caducan por su propio cronograma de 10A; reconciliación nocturna anti-drift) y
+**salida limpia** (cancelación desde el portal ⇒ `programada_cierre` hasta `period_end` sin
+cobros extra y con banner de fecha exacta; terminado el ciclo, los candados reaparecen).
 
-Conexiones listas que la posición 10 consume:
+Conexiones que la 10B consume (quedaron listas en 10A / anteriores):
 
-- El **ticket de export** ya despacha ficha/foto con hash ligado (`/api/exports/ticket` +
-  `/verificar`) — el ciclo de vida de archivos por variante reusa este server-side.
-- La ficha imprime `Enlace comercial {linkId}` SOLO si existe el link activo (hoy siempre
-  `null`): resolverlo es enchufar el id del link a `captureFichaSnapshot.linkId`.
-- Los botones "Generar Enlace Comercial" / "Enviar por WhatsApp" del modal `#quoteModal`
-  tapan hoy el hint honesto de pos 10 (PRO) o abren el Paywall por `links.generate` (FREE) —
-  nada del modal cambia en su lógica del export.
-- El pipeline comercial (`variants[n].scale`/`mirror` en el payload, R8) se ensambla con el
-  resto de campos por variante en esta posición.
+- El **Paywall ya abre con el precio real** desde `/api/config/pricing` (`pro_monthly_ars` en
+  `pricing_config`, NUNCA hardcodeado) — al CTA de Mercado Pago desactivado ("llega con la pos
+  10") solo le falta el backend del cobro.
+- La **matriz R2** ya concede `pro:true` y el flip de plan está demostrado en QA (badge DEMO
+  reactivo 0/1→1/1 + `PlanWatcher` refresca sin reload).
+- `resolveBranding()` ya degrada white-label a valores neutrales — el plan `gracia` reutiliza
+  esa librería de fallbacks en vez de parchear pantallas.
 
-*(Pendiente anotado de pos 7: la QA visual con el archivo real del taller — repro
-`Naruto/svg_naruto/primero diseño de naruto y sasuke.svg` — abre la escena, carga el SVG,
-gira y escala. Pendiente pos 8: QA 402/ticket con sesión real + flip de `users.plan` en DB.
-Pendiente pos 9: QA visual de ficha/foto con diseño real y sesión PRO (render del plate, PNG
-≤ 5 MB in situ, PDF A4 imprimible) — la técnica ya pasó con 209/209 tests + build verde.)*
+*(Pendiente anotado de pos 10A: QA manual del titular con el diseño real — publish FREE ⇒ 402
+→ Paywall (flip `update public.users set plan='pro'`); happy path PRO de publish; badge
+"APROBADO Opción B" en el panel tras aprobar desde el visor; smoke 401 de `POST /api/links`
+con `curl.exe`; abrir `/v/{id}` desde el layout de WhatsApp para QA visual del crossfade y el
+giro. Arrastran de posiciones previas: QA visual de escena/ficha/foto con el archivo real del
+taller — repro `Naruto/svg_naruto/primero diseño de naruto y sasuke.svg` — y el QA 402/ticket
+con sesión real de pos 8/9. La técnica de 10A ya pasó con 242/242 tests + build de 17 rutas
+verde.)*
 
-Y después: nada — la posición 10 cierra el plan de 10.
+Y después: nada — con 10B cierra el plan de 10 posiciones; queda iterar con feedback del taller.
 
 ---
 
