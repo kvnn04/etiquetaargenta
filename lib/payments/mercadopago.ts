@@ -217,6 +217,10 @@ export interface MpPaymentFull {
   /** Constancia MP (R6) solo si MP la trae; null = el panel lo muestra sin link. */
   receiptUrl: string | null;
   dateApproved: string | null;
+  /** Última mutación del pago (momento del rechazo, para la nota de gracia). */
+  dateLastUpdated: string | null;
+  /** El preapproval que generó el cobro (p/recuperar la fila del ciclo). */
+  preapprovalId: string | null;
   payerEmail: string | null;
 }
 
@@ -242,6 +246,8 @@ export async function getPayment(paymentId: string): Promise<MpResult<MpPaymentF
       transaction_amount?: number;
       transaction_details?: { external_resource_url?: string | null };
       date_approved?: string | null;
+      date_last_updated?: string | null;
+      preapproval_id?: string | null;
       payer?: { email?: string | null };
     };
     if (typeof raw.id !== 'number') {
@@ -257,6 +263,8 @@ export async function getPayment(paymentId: string): Promise<MpResult<MpPaymentF
         transactionAmount: raw.transaction_amount ?? null,
         receiptUrl: raw.transaction_details?.external_resource_url ?? null,
         dateApproved: raw.date_approved ?? null,
+        dateLastUpdated: raw.date_last_updated ?? null,
+        preapprovalId: raw.preapproval_id ?? null,
         payerEmail: raw.payer?.email ?? null,
       },
     };

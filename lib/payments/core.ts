@@ -69,9 +69,9 @@ export const SUBSCRIPTION_STATUS_LABEL: Record<SubscriptionStatus, string> = {
 
 /**
  * Validación entry-gate de montos (§6: "montos de pricing_config validados
- * > 0 al enviar al Checkout"; y "isPositiveAmount" para pagos entrantes).
+ * > 0 al enviar al Checkout"; en el webhook actúa de type-guard del monto).
  */
-export function isPositiveAmount(amount: unknown): boolean {
+export function isPositiveAmount(amount: unknown): amount is number {
   return typeof amount === 'number' && Number.isFinite(amount) && amount > 0;
 }
 
@@ -143,14 +143,44 @@ export function graceDaysLeft(graceExpiresAtMs: number, nowMs: number): number {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Ciclo (R1: ancla = día del primer pago; nota: el débito se intenta ese      */
-/* día de cada mes; en meses que no tienen el día, se clampa al último)         */
+/* Ciclo (R1: ancla = día del primer pago; el débito se intenta ese día de      */
+/* cada mes; en meses que no tienen el día, se clampa al último)                */
 /* -------------------------------------------------------------------------- */
 
 /** Día del mes del ancla del ciclo (el instante del primer pago aprobado). */
 export function cycleAnchorDayOf(firstApprovalMs: number): number {
   return arDateParts(firstApprovalMs).day;
 }
+
+/**
+ * Serializa el ancla a 'YYYY-MM-DD' (el tipo DATE de `subscriptions.cycle_anchor`).
+ */
+export function arDateStrFromMs(ms: number): string | null {
+  if (!Number.isFinite(ms)) return null;
+  const { year, month, day } = arDateParts(ms);
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${year}-${mm}-${dd}`;
+}
+
+/**
+ * 'YYYY-MM-DD' (como PostgREST serializa DATE) ⇒ ms de 00:00 AR de ese día.
+ * null si el string no es la forma exacta (columna vacía ⇒ sin ancla aún).
+ */
+export function arDateStrToMs(dateStr: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return null;
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 3); // 00:00 AR
+}
+
+/** Día del ancla desde el string DATE (1..31) — null si vacío/roto. */
+export function cycleAnchorDayOfStr(dateStr: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  return m ? Number(m[3]) : null;
+}
+
+/** URL oficial del Portal de MP (R9: cancelar/actualizar tarjeta SU, no botón in-app). */
+export const MERCADOPAGO_PORTAL_URL = 'https://www.mercadopago.com.ar/subscriptions/portal';
 
 /**
  * Próxima fecha del ciclo (00:00 AR de ese día): fin del cierre programado
