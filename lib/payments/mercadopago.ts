@@ -118,10 +118,16 @@ export async function createPreapproval(
 
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as
-        | { message?: string; error?: string }
+        | { message?: string; error?: string; cause?: Array<{ code?: string; description?: string }> }
         | null;
       const message = body?.message ?? body?.error ?? `HTTP ${res.status}`;
-      console.error('[mp preapproval create]:', res.status, message);
+      // El 400 "Parameters passed are invalid" de MP trae las COUSAS exactas en
+      // `cause` (code/description por parámetro incumplido) — se logea entera:
+      // es EL dato para el QA del titular.
+      console.error(
+        '[mp preapproval create]:', res.status, message,
+        'cause =', JSON.stringify(body?.cause ?? null),
+      );
       return { ok: false, status: res.status, message };
     }
 
