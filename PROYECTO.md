@@ -789,6 +789,12 @@ real del taller — repro `Naruto/svg_naruto/primero diseño de naruto y sasuke.
 de `POST /api/links` con `curl.exe`, badge "APROBADO Opción B" + QA visual del crossfade del
 visor con el flujo real de WhatsApp, y el QA 402/ticket con sesión real de pos 8/9.
 
+**La salida a producción del ciclo tiene su spec propia (creada 07-nov)**:
+`../simulador_Mates/spec_pagos_ida_a_produccion.md` — reglas P1–P10 (credenciales del negocio
+con chequeo anti `test_user`, dominio canónico, webhook entregado por MP, migraciones + precio
+final, cobro real de verificación, Resend, deploy, observabilidad y rollback) + checklist por
+fases A–F con criterio de cierre cada una y DOD de go-live en §6.
+
 Y después: nada más de plan — las 10 posiciones del `orden_de_implementacion.md` están
 commiteadas (10B cierra el ciclo: `8bf0d25` → `4136e36`); queda iterar con feedback del taller
 real.
