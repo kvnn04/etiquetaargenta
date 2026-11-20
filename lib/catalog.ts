@@ -55,42 +55,96 @@ const RAW_CATALOG: MateCatalog = {
     {
       id: 'camionero',
       label: 'Camionero',
-      description: 'Cuerpo recto clásico',
+      description: 'Cintura alta, panza generosa y pie angosto',
       pro: false,
       shape: {
-        totalHeightMm: 110,
+        totalHeightMm: 132,
         anchor: 'intDiameter',
         sealOverlapMm: 1.0,
+        /* Perfil de torno real del camionero (coordenadas R2), calibrado con
+         * el scan `mate camionero.glb` y la lámina de cotas:
+         *  · los primeros 13 mm quedan ocultos bajo el faldón de la virola;
+         *    ahí el cuerpo se abre desde la boca (x=1.00) al hombro visible;
+         *  · el scan NO tiene cintura bajo el faldón: el hombro arranca en
+         *    x≈1.18 y sube en curva continua hasta la panza;
+         *  · panza máxima a 1/2 de altura (121 mm ⌀ con D_int 95);
+         *  · tobillo con leve rehundido (x≈0.965) y pie de 95 mm ⌀ que
+         *    vuelve a abrirse antes del canto redondeado de la base. */
         points: [
           { x: 1.0, y: 0 },
-          { x: 1.01, y: 5 },
-          { x: 1.02, y: 30 },
-          { x: 1.04, y: 60 },
-          { x: 1.08, y: 96 },
-          { x: 1.08, y: 107 },
-          { x: 0.0, y: 110 },
+          { x: 1.05, y: 2 },
+          { x: 1.12, y: 5 },
+          { x: 1.165, y: 9 },
+          { x: 1.18, y: 13 },
+          { x: 1.18, y: 22 },
+          { x: 1.19, y: 28 },
+          { x: 1.205, y: 35 },
+          { x: 1.222, y: 42 },
+          { x: 1.24, y: 48 },
+          { x: 1.258, y: 55 },
+          { x: 1.266, y: 62 },
+          { x: 1.268, y: 68 },
+          { x: 1.262, y: 74 },
+          { x: 1.25, y: 80 },
+          { x: 1.226, y: 87 },
+          { x: 1.19, y: 93 },
+          { x: 1.13, y: 99 },
+          { x: 1.05, y: 105 },
+          { x: 1.005, y: 109 },
+          { x: 0.965, y: 113 },
+          { x: 0.97, y: 118 },
+          { x: 0.99, y: 123 },
+          { x: 1.0, y: 126 },
+          { x: 0.997, y: 129 },
+          { x: 0.99, y: 130.8 },
+          { x: 0.97, y: 131.7 },
+          { x: 0.97, y: 132 },
+          { x: 0.0, y: 132 },
         ],
       },
     },
     {
       id: 'imperial',
       label: 'Imperial',
-      description: 'Panza ancha y cintura cerrada',
+      description: 'Panza amplia, cuello corto y pie asentado',
       pro: false,
       shape: {
-        totalHeightMm: 94,
+        totalHeightMm: 120,
         anchor: 'intDiameter',
         sealOverlapMm: 1.0,
+        /* Imperial: boca recogida bajo la virola, hombro que se abre en una
+         * panza baja de gran diámetro y pie ancho y estable. El contorno sale
+         * del scan `mate imperial.glb`:
+         *  · boca visible ≈109 mm ⌀, panza ≈122 mm ⌀ a 1/2 de altura;
+         *  · el pie NO es un huevo: se mantiene ancho (≈105 mm ⌀) hasta
+         *    y≈113 y recién ahí se redondea hacia una base asentada de
+         *    ≈93 mm ⌀ (efecto "pie asentado" del imperial). */
         points: [
           { x: 1.0, y: 0 },
-          { x: 0.92, y: 8 },
-          { x: 0.9, y: 12 },
-          { x: 1.05, y: 30 },
-          { x: 1.3, y: 55 },
-          { x: 1.15, y: 75 },
-          { x: 0.95, y: 88 },
-          { x: 0.9, y: 92 },
-          { x: 0.0, y: 94 },
+          { x: 1.05, y: 2 },
+          { x: 1.1, y: 5 },
+          { x: 1.13, y: 9 },
+          { x: 1.15, y: 13 },
+          { x: 1.17, y: 18 },
+          { x: 1.2, y: 24 },
+          { x: 1.232, y: 33 },
+          { x: 1.258, y: 44 },
+          { x: 1.274, y: 54 },
+          { x: 1.285, y: 62 },
+          { x: 1.282, y: 70 },
+          { x: 1.265, y: 78 },
+          { x: 1.238, y: 86 },
+          { x: 1.2, y: 94 },
+          { x: 1.16, y: 100 },
+          { x: 1.125, y: 105 },
+          { x: 1.105, y: 109 },
+          { x: 1.105, y: 113 },
+          { x: 1.1, y: 115 },
+          { x: 1.08, y: 117 },
+          { x: 1.04, y: 118.4 },
+          { x: 0.99, y: 119.3 },
+          { x: 0.98, y: 120 },
+          { x: 0.0, y: 120 },
         ],
       },
     },

@@ -25,9 +25,9 @@ describe('catálogo R1 (registro central)', () => {
     expect(CATALOG.every((p) => !p.pro)).toBe(true); // ambos demos FREE
   });
 
-  it('alturas totales de referencia: Camionero 110 mm · Imperial 94 mm', () => {
-    expect(getProduct('camionero')!.shape.totalHeightMm).toBe(110);
-    expect(getProduct('imperial')!.shape.totalHeightMm).toBe(94);
+  it('alturas totales de referencia: Camionero 132 mm · Imperial 120 mm', () => {
+    expect(getProduct('camionero')!.shape.totalHeightMm).toBe(132);
+    expect(getProduct('imperial')!.shape.totalHeightMm).toBe(120);
   });
 });
 
@@ -40,15 +40,24 @@ describe('anclaje boca-cuerpo (R2/R4)', () => {
     expect(bodyTopRadiusMm(getProduct('imperial')!, 150)).toBe(75);
   });
 
-  it('QA1: la panza del Imperial supera claramente al cuerpo recto del Camionero', () => {
-    // par de referencia de la spec: imperial@55mm = 1.30 R_boca vs camionero@30 = 1.02
-    const rImperial = radiusAtHeightMm(getProduct('imperial')!, 55, intD);
-    const rCamionero = radiusAtHeightMm(getProduct('camionero')!, 30, intD);
-    expect(rImperial / rCamionero).toBeGreaterThanOrEqual(1.25);
-    // y el radio MÁXIMO de cada producto también se distingue (1.30 vs 1.08)
-    expect(maxRadiusMm(getProduct('imperial')!, intD)).toBeGreaterThan(
-      maxRadiusMm(getProduct('camionero')!, intD),
-    );
+  it('QA1: la panza del Imperial supera a la del Camionero y su cintura es más marcada', () => {
+    const camionero = getProduct('camionero')!;
+    const imperial = getProduct('imperial')!;
+    // Referencia de diseño (perfiles de torno revisados): la panza del Imperial
+    // es más amplia que la del Camionero en su punto máximo. La diferencia es
+    // chica en mm (≈1.5 mm de diámetro, como los scans), pero real.
+    const camioneroBelly = radiusAtHeightMm(camionero, 68, intD);
+    const imperialBelly = radiusAtHeightMm(imperial, 62, intD);
+    expect(imperialBelly / camioneroBelly).toBeGreaterThanOrEqual(1.005);
+    // …y su cintura (boca recogida bajo la virola) marca diferencia contra su
+    // propia panza: el efecto imperial es la apertura en S, no un barril.
+    const imperialWaist = radiusAtHeightMm(imperial, 13, intD);
+    expect(imperialBelly / imperialWaist).toBeGreaterThanOrEqual(1.1);
+    // El radio MÁXIMO de cada producto se distingue y el pie NO es más ancho
+    // que la panza (regresión del "maceta" del perfil placeholder).
+    expect(maxRadiusMm(imperial, intD)).toBeGreaterThan(maxRadiusMm(camionero, intD));
+    const camioneroFoot = radiusAtHeightMm(camionero, 122, intD);
+    expect(camioneroBelly / camioneroFoot).toBeGreaterThanOrEqual(1.2);
   });
 
   it('R4 anti-fuga: el labio del cuerpo sube sealOverlapMm por sobre la costura', () => {
@@ -129,11 +138,18 @@ describe('siluetas SVG para las cards (§4, solo-datos, sin mini-renders 3D)', (
   });
 
   it('comparten la MISMA escala horizontal (panza vs recto comparables)', () => {
-    // ambos usan el radio máximo relativo del catálogo entero (1.30 del Imperial)
+    // Ambos usan el radio máximo relativo del catálogo entero, así que el
+    // ancho dibujado es comparable: el Imperial debe salir más ancho que el
+    // Camionero en la misma caja (no depende de la cantidad de puntos).
+    const maxAbsX = (path: string): number => {
+      const pairs = path.matchAll(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g);
+      let max = 0;
+      for (const m of pairs) max = Math.max(max, Math.abs(Number(m[1])));
+      return max;
+    };
     const camionero = silhouetteOf(getProduct('camionero')!);
     const imperial = silhouetteOf(getProduct('imperial')!);
-    // el path del Imperial excede al del Camionero (panza más ancha a la misma escala)
-    expect(imperial.path.length).toBeGreaterThan(camionero.path.length * 1.05);
+    expect(maxAbsX(imperial.path)).toBeGreaterThan(maxAbsX(camionero.path));
   });
 });
 
