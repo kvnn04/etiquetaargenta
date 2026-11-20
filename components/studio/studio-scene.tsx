@@ -63,9 +63,16 @@ import {
   buildVirolaOuterWallGeometry,
   buildVirolaInnerWallGeometry,
 } from '@/three/lathe-builder';
+import {
+  CAMERA_FOV_DEG,
+  CAMERA_OFFSET_MM,
+  CAMERA_TARGET_Y_MM,
+  fitCameraDistanceMm,
+  productFramingMm,
+} from '@/three/framing';
+import { StudioEnvironment } from '@/three/studio-environment';
+import { woodGrainTexture } from '@/three/wood-grain';
 
-/* Cámara por defecto: encuadra Camionero con margen (QA1/QA2 comparables). */
-const FIELD_OF_VIEW_DEG = 34;
 /** R5: patrones de punteado de los tres tipos de guía, tipados para drei Line. */
 const DASH_BORDES = BORDES_DASH_MM as { dashSize: number; gapSize: number };
 const DASH_CENTRO = CENTRO_DASH_MM as { dashSize: number; gapSize: number };
@@ -100,10 +107,14 @@ function MateBodyMesh() {
 
   const material = useMemo(() => {
     const pbr = resolveBodyPbr(bodyPreset, bodyColor);
+    const grain = woodGrainTexture();
     return new THREE.MeshStandardMaterial({
       color: new THREE.Color(pbr.color),
       roughness: pbr.roughness,
       metalness: pbr.metalness,
+      map: grain ?? undefined,
+      bumpMap: grain ?? undefined,
+      bumpScale: 0.25,
     });
   }, [bodyPreset, bodyColor]);
 
@@ -502,29 +513,27 @@ function CameraRefit() {
   const mateModel = useEditorStore((s) => s.mateModel);
   const intDiameter = useEditorStore((s) => s.intDiameter);
   const extDiameter = useEditorStore((s) => s.extDiameter);
-  const { camera } = useThree();
+  const { camera, size } = useThree();
   const animRef = useRef<{ from: number; to: number; start: number } | null>(null);
+
+  /* Punto de mira: centro visual común del catálogo (mm sobre la base). */
+  const target = useMemo(() => new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0), []);
 
   const requiredDistance = useMemo(() => {
     const product = resolveMateModel(mateModel);
-    const maxR = Math.max(
-      ...product.shape.points.map((p) => p.x * (intDiameter / 2)),
-      extDiameter / 2, // la banda crece sólo hacia fuera (R1: Dext ≥ Dint+8)
-    );
-    const heightTop = product.shape.totalHeightMm + product.shape.sealOverlapMm;
-    const fov = (FIELD_OF_VIEW_DEG * Math.PI) / 180;
-    const forRadius = (maxR * 1.35) / Math.tan(fov / 2); // margen 35 %
-    const forHeight = (heightTop * 1.3) / Math.tan(fov / 2);
-    return Math.max(forRadius, forHeight) + 40;
-  }, [mateModel, intDiameter, extDiameter]);
+    const { sphereRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
+    const aspect = size.height > 0 ? size.width / size.height : 1;
+    return fitCameraDistanceMm(sphereRadiusMm, aspect);
+  }, [mateModel, intDiameter, extDiameter, size.width, size.height]);
 
-  // Cambio de producto / diámetros: anima SOLO si hace falta alejarse.
+  // Cambio de producto / diámetros / tamaño del panel: encuadra siempre el
+  // producto completo (solo anima si la corrección supera el 2 %).
   useEffect(() => {
-    const current = camera.position.length();
-    if (requiredDistance > current * 1.02) {
+    const current = camera.position.distanceTo(target);
+    if (Math.abs(requiredDistance - current) > current * 0.02) {
       animRef.current = { from: current, to: requiredDistance, start: performance.now() };
     }
-  }, [requiredDistance, camera]);
+  }, [requiredDistance, camera, target]);
 
   useFrame(() => {
     const anim = animRef.current;
@@ -532,7 +541,8 @@ function CameraRefit() {
     const t = Math.min(1, (performance.now() - anim.start) / 300);
     const eased = 1 - (1 - t) * (1 - t); // easeOutQuad
     const dist = anim.from + (anim.to - anim.from) * eased;
-    camera.position.normalize().multiplyScalar(dist);
+    const dir = camera.position.clone().sub(target).normalize();
+    camera.position.copy(target).addScaledVector(dir, dist);
     if (t >= 1) animRef.current = null;
   });
 
@@ -681,12 +691,22 @@ export default function StudioScene({
 
   return (
     <Canvas
-      camera={{ fov: FIELD_OF_VIEW_DEG, position: [0, 150, 240], near: 1, far: 4000 }}
+      camera={{
+        fov: CAMERA_FOV_DEG,
+        position: [
+          CAMERA_OFFSET_MM[0],
+          CAMERA_TARGET_Y_MM + CAMERA_OFFSET_MM[1],
+          CAMERA_OFFSET_MM[2],
+        ],
+        near: 1,
+        far: 4000,
+      }}
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: false }}
       style={{ position: 'absolute', inset: 0 }}
     >
       <color attach="background" args={['#0b0b0d']} />
+      <StudioEnvironment />
       <hemisphereLight intensity={0.55} groundColor="#14100c" color="#fff4e0" />
       <directionalLight position={[200, 260, 220]} intensity={1.15} color="#ffe9c4" />
       <directionalLight position={[-220, 90, -160]} intensity={0.5} color="#9fb4d8" />
@@ -701,10 +721,11 @@ export default function StudioScene({
         <GuidesLayer />
       </group>
 
-      {/* Suelo oscuro sutil (base visual del objeto; NO gira con el producto) */}
+      {/* Suelo invisible: mismo color que el fondo para que no aparezca el
+          borde del disco como una línea de horizonte detrás del mate. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <circleGeometry args={[420, 48]} />
-        <meshBasicMaterial color="#111114" />
+        <circleGeometry args={[1200, 64]} />
+        <meshBasicMaterial color="#0b0b0d" toneMapped={false} />
       </mesh>
 
       <AutoSpin enabled={spinning} groupRef={groupRef} />
@@ -716,7 +737,7 @@ export default function StudioScene({
         makeDefault
         enablePan
         enableDamping
-        target={[0, 90, 0]}
+        target={[0, CAMERA_TARGET_Y_MM, 0]}
         onStart={onUserInteracted}
       />
     </Canvas>

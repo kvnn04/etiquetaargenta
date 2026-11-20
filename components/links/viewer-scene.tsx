@@ -41,9 +41,18 @@ import {
 } from '@/three/visual-skeleton';
 import { LINK_VIEWER_SPIN_RPM } from '@/lib/links/states';
 import type { PublicLinkView, PublicVariantView } from '@/lib/links/view-shape';
+import {
+  CAMERA_FOV_DEG,
+  CAMERA_OFFSET_MM,
+  CAMERA_TARGET_Y_MM,
+  fitCameraDistanceMm,
+  productFramingMm,
+} from '@/three/framing';
+import { StudioEnvironment } from '@/three/studio-environment';
+import { woodGrainTexture } from '@/three/wood-grain';
 
 /** Mismo encuadre del editor (QA: la variante se presenta igual que en el estudio). */
-const FIELD_OF_VIEW_DEG = 34;
+const FIELD_OF_VIEW_DEG = CAMERA_FOV_DEG;
 const ENGRAVING_CANVAS_PX = 1024; // R8: mismo canvas de trabajo que la escena del editor
 const ENGRAVING_LIFT_MM = 0.02;
 
@@ -80,10 +89,14 @@ function ViewerBody({ view }: { view: PublicLinkView }) {
 
   const material = useMemo(() => {
     const pbr = resolveBodyPbr(view.mate.cupMaterial, view.mate.cupColor);
+    const grain = woodGrainTexture();
     return new THREE.MeshStandardMaterial({
       color: new THREE.Color(pbr.color),
       roughness: pbr.roughness,
       metalness: pbr.metalness,
+      map: grain ?? undefined,
+      bumpMap: grain ?? undefined,
+      bumpScale: 0.25,
     });
   }, [view.mate.cupMaterial, view.mate.cupColor]);
 
@@ -269,6 +282,36 @@ function ViewerSpin({ enabled, groupRef }: { enabled: boolean; groupRef: React.R
 }
 
 /* -------------------------------------------------------------------------- */
+/* Encuadre del visor: se fija UNA vez con el aspecto real del contenedor.     */
+/* -------------------------------------------------------------------------- */
+
+function ViewerCameraFit({
+  product,
+  intDiameter,
+  extDiameter,
+}: {
+  product: ReturnType<typeof resolveMateModel>;
+  intDiameter: number;
+  extDiameter: number;
+}) {
+  const { camera, size } = useThree();
+  const fitted = useRef(false);
+
+  useEffect(() => {
+    if (fitted.current || size.width < 2 || size.height < 2) return;
+    const { sphereRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
+    const target = new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
+    const dir = new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
+    camera.position
+      .copy(target)
+      .addScaledVector(dir, fitCameraDistanceMm(sphereRadiusMm, size.width / size.height));
+    fitted.current = true;
+  }, [camera, size.width, size.height, product, intDiameter, extDiameter]);
+
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Escena completa                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -287,21 +330,19 @@ export default function ViewerScene({ view, layer, fadeLayer, onUserInteracted }
    * dedo apoyado y el ritmo REANUDA al soltar — la órbita jamás se resetea. */
   const [spinning, setSpinning] = useState(true);
 
-  /* Cámara fijada UNA vez por la silueta del payload (misma plantilla del
-   * CameraRefit del editor: margen 35% + 40 de aire). */
+  const product = useMemo(() => resolveMateModel(view.mate.modelId), [view.mate.modelId]);
+
+  /* Posición inicial estimada (aspecto 1); ViewerCameraFit la corrige con el
+   * aspecto real del contenedor antes del primer frame visible. */
   const camPos = useMemo(() => {
-    const product = resolveMateModel(view.mate.modelId);
-    const maxR = Math.max(
-      ...product.shape.points.map((p) => p.x * (view.mate.intDiameter / 2)),
-      view.mate.extDiameter / 2,
-    );
-    const heightTop = product.shape.totalHeightMm + product.shape.sealOverlapMm;
-    const fov = (FIELD_OF_VIEW_DEG * Math.PI) / 180;
-    const forRadius = (maxR * 1.35) / Math.tan(fov / 2);
-    const forHeight = (heightTop * 1.3) / Math.tan(fov / 2);
-    const dist = Math.max(forRadius, forHeight) + 40;
-    return new THREE.Vector3(0, 150, 240).normalize().multiplyScalar(dist).toArray() as [number, number, number];
-  }, [view.mate.modelId, view.mate.intDiameter, view.mate.extDiameter]);
+    const { sphereRadiusMm } = productFramingMm(product, view.mate.intDiameter, view.mate.extDiameter);
+    const target = new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
+    const dir = new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
+    return target
+      .clone()
+      .addScaledVector(dir, fitCameraDistanceMm(sphereRadiusMm, 1))
+      .toArray() as [number, number, number];
+  }, [product, view.mate.intDiameter, view.mate.extDiameter]);
 
   return (
     <Canvas
@@ -311,6 +352,7 @@ export default function ViewerScene({ view, layer, fadeLayer, onUserInteracted }
       style={{ position: 'absolute', inset: 0 }}
     >
       <color attach="background" args={['#0b0b0d']} />
+      <StudioEnvironment />
       <hemisphereLight intensity={0.55} groundColor="#14100c" color="#fff4e0" />
       <directionalLight position={[200, 260, 220]} intensity={1.15} color="#ffe9c4" />
       <directionalLight position={[-220, 90, -160]} intensity={0.5} color="#9fb4d8" />
@@ -322,17 +364,24 @@ export default function ViewerScene({ view, layer, fadeLayer, onUserInteracted }
         <ViewerEngraving view={view} layers={fadeLayer ? [layer, fadeLayer] : [layer]} />
       </group>
 
+      {/* Suelo invisible (mismo color que el fondo, sin tonemapping): no deja
+          una línea de horizonte detrás del producto. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <circleGeometry args={[420, 48]} />
-        <meshBasicMaterial color="#111114" />
+        <circleGeometry args={[1200, 64]} />
+        <meshBasicMaterial color="#0b0b0d" toneMapped={false} />
       </mesh>
 
       <ViewerSpin enabled={spinning} groupRef={groupRef} />
+      <ViewerCameraFit
+        product={product}
+        intDiameter={view.mate.intDiameter}
+        extDiameter={view.mate.extDiameter}
+      />
       <OrbitControls
         makeDefault
         enablePan
         enableDamping
-        target={[0, 90, 0]}
+        target={[0, CAMERA_TARGET_Y_MM, 0]}
         onStart={() => {
           setSpinning(false);
           onUserInteracted?.();

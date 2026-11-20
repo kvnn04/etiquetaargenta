@@ -52,11 +52,20 @@ import {
   VIROLA_INNER_DROP_MM,
   VIROLA_COVER_BELOW_SEAM_MM,
 } from '@/three/visual-skeleton';
+import {
+  CAMERA_FOV_DEG,
+  CAMERA_OFFSET_MM,
+  CAMERA_TARGET_Y_MM,
+  fitCameraDistanceMm,
+  productFramingMm,
+} from '@/three/framing';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { woodGrainTexture } from '@/three/wood-grain';
 import { wrapObservations } from '@/lib/quote/texts';
 import type { FichaSnapshot } from '@/lib/quote/snapshot';
 
 /** FOV de la escena (misma cámara visual que el editor). */
-const FIELD_OF_VIEW_DEG = 34;
+const FIELD_OF_VIEW_DEG = CAMERA_FOV_DEG;
 /** R8 de spec_rotacion: la re-proyección HD del grabado es ≥2048². */
 const ENGRAVING_HD_PX = 2048;
 
@@ -147,18 +156,14 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
     1,
     4000,
   );
-  // Encuadre: mismas fórmulas del CameraRefit del editor + dirección del
-  // encuadre por defecto (0,150,240) apuntada al centro visual del producto.
-  const maxR = Math.max(
-    ...product.shape.points.map((p) => p.x * (intDiameter / 2)),
-    extDiameter / 2,
-  );
-  const fovRad = (FIELD_OF_VIEW_DEG * Math.PI) / 180;
-  const dist =
-    Math.max((maxR * 1.35) / Math.tan(fovRad / 2), (topY * 1.3) / Math.tan(fovRad / 2)) + 40;
-  const dir = new THREE.Vector3(0, 150, 240).normalize();
-  camera.position.copy(dir.multiplyScalar(dist));
-  camera.lookAt(0, topY * 0.45, 0);
+  // Encuadre: misma esfera envolvente del CameraRefit del editor, con el
+  // aspecto real de la ficha (funciona igual en PNG vertical y horizontal).
+  const { sphereRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
+  const target = new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
+  const dir = new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
+  const dist = fitCameraDistanceMm(sphereRadiusMm, input.widthCss / input.heightCss);
+  camera.position.copy(target).addScaledVector(dir, dist);
+  camera.lookAt(target);
 
   /* Luces: los 4 focos EXACTOS de la escena — la ficha muestra lo que el
    * tallerista vio (sanidad compartida con la escena pos 3–5). */
@@ -173,6 +178,16 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
   warm.position.set(0, 40, 170);
   scene.add(warm);
 
+  /* IBL local (mismo RoomEnvironment que la escena): el metal PBR necesita
+   * un entorno para reflejar; sin él la virola sale negra en la ficha. */
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const room = new RoomEnvironment();
+  const envTarget = pmrem.fromScene(room, 0.04);
+  scene.environment = envTarget.texture;
+  scene.environmentIntensity = 0.85;
+  room.dispose();
+  pmrem.dispose();
+
   const group = new THREE.Group();
   scene.add(group);
 
@@ -181,10 +196,14 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
   // Cuerpo (lathe del catálogo, material PBR pos 5)
   const bodyGeo = buildBodyGeometry(product, intDiameter);
   const bodyPbr = resolveBodyPbr(input.bodyPreset as BodyPresetId, input.bodyColor);
+  const grain = woodGrainTexture();
   const bodyMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(bodyPbr.color),
     roughness: bodyPbr.roughness,
     metalness: bodyPbr.metalness,
+    map: grain ?? undefined,
+    bumpMap: grain ?? undefined,
+    bumpScale: 0.25,
   });
   group.add(new THREE.Mesh(bodyGeo, bodyMat));
   disposables.push(bodyGeo, bodyMat);
@@ -245,8 +264,9 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
   }
 
   // Suelo sutil (coherencia visual con la escena; NO gira)
-  const floorGeo = new THREE.CircleGeometry(420, 48);
-  const floorMat = new THREE.MeshBasicMaterial({ color: '#111114' });
+  const floorGeo = new THREE.CircleGeometry(1200, 64);
+  // Mismo color que el fondo (sin tonemapping): evita la línea de horizonte.
+  const floorMat = new THREE.MeshBasicMaterial({ color: '#0b0b0d', toneMapped: false });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
@@ -266,6 +286,7 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
     return null;
   } finally {
     for (const d of disposables) d.dispose();
+    envTarget.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
   }
