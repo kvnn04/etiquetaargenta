@@ -25,6 +25,9 @@ import { normalizeDesignState } from '@/lib/design';
 import { normalizeVariantRows } from '@/lib/links/payload';
 
 const DRAFT_KEY = 'mocap:project-draft';
+/** DEV ONLY: draft aislado del bypass — al reactivar el auth no se mezcla
+ * con el borrador real ni pisa el proyecto de Supabase (last-write-wins). */
+export const DEV_DRAFT_KEY = 'mocap:project-draft-dev';
 
 export interface LoadedProject {
   projectId: string | null;
@@ -184,18 +187,18 @@ interface LocalDraft {
   updatedAt: string;
 }
 
-export function saveLocalDraft(state: EditorStateSnapshot): void {
+export function saveLocalDraft(state: EditorStateSnapshot, key: string = DRAFT_KEY): void {
   try {
     const draft: LocalDraft = { state, updatedAt: new Date().toISOString() };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    localStorage.setItem(key, JSON.stringify(draft));
   } catch {
     // Sin storage (modo privado): se pierde el draft, la edición sigue.
   }
 }
 
-export function loadLocalDraft(): LocalDraft | null {
+export function loadLocalDraft(key: string = DRAFT_KEY): LocalDraft | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LocalDraft;
     if (!parsed?.state || !parsed?.updatedAt) return null;
@@ -205,9 +208,9 @@ export function loadLocalDraft(): LocalDraft | null {
   }
 }
 
-export function clearLocalDraft(): void {
+export function clearLocalDraft(key: string = DRAFT_KEY): void {
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(key);
   } catch {
     /* noop */
   }

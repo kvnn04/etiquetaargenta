@@ -36,7 +36,7 @@ import VariantsCard from '@/components/links/variants-card';
 import LinkModal from '@/components/links/link-modal';
 import AutoGiroBar from '@/components/studio/auto-giro-bar';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
+import { DEV_DRAFT_KEY, loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
 import { useProjectPersistence } from '@/lib/projects/use-autosave';
 import { useEditorStore } from '@/lib/store/editor';
 import { Button } from '@/components/ui/button';
@@ -130,9 +130,12 @@ function SaveChip({ dirty, lastSavedAt }: { dirty: boolean; lastSavedAt: string 
 export default function EditorShell({
   userId,
   profile,
+  devBypass = false,
 }: {
   userId: string;
   profile: ShellProfile;
+  /** DEV ONLY: sin sesión ni backend; el autosave vive en localStorage. */
+  devBypass?: boolean;
 }) {
   const [price, setPrice] = useState<PriceInfo | null>(null);
   const [priceError, setPriceError] = useState(false);
@@ -204,8 +207,10 @@ export default function EditorShell({
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const server = await loadLatestProject(supabase);
-      const draft = loadLocalDraft();
+      // DEV ONLY: sin sesión no hay proyecto en Supabase; manda el draft local
+      // aislado del bypass (el borrador real no se toca).
+      const server = devBypass ? null : await loadLatestProject(supabase);
+      const draft = loadLocalDraft(devBypass ? DEV_DRAFT_KEY : undefined);
       if (!alive) return;
       const draftWins =
         draft && (!server?.updatedAt || Date.parse(draft.updatedAt) > Date.parse(server.updatedAt));
@@ -219,10 +224,11 @@ export default function EditorShell({
     return () => {
       alive = false;
     };
-  }, [supabase]);
+  }, [supabase, devBypass]);
 
-  /* Autosave (debounce 2 s, last-write-wins, borrador offline con backoff). */
-  useProjectPersistence(supabase);
+  /* Autosave (debounce 2 s, last-write-wins, borrador offline con backoff).
+   * DEV ONLY: en bypass guarda solo el borrador local (sin Supabase). */
+  useProjectPersistence(supabase, { localOnly: devBypass });
 
   /* Pos 10A: link ACTIVO = la versión más nueva que NO expiró (el GET devuelve
    * versiones desc; la primera vigente gana). Se consulta al abrir la Ficha y
@@ -381,7 +387,7 @@ export default function EditorShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <PlanWatcher userId={userId} />
+      {!devBypass && <PlanWatcher userId={userId} />}
       <TopBar
         plan={profile.plan}
         baseName={profile.brandName?.trim() || profile.baseName}

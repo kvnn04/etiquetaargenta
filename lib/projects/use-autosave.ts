@@ -12,7 +12,13 @@
 
 import { useEffect, useRef } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { clearLocalDraft, loadLocalDraft, saveLocalDraft, saveProjectState } from './persistence';
+import {
+  DEV_DRAFT_KEY,
+  clearLocalDraft,
+  loadLocalDraft,
+  saveLocalDraft,
+  saveProjectState,
+} from './persistence';
 import { useEditorStore, snapshotOf } from '@/lib/store/editor';
 
 export const AUTOSAVE_DEBOUNCE_MS = 2000;
@@ -20,7 +26,16 @@ export const AUTOSAVE_DEBOUNCE_MS = 2000;
 /** Backoff de reintento (§6): pasos exponenciales hasta 30 s. */
 const BACKOFF_STEPS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
 
-export function useProjectPersistence(supabase: SupabaseClient): void {
+export function useProjectPersistence(
+  supabase: SupabaseClient,
+  options: { localOnly?: boolean } = {},
+): void {
+  const { localOnly = false } = options;
+  /**
+   * El bypass usa un draft SEPARADO: al reactivar el auth, el borrador real
+   * (y el proyecto en Supabase) no se contaminan con el estado de desarrollo.
+   */
+  const draftKey = localOnly ? DEV_DRAFT_KEY : undefined;
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryStep = useRef(0);
@@ -47,16 +62,26 @@ export function useProjectPersistence(supabase: SupabaseClient): void {
       const payload = JSON.stringify({ ...snap, id: s.projectId });
       if (!force && payload === lastSent.current) return;
 
+      /* DEV ONLY: sin sesión no se toca Supabase; el draft local ES el guardado. */
+      if (localOnly) {
+        saveLocalDraft(snap, draftKey);
+        lastSent.current = payload;
+        retryStep.current = 0;
+        store.getState().markSaved(new Date().toISOString(), s.projectId);
+        store.getState().markOfflineDraft(false);
+        return;
+      }
+
       const res = await saveProjectState(supabase, s.projectId, snap);
       if (res.ok) {
         lastSent.current = payload;
         retryStep.current = 0;
         store.getState().markSaved(res.at, res.id);
         store.getState().markOfflineDraft(false);
-        clearLocalDraft();
+        clearLocalDraft(draftKey);
       } else {
         // Guarda el borrador y quedate en modo offline (§6).
-        saveLocalDraft(snap);
+        saveLocalDraft(snap, draftKey);
         store.getState().markOfflineDraft(true);
         scheduleRetry();
       }
@@ -72,7 +97,7 @@ export function useProjectPersistence(supabase: SupabaseClient): void {
     });
 
     function onOnline(): void {
-      if (loadLocalDraft()) void attemptSave(true);
+      if (loadLocalDraft(draftKey)) void attemptSave(true);
     }
     window.addEventListener('online', onOnline);
 
@@ -82,5 +107,5 @@ export function useProjectPersistence(supabase: SupabaseClient): void {
       if (flushTimer.current) clearTimeout(flushTimer.current);
       if (retryTimer.current) clearTimeout(retryTimer.current);
     };
-  }, [supabase]);
+  }, [supabase, localOnly, draftKey]);
 }

@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { isAuthBypassEnabled } from '@/lib/dev-auth';
 
 /**
  * Esqueleto de sesión (posición 1 del orden de implementación):
@@ -15,6 +16,25 @@ export function missingEnv(): string[] {
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
+  /* DEV ONLY: bypass de auth (DEV_AUTH_BYPASS=1). El editor abre sin sesión y
+   * login/registro quedan inaccesibles mientras dure el desarrollo. */
+  if (isAuthBypassEnabled()) {
+    const bypassPath = request.nextUrl.pathname;
+    if (bypassPath.startsWith('/auth') && !bypassPath.startsWith('/auth/callback')) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/editor';
+      url.search = '';
+      return NextResponse.redirect(url);
+    }
+    if (bypassPath.startsWith('/perfil')) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/editor';
+      url.search = '';
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
+
   const missing = missingEnv();
   if (missing.length > 0) {
     if (request.nextUrl.pathname === '/setup') {

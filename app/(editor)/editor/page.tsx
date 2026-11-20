@@ -5,6 +5,7 @@ import EditorShell, { type ShellProfile } from '@/components/editor/editor-shell
 import type { Plan } from '@/lib/permissions';
 import type { UserRecord } from '@/lib/types/db';
 import { reconcileUserCycle } from '@/lib/payments/reconcile';
+import { isAuthBypassEnabled } from '@/lib/dev-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,27 @@ export const dynamic = 'force-dynamic';
  * R8: si la fila está con deleted_at ⇒ signOut + mensaje neutro en /auth.
  */
 export default async function EditorPage() {
+  /* DEV ONLY (DEV_AUTH_BYPASS=1): editor sin login. Perfil de prueba PRO para
+   * trabajar las formas del mate sin marca de agua ni gates. */
+  if (isAuthBypassEnabled()) {
+    return (
+      <EditorShell
+        userId="dev-local"
+        devBypass
+        profile={{
+          exists: true,
+          baseName: 'Taller Dev',
+          brandName: 'Taller Dev',
+          plan: 'pro',
+          graceExpiresAt: null,
+          logoThumbUrl: null,
+          whatsappE164: null,
+          instagramHandle: null,
+        }}
+      />
+    );
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
