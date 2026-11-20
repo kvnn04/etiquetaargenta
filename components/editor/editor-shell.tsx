@@ -404,7 +404,7 @@ export default function EditorShell({
             DOM del lienzo (contextmenu/arrastre) + watermark cocida (prop watermark). */}
         <section
           className={[
-            'relative min-h-[420px] overflow-hidden rounded-2xl border border-line lg:min-h-0',
+            'relative min-h-[420px] overflow-hidden rounded-2xl border border-line lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)] lg:min-h-0 lg:self-start',
             freeDemo ? 'select-none' : '',
           ].join(' ')}
           onContextMenu={freeDemo ? blockFreeDownload : undefined}
