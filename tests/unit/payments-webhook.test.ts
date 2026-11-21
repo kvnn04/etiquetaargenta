@@ -121,6 +121,10 @@ describe('ruteo del evento (body JSON nuevo + query legada)', () => {
       kind: 'preapproval',
       resourceId: '2c9abc',
     });
+    expect(parseWebhookEvent({ type: 'subscription_preapproval', data: { id: '2c9prod' } }, sp(''))).toEqual({
+      kind: 'preapproval',
+      resourceId: '2c9prod',
+    });
     expect(parseWebhookEvent({ type: 'other', data: { id: 'x' } }, sp(''))).toEqual({
       kind: 'ignored',
       resourceId: 'x',
@@ -136,6 +140,10 @@ describe('ruteo del evento (body JSON nuevo + query legada)', () => {
     expect(parseWebhookEvent(null, sp('?topic=preapproval&id=2c9xyz'))).toEqual({
       kind: 'preapproval',
       resourceId: '2c9xyz',
+    });
+    expect(parseWebhookEvent(null, sp('?topic=subscription_preapproval&id=2c9prod'))).toEqual({
+      kind: 'preapproval',
+      resourceId: '2c9prod',
     });
   });
 });

@@ -286,6 +286,8 @@ async function handlePayment(resourceId: string): Promise<Response> {
  * preapproval.updated — alta (pending/authorized), pausa y cancelación (R9).
  * paused ⇒ cierre programado (sin más cobros, acceso hasta el fin del ciclo).
  * authorized solo ENRUTA: el estado del plan lo manda el COBRO (payment.updated).
+ * En producción MP entrega este evento como `subscription_preapproval`; el
+ * parser acepta también el alias legado `preapproval` (mismo recurso).
  * -------------------------------------------------------------------------- */
 async function handlePreapproval(resourceId: string): Promise<Response> {
   const service = createSupabaseServiceClient();

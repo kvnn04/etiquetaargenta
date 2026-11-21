@@ -790,6 +790,12 @@ el manifiesto exacto `id:{dataId};request-id:{rid};ts:{ts};` para firmarlo a man
 {"received":true,"dedupe":true}` (pago ya registrado, sin mutaciones), sin firma ⇒ `403
 FIRMA_INVALIDA`, firma falsa ⇒ `403`.
 
+**Topic de producción (corregido 21-nov)**: en el panel de MP la suscripción sin plan se
+notifica como **`subscription_preapproval`**, no como `preapproval` (nombre legado). El parser
+normaliza ambos al mismo recurso; sin este alias, el webhook de cancelación/alta se hubiera
+ignorado en producción (el reconcile lo corregía recién en la próxima lectura). Los cobros
+siguen llegando por **`payment`**.
+
 **Precio vigente (21-nov-2026)**: **ARS 36.799/mes**. Se aplica con
 `supabase/migrations/0006_price_pro_36799.sql` (o la línea `update pricing_config set
 amount=36799 where key='pro_monthly_ars';` en el SQL Editor). Las suscripciones ya dadas de

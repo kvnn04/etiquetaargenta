@@ -83,6 +83,15 @@ export interface MpWebhookEvent {
   resourceId: string | null;
 }
 
+/**
+ * Topics de suscripción: el panel de MP (Tus integraciones → Webhooks) usa
+ * `subscription_preapproval` para suscripciones SIN plan (las nuestras);
+ * `preapproval` es el nombre legado que usan los tests/curl. Ambos apuntan al
+ * MISMO recurso (`/preapproval/{id}`), así que se normalizan al mismo kind.
+ */
+const isPreapprovalTopic = (topic: string): boolean =>
+  topic === 'preapproval' || topic === 'subscription_preapproval';
+
 /** Nueva forma MP: POST JSON `{ type|topic, data:{ id } }`; legada: `?topic=&id=`. */
 export function parseWebhookEvent(payload: unknown, searchParams: URLSearchParams): MpWebhookEvent {
   // Query form (webhooks legados o QA manual con curl):
@@ -90,7 +99,7 @@ export function parseWebhookEvent(payload: unknown, searchParams: URLSearchParam
   const qId = searchParams.get('id');
   if (qTopic && qId) {
     if (qTopic === 'payment') return { kind: 'payment', resourceId: qId };
-    if (qTopic === 'preapproval') return { kind: 'preapproval', resourceId: qId };
+    if (isPreapprovalTopic(qTopic)) return { kind: 'preapproval', resourceId: qId };
     return { kind: 'ignored', resourceId: qId };
   }
 
@@ -98,10 +107,12 @@ export function parseWebhookEvent(payload: unknown, searchParams: URLSearchParam
     | { type?: string; topic?: string; action?: string; data?: { id?: unknown } | unknown[] }
     | null;
   const type = body?.type ?? body?.topic;
-  // R7: eventos tratados — payment.updated y preapproval.updated (el resto se logea).
+  // R7: eventos tratados — payment.updated y preapproval/subscription_preapproval
+  // (el resto se logea). `subscription_authorized_payment` es otro recurso
+  // (/authorized_payments/{id}) y este flujo planless-pending no lo necesita.
   const id = body?.data && !Array.isArray(body.data) ? body.data.id : undefined;
   const resourceId = typeof id === 'string' || typeof id === 'number' ? String(id) : null;
   if (type === 'payment') return { kind: 'payment', resourceId };
-  if (type === 'preapproval') return { kind: 'preapproval', resourceId };
+  if (type && isPreapprovalTopic(type)) return { kind: 'preapproval', resourceId };
   return { kind: 'ignored', resourceId };
 }
