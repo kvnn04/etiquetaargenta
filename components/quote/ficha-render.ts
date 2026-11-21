@@ -54,8 +54,8 @@ import {
 } from '@/three/visual-skeleton';
 import {
   CAMERA_FOV_DEG,
-  CAMERA_OFFSET_MM,
-  CAMERA_TARGET_Y_MM,
+  TOP_VIEW_FIT_MARGIN,
+  TOP_VIEW_OFFSET_MM,
   fitCameraDistanceMm,
   productFramingMm,
 } from '@/three/framing';
@@ -64,7 +64,7 @@ import { woodGrainTexture } from '@/three/wood-grain';
 import { wrapObservations } from '@/lib/quote/texts';
 import type { FichaSnapshot } from '@/lib/quote/snapshot';
 
-/** FOV de la escena (misma cámara visual que el editor). */
+/** FOV de la escena (mismo lente; la ficha usa vista cenital, no la 3/4 del editor). */
 const FIELD_OF_VIEW_DEG = CAMERA_FOV_DEG;
 /** R8 de spec_rotacion: la re-proyección HD del grabado es ≥2048². */
 const ENGRAVING_HD_PX = 2048;
@@ -122,7 +122,9 @@ export interface MateViewInput {
  * Render offscreen del MATE: mismo material PBR, las mismas 4 luces (reglas de
  * iluminación de la escena pos 3–5), mismo fondo y misma geometría de torno —
  * pero SIN guías, SIN pulso de desborde y SIN watermark (R6/R7: guías y
- * watermark jamás salen en outputs). Grabado re-proyectado a 2048² (R8).
+ * watermark jamás salen en outputs). La cámara es CENITAL (≈15° de inclinación
+ * sobre la corona) para que el grabado de la virola se lea; la vista 3/4 del
+ * editor dejaba el anillo de canto. Grabado re-proyectado a 2048² (R8).
  * Devuelve un canvas 2D y LIBERA el contexto WebGL (la ficha puede repetirse
  * varias veces sin agotar los contextos del navegador).
  */
@@ -156,12 +158,20 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
     1,
     4000,
   );
-  // Encuadre: misma esfera envolvente del CameraRefit del editor, con el
-  // aspecto real de la ficha (funciona igual en PNG vertical y horizontal).
-  const { sphereRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
-  const target = new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
-  const dir = new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
-  const dist = fitCameraDistanceMm(sphereRadiusMm, input.widthCss / input.heightCss);
+  /* Ficha/Foto HD: vista desde ARRIBA (≈15° de inclinación) apuntando a la
+   * corona, donde vive el grabado. La cámara 3/4 del editor/visor dejaba el
+   * anillo de la virola de canto y el diseño no se leía.
+   * El encuadre se calcula con el radio real del producto (no la esfera
+   * completa): así la corona ocupa la ficha y no queda chica. */
+  const { maxRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
+  const target = new THREE.Vector3(0, topY, 0);
+  const dir = new THREE.Vector3(...TOP_VIEW_OFFSET_MM).normalize();
+  const dist = fitCameraDistanceMm(
+    maxRadiusMm,
+    input.widthCss / input.heightCss,
+    FIELD_OF_VIEW_DEG,
+    TOP_VIEW_FIT_MARGIN,
+  );
   camera.position.copy(target).addScaledVector(dir, dist);
   camera.lookAt(target);
 

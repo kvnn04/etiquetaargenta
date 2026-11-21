@@ -70,8 +70,11 @@ export function composeEngravingCanvas(
   ctx.scale(scalePct / 100, scalePct / 100);
   // Dibujo FULL-canvas del ráster de trabajo (R1: base congelada = el 100 %
   // deja la envolvente tocando el anillo — jamás inscrito en el hueco).
+  // La Ficha HD compone sobre 2048² y el asset de sesión es 1024²: se escala
+  // al canvas; sin esto el grabado quedaba en un cuadrante y la máscara
+  // anular lo recortaba casi por completo.
   ctx.translate(-C, -C);
-  ctx.drawImage(asset, 0, 0);
+  ctx.drawImage(asset, 0, 0, canvas.width, canvas.height);
   ctx.restore();
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);

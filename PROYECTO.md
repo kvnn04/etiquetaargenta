@@ -519,6 +519,7 @@ diseño.
 | §5 | Sin entidades DB nuevas (snapshot transitorio); nombre de archivo `{taller}-ficha-mate-{model}-{aaaammdd}.png|pdf` | nada nuevo en migraciones; `slugTaller`+`formatFileDate` en `texts.ts` | ✅ |
 | §7 | Registro QA de exports: consola del server `{user, plan, artifact, at}` + JSON 200 | `GET /api/exports?type=png|pdf` + `POST /api/exports/ticket/verificar` (401/400/403/200) | ✅ (401 smoke) |
 | §3 | La escena y la ficha comparten pipeline del grabado (un solo motor, jamás duplicado) | `composeEngravingCanvas` extraída a `lib/compose-engraving.ts` — studio-scene y ficha-render la importan | ✅ |
+| §3 | Ficha/Foto HD: vista **cenital** (≈15°) para que el grabado de la corona se lea y re-proyección HD completa | `TOP_VIEW_OFFSET_MM`/`TOP_VIEW_FIT_MARGIN` en `three/framing.ts` + `drawImage` full-canvas en `compose-engraving.ts` (escala 1024² → 2048²) | ✅ |
 
 ### Posición 10A — Enlace comercial compartible + Modo Cliente (según `spec_ficha_comercial_interactiva_shareable_link.md`)
 

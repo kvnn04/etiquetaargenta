@@ -1,11 +1,14 @@
 /* ============================================================================
- * ENCUADRE DE PRODUCTO — una sola fórmula para editor, visor y ficha.
+ * ENCUADRE DE PRODUCTO — una sola fórmula de distancia para editor, visor y
+ * ficha; cada vista elige su dirección y su punto de mira.
  * ----------------------------------------------------------------------------
- * La cámara mira al centro visual del mate (no a la base): `CAMERA_TARGET_Y_MM`
- * queda entre los centros de las siluetas del catálogo. La distancia se calcula
- * con la esfera envolvente del producto y el MENOR de los dos campos de visión
- * (vertical/horizontal según el aspecto real del lienzo). Así el mate entra
- * completo tanto en el panel ancho del editor como en una ficha vertical.
+ * · Editor/visor: cámara 3/4 casi de frente mirando al centro visual del mate
+ *   (`CAMERA_TARGET_Y_MM`), para leer la silueta completa.
+ * · Ficha/Foto HD: cámara cenital (≈15°) mirando la corona, donde vive el
+ *   grabado; el cuerpo queda como referencia inferior.
+ * La distancia se calcula con el radio del sujeto y el MENOR de los dos campos
+ * de visión (vertical/horizontal según el aspecto real del lienzo). Así el
+ * producto entra completo tanto en el panel ancho del editor como en la ficha.
  * ============================================================================ */
 
 import type { MateProduct } from '@/lib/catalog';
@@ -19,10 +22,24 @@ export const CAMERA_TARGET_Y_MM = 63;
 export const CAMERA_FIT_MARGIN = 1.06;
 
 /**
- * Dirección de cámara por defecto, relativa al punto de mira: casi de frente
- * (≈13° de altura) para leer la silueta y, a la vez, ver la corona grabada.
+ * Dirección de cámara por defecto del EDITOR/VISOR, relativa al punto de mira:
+ * casi de frente (≈13° de altura) para leer la silueta del mate.
  */
 export const CAMERA_OFFSET_MM: readonly [number, number, number] = [0, 40, 260];
+
+/**
+ * Dirección de la FICHA TÉCNICA / FOTO HD: vista cenital con ≈15° de
+ * inclinación. El grabado vive en la corona (anillo de la virola); desde el
+ * frente quedaba de canto e invisible. El editor y el visor conservan su
+ * cámara 3/4 interactiva.
+ */
+export const TOP_VIEW_OFFSET_MM: readonly [number, number, number] = [0, 300, 80];
+
+/**
+ * Aire de la vista cenital: la corona es el sujeto y el cuerpo se proyecta
+ * hacia abajo por la inclinación; 12 % evita que el borde toque el marco.
+ */
+export const TOP_VIEW_FIT_MARGIN = 1.12;
 
 export interface ProductFramingMm {
   /** Radio máximo real del conjunto cuerpo + virola. */
