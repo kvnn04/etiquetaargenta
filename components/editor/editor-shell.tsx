@@ -559,16 +559,49 @@ export default function EditorShell({
         <span className="font-mono">spec_seleccion_de_color.md</span>
       </footer>
 
-      <PaywallModal
-        open={paywallOpen}
-        price={price}
-        priceError={priceError}
-        onClose={() => setPaywallOpen(false)}
+      {/* Pos 9: modal #quoteModal — snapshot inmutable + grilla + export.
+          Las observaciones viven en la shell (sesión): sobreviven re-abrir.
+          Pos 10A: linkId = enlace VIGENTE del proyecto (PASSTHROUGH al DNA).
+          El modal del enlace se apila ENCIMA de la ficha (mismo z, va después
+          en el DOM) para generar/compartir sin cerrar la Ficha. */}
+      <QuoteModal
+        open={quoteOpen}
+        onClose={() => setQuoteOpen(false)}
+        plan={profile.plan}
+        linkId={activeLinkId}
+        profile={{
+          brandName: profile.brandName,
+          baseName: profile.baseName,
+          logoThumbUrl: profile.logoThumbUrl ?? null,
+          whatsappE164: profile.whatsappE164,
+          instagramHandle: profile.instagramHandle,
+        }}
+        onPaywallRequest={() => setPaywallOpen(true)}
+        observaciones={obsText}
+        onObservacionesChange={setObsText}
+        onGenerateLink={() => setLinkOpen(true)}
       />
 
-      {/* R5 spec_escala (pos 9): mini-diálogo de confirmación EXACTa ante desborde
-          para la Foto HD — los CTA son los de la spec ("Exportar de todas formas" /
-          "Volver a ajustar"); en Ficha Técnica el panel vive DENTRO del modal. */}
+      {/* Pos 10A: modal del Enlace Comercial — publish congelado + versiones.
+          El caller manda su propio confirm (CTAs "Publicar/Volver"); los
+          errores de publish/copiar viven DENTRO del modal (la shell queda
+          detrás del overlay). */}
+      <LinkModal
+        open={linkOpen}
+        onClose={() => {
+          setLinkOpen(false);
+          void loadActiveLinkId(); // un publish fresco queda ligado a la ficha
+        }}
+        projectId={projectId}
+        designAsset={designAsset}
+        rows={linkDraft}
+        onPaywallRequest={() => setPaywallOpen(true)}
+        onPublishConfirm={(check, ctas) => askOverflowConfirm(check, ctas)}
+      />
+
+      {/* R5 spec_escala (pos 9): mini-diálogo de confirmación EXACTA ante desborde
+          para la Foto HD y el publish del enlace — va DESPUÉS de los modales que
+          lo invocan para quedar visible por encima (mismo z-index). */}
       {overflowConfirm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
@@ -598,41 +631,13 @@ export default function EditorShell({
         </div>
       )}
 
-      {/* Pos 10A: modal del Enlace Comercial — publish congelado + versiones.
-          El caller manda su propio confirm (CTAs "Publicar/Volver") y onError
-          cae al actionHint de la shell (misma caja que la Foto HD). */}
-      <LinkModal
-        open={linkOpen}
-        onClose={() => {
-          setLinkOpen(false);
-          void loadActiveLinkId(); // un publish fresco queda ligado a la ficha
-        }}
-        projectId={projectId}
-        designAsset={designAsset}
-        rows={linkDraft}
-        onPaywallRequest={() => setPaywallOpen(true)}
-        onPublishConfirm={(check, ctas) => askOverflowConfirm(check, ctas)}
-        onError={(msg) => setActionHint(msg)}
-      />
-
-      {/* Pos 9: modal #quoteModal — snapshot inmutable + grilla + export.
-          Las observaciones viven en la shell (sesión): sobreviven re-abrir.
-          Pos 10A: linkId = enlace VIGENTE del proyecto (PASSTHROUGH al DNA). */}
-      <QuoteModal
-        open={quoteOpen}
-        onClose={() => setQuoteOpen(false)}
-        plan={profile.plan}
-        linkId={activeLinkId}
-        profile={{
-          brandName: profile.brandName,
-          baseName: profile.baseName,
-          logoThumbUrl: profile.logoThumbUrl ?? null,
-          whatsappE164: profile.whatsappE164,
-          instagramHandle: profile.instagramHandle,
-        }}
-        onPaywallRequest={() => setPaywallOpen(true)}
-        observaciones={obsText}
-        onObservacionesChange={setObsText}
+      {/* Paywall al TOPE: lo abren la Ficha y el Enlace (402 server-side), y
+          debe quedar por encima de ambos modales. */}
+      <PaywallModal
+        open={paywallOpen}
+        price={price}
+        priceError={priceError}
+        onClose={() => setPaywallOpen(false)}
       />
     </div>
   );

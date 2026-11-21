@@ -5,7 +5,7 @@ cliente por enlace y cierran la venta. Implementación del paquete de especifica
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
 **Estado**: ✅ Posición 10B de 10 — *Mercado Pago: Pagos, Suscripción y Comprobantes del plan PRO* (cierra el plan). **Checkout Pro real**: el CTA del paywall llama `POST /api/billing/checkout` (gates server-side en orden: sesión ⇒ 401 · `email_confirmed_at` vacío ⇒ 409 `EMAIL_NOT_VERIFIED` con paso "Confirmá tu email" inline en el modal — Confirm email sigue OFF en Supabase: la verificación real ocurre SOLO al pagar — · credenciales/precio `pro_monthly_ars` ⇒ 503 · suscripción viva ⇒ 409 race · fila `checkout_intents` de auditoría, R10: **cero emails de abandono**) y redirige al `init_point` del preapproval (wrapper REST v1 propio con `X-Idempotency-Key`, sin SDK nuevo). **Migración `0005_subscriptions`**: `subscriptions` (ciclo R1 `inactiva→activa→gracia→activa|FREE` + `programada_cierre`; **grandfathering R4** — `price_frozen` SOLO en alta/re-activación, con el monto del pago aprobado y `cycle_anchor` anclado al día del primer pago en `America/Argentina/Buenos_Aires`), `payments` (`mp_payment_id` UNIQUE para dedupe + `receipt_url` = constancia MP, R6; la factura ARCA sigue a mano) y `checkout_intents` — escritura solo service-role, lecturas privadas por RLS del dueño, **grants inline** (lección 10A/0910). **Webhook blindado** `/api/webhooks/mercadopago`: firma HMAC contra el manifiesto oficial `id;request-id;ts` con `MP_WEBHOOK_SECRET` (inválida ⇒ **403** fail-close), pull del recurso real (el body jamás decide dinero), dedupe + compare-and-set (re-envío sin mutar nada), transiciones del núcleo puro y broadcast Realtime vía `users.plan`; **mailer Resend** con degradación honesta a log (recibo/gracia/cierre — lista cerrada de emails). **Dunning al-vuelo** (sin pg_cron): editor y perfil reconcilian el ciclo ANTES de leer el plan — gracia 5 días corridos desde el PRIMER rechazo (no re-abrible), ventana vencida ⇒ downgrade a FREE preservando proyectos/assets/links, drift de cancelaciones de MP y realineo del gating con `resolvePlan`. **Centro de Suscripción** en `/perfil`: badge por estado, precio congelado con tag, próximo cobro, historial con constancia y botón único al Portal de MP (R9: cancelación/tarjeta SOLO ahí). Sobre las 1–10A: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación, escala/desborde, protección FREE, ficha técnica/PDF/HD y Enlace Comercial + Modo Cliente. Queda: QA del titular con sandbox MP (credenciales + 0005 + túnel — plan detallado en `PROYECTO.md` §10).
-285 tests pasando en Vitest, build de producción 19 rutas 100% verde y TypeScript strict 0 errores.
+288 tests pasando en Vitest, build de producción 19 rutas 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -19,7 +19,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
 | 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
-| Test unit | Vitest 4 (285 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A + **pagos core 32 + webhook/firma 11 pos 10B** en `tests/unit/`) |
+| Test unit | Vitest 4 (288 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A + **pagos core 32 + webhook/firma 11 pos 10B** en `tests/unit/`) |
 | PDF | pdf-lib 1.17 (pos 9: envoltorio A4 de la ficha; carga diferida con `import()`, fuera del chunk inicial) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
@@ -287,6 +287,7 @@ red un momento para ver el banner del borrador local.
 | Registro QA de exports: consola del server `{user, plan, artifact, at}` (sin tablas nuevas) | ✅ `GET /api/exports?type=png|pdf` + `POST /api/exports/ticket/verificar` (401/400/403/200) |
 | Nomenclatura §5: `{taller}-ficha-mate-{model}-{aaaammdd}.png\|pdf` y `{taller}-foto-mate-{model}-{aaaammdd}.png` | ✅ `slugTaller` + `formatFileDate` en `texts.ts` (testeado con el ejemplo exacto de la spec) |
 | La escena y la ficha comparten pipeline del grabado (un solo motor) | ✅ `composeEngravingCanvas` extraída a `lib/compose-engraving.ts` — studio-scene y ficha-render la importan |
+| Fila de acciones §4: `[Descargar PNG]`, `[Descargar PDF]`, `[Generar Enlace Comercial]`, `[Enviar por WhatsApp]` (esta última vía módulo de enlaces) | ✅ `quote-modal.tsx` — «Generar Enlace» abre el modal de versiones SOBRE la Ficha; «Enviar por WhatsApp» comparte el enlace vigente con el mensaje EXACTO (`whatsappShareHref`); sin enlace publica primero; sin E.164 copia el link (R8: jamás `wa.me` inválido) |
 
 ## ¿Qué quedó de la posición 10A? (según `spec_ficha_comercial_interactiva_shareable_link.md`)
 
@@ -305,7 +306,7 @@ red un momento para ver el banner del borrador local.
 | Modo Cliente §4: top bar marca + "Vista Previa Oficial", giro 0.5 RPM pausable por el dedo, zoom/pinche, selector A/B/C + acordeón (Modelo/Virola mm/Cuerpo) + CTA verde full-width | ✅ `client-viewer.tsx` + `viewer-scene.tsx` (misma librería 3D del editor, SIN guías/medidas/watermark; crossfade ≤300 ms por capas de la textura — cámara y ritmo del giro jamás se resetean) |
 | Páginas amables §6: inexistente/vencido/no disponible; variante con asset caído queda deshabilitada y las demás siguen | ✅ `app/v/[linkId]/page.tsx` (service-role, expiración ANTES de servir contenido) + `not-found.tsx` + gating por `assets` fallidos en el visor |
 | Fallback sin WhatsApp (spec usuario R5): código `APROBADA-{VARIANTE}-{LINKID}` copiable + "Ponete en contacto con tu vendedor…" | ✅ `approvalCode()` + panel del código en el visor (el evento IGUAL registra, R6); con número `wa.me` directo tras el POST (reintentos con backoff en red rota) |
-| linkId vigente ligado al DNA de la ficha (PASSTHROUGH de pos 9) | ✅ la shell consulta el link activo al abrir `#quoteModal` y lo pasa a `captureFichaSnapshot.linkId` |
+| linkId vigente ligado al DNA de la ficha (PASSTHROUGH de pos 9) | ✅ la shell consulta el link activo al abrir `#quoteModal` y lo pasa a `captureFichaSnapshot.linkId`; si el GET resuelve después del open, la Ficha recaptura el snapshot y reusa ese enlace en PDF y WhatsApp |
 
 ## Scripts
 
@@ -313,7 +314,7 @@ red un momento para ver el banner del borrador local.
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links + pagos, 285 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links + pagos, 288 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)

@@ -55,7 +55,6 @@ export default function LinkModal({
   rows,
   onPaywallRequest,
   onPublishConfirm,
-  onError,
 }: {
   open: boolean;
   onClose: () => void;
@@ -65,7 +64,6 @@ export default function LinkModal({
   onPaywallRequest: () => void;
   /** Confirmación de desborde con los CTA de la shell (Promise-based). */
   onPublishConfirm: (check: OverflowCheck, ctas: readonly string[]) => Promise<boolean>;
-  onError: (msg: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -73,6 +71,8 @@ export default function LinkModal({
   const [versions, setVersions] = useState<LinkVersionRow[] | null>(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [blocker, setBlocker] = useState<string | null>(null);
+  /** Errores de publish/copiar DENTRO del modal (la shell queda detrás). */
+  const [error, setError] = useState<string | null>(null);
 
   /* Al abrir: reset + listado de versiones (R1 panel del editor). */
   useEffect(() => {
@@ -80,6 +80,7 @@ export default function LinkModal({
     setResult(null);
     setCopied(false);
     setBlocker(null);
+    setError(null);
     if (!projectId) {
       setBlocker('Guardá el proyecto (un cambio en la escena alcanza) para poder publicar.');
     } else {
@@ -122,6 +123,7 @@ export default function LinkModal({
   async function handlePublish(): Promise<void> {
     if (busy) return;
     setBlocker(null);
+    setError(null);
     const s = useEditorStore.getState();
     /* §6: publicar exige al menos 1 variante con diseño y mate configurado. */
     if (!projectId) {
@@ -157,12 +159,12 @@ export default function LinkModal({
       /* R3: re-encodación en el cliente (textura ≤300 KB con alpha intacto). */
       const texture = await encodeLinkTexture(designAsset.canvas);
       if (!texture) {
-        onError(`El diseño es demasiado denso (${LINK_TEXTURE_MAX_BYTES / 1024} KB max): simplificá el vector.`);
+        setError(`El diseño es demasiado denso (${LINK_TEXTURE_MAX_BYTES / 1024} KB max): simplificá el vector.`);
         return;
       }
       const original = await encodeOriginalFromCanvas(designAsset.canvas);
       if (!original) {
-        onError('No se pudo congelar el archivo original (cota 10 MB): simplificá el diseño.');
+        setError('No se pudo congelar el archivo original (cota 10 MB): simplificá el diseño.');
         return;
       }
 
@@ -191,16 +193,17 @@ export default function LinkModal({
         return;
       }
       if (response.status === 401 && s.dirty) {
-        onError('La sesión venció: iniciá sesión de nuevo.');
+        setError('La sesión venció: iniciá sesión de nuevo.');
         return;
       }
       const data = (await response.json().catch(() => null)) as PublishResult | { error?: string; reason?: string } | null;
       if (!response.ok || !data || !('linkId' in data)) {
-        onError('No se pudo publicar el enlace (intenta de nuevo).');
+        setError('No se pudo publicar el enlace (intenta de nuevo).');
         return;
       }
       setResult(data);
       setCopied(false);
+      setError(null);
       /* Refresca el listado con la versión nueva encima (R1). */
       setVersions((prev) => [
         {
@@ -224,7 +227,7 @@ export default function LinkModal({
       setCopied(true);
       setTimeout(() => setCopied(false), 2200);
     } catch {
-      onError('El navegador bloqueó el portapapeles: copiá a mano.');
+      setError('El navegador bloqueó el portapapeles: copiá a mano.');
     }
   }
 
@@ -257,6 +260,12 @@ export default function LinkModal({
             <X className="size-4" />
           </button>
         </div>
+
+        {error && (
+          <p className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-2 text-[10px] text-rose-200">
+            {error}
+          </p>
+        )}
 
         {result ? (
           /* ── §4: resultado — link corto + copiar + WhatsApp pre-armado ───── */

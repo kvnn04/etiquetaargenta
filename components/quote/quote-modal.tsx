@@ -40,6 +40,7 @@ import {
   type FichaSnapshot,
 } from '@/lib/quote/snapshot';
 import { OBSERVACIONES_MAX } from '@/lib/quote/texts';
+import { canonicalLinkUrl, whatsappShareHref } from '@/lib/links/states';
 import { overflowBannerText } from '@/lib/overflow';
 import {
   downloadBlob,
@@ -133,6 +134,7 @@ export default function QuoteModal({
   observaciones,
   onObservacionesChange,
   linkId,
+  onGenerateLink,
 }: {
   open: boolean;
   onClose: () => void;
@@ -146,6 +148,8 @@ export default function QuoteModal({
    * (GET /api/links, primera versión sin expirar) y acá queda ligado al
    * snapshot inmutable de la Ficha (input PASSTHROUGH dejado en pos 9). */
   linkId: string | null;
+  /** Pos 10A: abre el modal del Enlace Comercial sobre la Ficha (misma capa). */
+  onGenerateLink: () => void;
 }) {
   const renderPlateRef = useRef<HTMLCanvasElement | null>(null);
   const obsRef = useRef(observaciones);
@@ -216,6 +220,7 @@ export default function QuoteModal({
     setFlash(null);
     setError(null);
     setConfirmKind(null);
+    setPosHint(null);
     captureRef.current();
     void (async () => {
       const mod = await import('@/components/quote/ficha-render');
@@ -251,6 +256,17 @@ export default function QuoteModal({
    * cambio de observaciones re-dispare el render HD (deps van por el tick). */
   const captureRef = useRef(captureNow);
   captureRef.current = captureNow;
+
+  /* Pos 10A: la shell resuelve el enlace vigente async al abrir la Ficha. Si
+   * llega DESPUÉS de la captura inicial, se recaptura el snapshot para que el
+   * PDF y el botón «Enviar por WhatsApp» usen ese linkId (no re-renderiza el
+   * plato: el 3D no depende del enlace). */
+  const linkIdRef = useRef(linkId);
+  useEffect(() => {
+    if (linkIdRef.current === linkId) return;
+    linkIdRef.current = linkId;
+    if (open) captureRef.current();
+  }, [linkId, open]);
 
   /* Limpieza del flash al desmontar. */
   useEffect(
@@ -368,17 +384,44 @@ export default function QuoteModal({
     }
   }
 
-  /* ── Pos 10 (hoy: hint honesto / Paywall por links.generate) ────────────── */
+  /* ── Pos 10A: Enlace Comercial + envío por WhatsApp (wa.me) ─────────────── */
   function handleLinkAction(which: 'enlace' | 'envio'): void {
     if (!gate('links.generate', plan)) {
       onPaywallRequest();
       return;
     }
-    const label =
-      which === 'enlace'
-        ? '“Generar Enlace Comercial” llega con la posición 10 del plan de implementación.'
-        : '“Enviar por WhatsApp” llega con la posición 10 del plan de implementación.';
-    setPosHint(label);
+    if (which === 'enlace') {
+      setPosHint(null);
+      onGenerateLink(); // el modal del enlace se apila sobre la Ficha
+      return;
+    }
+    if (!linkId) {
+      setPosHint(
+        'Todavía no hay un enlace vigente: publicá una versión y, al volver a la Ficha, «Enviar por WhatsApp» abrirá el chat con el mensaje listo.',
+      );
+      onGenerateLink(); // sin versión no hay nada que compartir: se publica primero
+      return;
+    }
+    const url = canonicalLinkUrl(linkId, window.location.origin);
+    const href = whatsappShareHref(profile.whatsappE164, url);
+    setPosHint(null);
+    if (href) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    /* R8: sin número jamás se arma un wa.me inválido — se copia el enlace. */
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        setPosHint(
+          `Sin WhatsApp configurado en tu Perfil: copiamos el enlace (${url}). Pegalo en tu chat o agregá tu número en el Perfil.`,
+        );
+      } catch {
+        setPosHint(
+          `Sin WhatsApp configurado en tu Perfil y el navegador bloqueó el portapapeles. Copiá el enlace a mano: ${url}`,
+        );
+      }
+    })();
   }
 
   if (!open) return null;
