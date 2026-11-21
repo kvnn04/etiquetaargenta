@@ -74,7 +74,7 @@ simulador-mates/
     encode-logo.ts   → pipeline del logo en CLIENTE (webp ≤512 + thumb 144)
     supabase/        → client / server / service (+ Storage branding + client anónimo para RLS de aprobaciones) / middleware
   supabase/
-    migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default · 0004_shareable_links (links + link_approvals RLS pública + buckets) · 0005_subscriptions (ciclo de cobro: subscriptions + payments + checkout_intents, RLS owner select, grants inline) (idempotentes, sin DROP)
+    migrations/  → esquema: 0001_auth_skeleton · 0002_profile_fields · 0003_projects_owner_default · 0004_shareable_links (links + link_approvals RLS pública + buckets) · 0005_subscriptions (ciclo de cobro: subscriptions + payments + checkout_intents, RLS owner select, grants inline) · 0006_price_pro_36799 (precio de lanzamiento ARS 36.799/mes) (idempotentes, sin DROP)
     ops/         → reparaciones re-ejecutables: 0901 backfill · 0910 grants · 0920 purga R8
   tests/         → Vitest (unit; 14 archivos): payments-core + payments-webhook (pos 10B) · links-core + links-view (pos 10A) · quote-snapshot + quote-texts (pos 9) · export-ticket (pos 8) · overflow · design · color · virola · catalog · branding · matriz
   three/         → motor 3D (pos 3): lathe-builder.ts · visual-skeleton.ts (+ three/README.md)
@@ -97,6 +97,9 @@ simulador-mates/
       insert-only) + buckets `link-assets`/`designs` (posición 10A).
    5. `supabase/migrations/0005_subscriptions.sql` — ciclo de cobro `subscriptions`/`payments`/
       `checkout_intents` con RLS del dueño y grants inline (posición 10B).
+   6. `supabase/migrations/0006_price_pro_36799.sql` — precio vigente del plan PRO
+      (**ARS 36.799/mes**). Cambiar el precio es siempre una línea SQL, nunca una llamada
+      del backend: `pricing_config` solo otorga `select` a `service_role`.
 4. **Dashboard (Auth)**
    - Providers → **Google**: activarlo (Client ID/Secret de Google Cloud) + Redirect URLs:
      `http://localhost:3000/auth/callback`.

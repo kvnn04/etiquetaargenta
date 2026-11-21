@@ -785,7 +785,15 @@ fixture de salida limpia (`programada_cierre` + `period_end` vencido), en orden:
 
 QA manual del webhook sin túnel también vale: `tests/unit/payments-webhook.test.ts` documenta
 el manifiesto exacto `id:{dataId};request-id:{rid};ts:{ts};` para firmarlo a mano con
-`MP_WEBHOOK_SECRET` y mandarlo como header `x-signature: ts=…,v1=…`.
+`MP_WEBHOOK_SECRET` y mandarlo como header `x-signature: ts=…,v1=…`. Verificado otra vez el
+21-nov contra el server local con el secreto real del `.env`: firma válida ⇒ `200
+{"received":true,"dedupe":true}` (pago ya registrado, sin mutaciones), sin firma ⇒ `403
+FIRMA_INVALIDA`, firma falsa ⇒ `403`.
+
+**Precio vigente (21-nov-2026)**: **ARS 36.799/mes**. Se aplica con
+`supabase/migrations/0006_price_pro_36799.sql` (o la línea `update pricing_config set
+amount=36799 where key='pro_monthly_ars';` en el SQL Editor). Las suscripciones ya dadas de
+alta conservan su `price_frozen` (R4): el precio nuevo lo ven los estados FREE.
 
 Arrastran (no bloquean, de 10A y anteriores): QA visual de escena/ficha/foto con el archivo
 real del taller — repro `Naruto/svg_naruto/primero diseño de naruto y sasuke.svg` —, smoke 401
