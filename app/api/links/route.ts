@@ -93,7 +93,8 @@ function decodeBase64(raw: unknown): Buffer | null {
 interface ProfileRow {
   base_name?: string | null; // nombre derivado del email (pos 1)
   brand_name?: string | null; // nombre comercial (pos 2)
-  logo_path?: string | null; // PATH en branding/{uid}/... (pos 2)
+  /** PATH guardado en la DB dentro del bucket branding (columna real: logo_url). */
+  logo_url?: string | null;
   whatsapp_e164?: string | null; // E.164 (pos 9)
   instagram_handle?: string | null;
 }
@@ -220,11 +221,16 @@ export async function POST(request: NextRequest) {
   }
 
   /* ── Branding del taller → workshop (cada versión congela SU marca, R1) ── */
-  const profile = (await service
+  const profileRes = await service
     .from('users')
-    .select('base_name, brand_name, logo_path, whatsapp_e164, instagram_handle')
+    .select('base_name, brand_name, logo_url, whatsapp_e164, instagram_handle')
     .eq('id', user.id)
-    .maybeSingle<ProfileRow>())?.data;
+    .maybeSingle<ProfileRow>();
+  if (profileRes.error) {
+    // Un select roto acá NO debe degradar en silencio el branding del link.
+    console.error('[links profile]:', profileRes.error.message);
+  }
+  const profile = profileRes.data;
   const workshopName = (profile?.brand_name?.trim() || profile?.base_name || '').trim();
   const origin = request.nextUrl.origin;
 
@@ -279,7 +285,7 @@ export async function POST(request: NextRequest) {
   /* Logo congelado por versión: copia PÚBLICA del thumb privado (R1) — un
    * fallo acá DEGRADA a iniciales (fallback de la spec usuario), no bloquea. */
   let logoUrl: string | null = null;
-  const logoPath = profile?.logo_path;
+  const logoPath = profile?.logo_url;
   if (typeof logoPath === 'string' && logoPath.startsWith('branding/')) {
     try {
       const logoBlob = await service.storage.from('branding').download(logoPath.replace(/^branding\//, ''));
