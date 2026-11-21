@@ -48,8 +48,12 @@ begin
     where t.deleted_at is not null
       and t.deleted_at + interval '30 days' <= now()
   loop
+    -- R8: la ruta /api/profile/delete ya limpia link-assets/{linkId},
+    -- designs/{userId} y branding/{userId}. Este bloque cubre la purga final
+    -- de diseños/logo (los link-assets no llevan userId en el path: si la
+    -- limpieza inmediata falló, quedan logueados para soporte).
     delete from storage.objects
-      where storage.objects.bucket_id = 'branding'
+      where storage.objects.bucket_id in ('branding', 'designs')
         and storage.objects.name like rec.id || '/%';
     delete from auth.users where id = rec.id;  -- cascade: users + projects…
   end loop;

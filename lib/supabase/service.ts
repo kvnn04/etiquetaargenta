@@ -97,14 +97,52 @@ export async function signedBrandingUrl(
 
 /** Borrado de todos los assets de logo de un usuario (reemplazo/limpieza R4). */
 export async function removeBrandingFiles(userId: string): Promise<void> {
+  await removeStoragePrefix(BRANDING_BUCKET, userId);
+}
+
+/**
+ * Borra TODOS los objetos bajo un prefijo de un bucket (R8: borrado en cascada
+ * de assets al eliminar cuenta). Los buckets de la app usan un nivel plano,
+ * pero el helper también desciende en carpetas por si un asset futuro anida.
+ *
+ * Fail-soft: la cuenta ya quedó inhabilitada por `deleted_at`; si Storage falla
+ * se logea el prefijo exacto para que soporte limpie el huérfano, sin romper
+ * la respuesta de la API.
+ */
+export async function removeStoragePrefix(bucket: string, prefix: string): Promise<void> {
+  const clean = prefix.replace(/^\/+|\/+$/g, '');
+  if (!clean) return;
   try {
     const client = createSupabaseServiceClient();
-    const { data } = await client.storage.from(BRANDING_BUCKET).list(userId);
-    if (data && data.length > 0) {
-      await client.storage.from(BRANDING_BUCKET).remove(data.map((f) => `${userId}/${f.name}`));
+    const storage = client.storage.from(bucket);
+
+    /* Listado paginado (Supabase devuelve 100 por página por defecto). */
+    const entries: Array<{ name: string; id: string | null }> = [];
+    let offset = 0;
+    for (;;) {
+      const { data, error } = await storage.list(clean, { limit: 100, offset });
+      if (error) throw error;
+      const batch = data ?? [];
+      entries.push(...batch);
+      if (batch.length < 100) break;
+      offset += batch.length;
+    }
+
+    const files = entries.filter((e) => e.id !== null).map((e) => `${clean}/${e.name}`);
+    for (let i = 0; i < files.length; i += 100) {
+      const { error } = await storage.remove(files.slice(i, i + 100));
+      if (error) throw error;
+    }
+
+    const folders = entries.filter((e) => e.id === null).map((e) => `${clean}/${e.name}`);
+    for (const folder of folders) {
+      await removeStoragePrefix(bucket, folder);
     }
   } catch (err) {
-    // No bloquear el flujo por un orfanado de Storage: se logea y sigue.
-    console.error('[service] limpieza branding:', err instanceof Error ? err.message : err);
+    // No bloquear el flujo por un huérfano de Storage: se logea y sigue.
+    console.error(
+      `[service] limpieza ${bucket}/${clean}:`,
+      err instanceof Error ? err.message : err,
+    );
   }
 }
