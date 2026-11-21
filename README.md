@@ -5,7 +5,7 @@ cliente por enlace y cierran la venta. Implementación del paquete de especifica
 `../simulador_Mates/` (9 specs + guía de stack + orden de construcción).
 
 **Estado**: ✅ Posición 10B de 10 — *Mercado Pago: Pagos, Suscripción y Comprobantes del plan PRO* (cierra el plan). **Checkout Pro real**: el CTA del paywall llama `POST /api/billing/checkout` (gates server-side en orden: sesión ⇒ 401 · `email_confirmed_at` vacío ⇒ 409 `EMAIL_NOT_VERIFIED` con paso "Confirmá tu email" inline en el modal — Confirm email sigue OFF en Supabase: la verificación real ocurre SOLO al pagar — · credenciales/precio `pro_monthly_ars` ⇒ 503 · suscripción viva ⇒ 409 race · fila `checkout_intents` de auditoría, R10: **cero emails de abandono**) y redirige al `init_point` del preapproval (wrapper REST v1 propio con `X-Idempotency-Key`, sin SDK nuevo). **Migración `0005_subscriptions`**: `subscriptions` (ciclo R1 `inactiva→activa→gracia→activa|FREE` + `programada_cierre`; **grandfathering R4** — `price_frozen` SOLO en alta/re-activación, con el monto del pago aprobado y `cycle_anchor` anclado al día del primer pago en `America/Argentina/Buenos_Aires`), `payments` (`mp_payment_id` UNIQUE para dedupe + `receipt_url` = constancia MP, R6; la factura ARCA sigue a mano) y `checkout_intents` — escritura solo service-role, lecturas privadas por RLS del dueño, **grants inline** (lección 10A/0910). **Webhook blindado** `/api/webhooks/mercadopago`: firma HMAC contra el manifiesto oficial `id;request-id;ts` con `MP_WEBHOOK_SECRET` (inválida ⇒ **403** fail-close), pull del recurso real (el body jamás decide dinero), dedupe + compare-and-set (re-envío sin mutar nada), transiciones del núcleo puro y broadcast Realtime vía `users.plan`; **mailer Resend** con degradación honesta a log (recibo/gracia/cierre — lista cerrada de emails). **Dunning al-vuelo** (sin pg_cron): editor y perfil reconcilian el ciclo ANTES de leer el plan — gracia 5 días corridos desde el PRIMER rechazo (no re-abrible), ventana vencida ⇒ downgrade a FREE preservando proyectos/assets/links, drift de cancelaciones de MP y realineo del gating con `resolvePlan`. **Centro de Suscripción** en `/perfil`: badge por estado, precio congelado con tag, próximo cobro, historial con constancia y botón único al Portal de MP (R9: cancelación/tarjeta SOLO ahí). Sobre las 1–10A: auth, perfil/branding, catálogo+escena, medidas/guías, color PBR, rotación, escala/desborde, protección FREE, ficha técnica/PDF/HD y Enlace Comercial + Modo Cliente. Queda: QA del titular con sandbox MP (credenciales + 0005 + túnel — plan detallado en `PROYECTO.md` §10).
-288 tests pasando en Vitest, build de producción 19 rutas 100% verde y TypeScript strict 0 errores.
+292 tests pasando en Vitest, build de producción 20 rutas 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -19,7 +19,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
 | 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
-| Test unit | Vitest 4 (288 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A + **pagos core 32 + webhook/firma 11 pos 10B** en `tests/unit/`) |
+| Test unit | Vitest 4 (292 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A + **pagos core 32 + webhook/firma 11 pos 10B** en `tests/unit/`) |
 | PDF | pdf-lib 1.17 (pos 9: envoltorio A4 de la ficha; carga diferida con `import()`, fuera del chunk inicial) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
@@ -45,14 +45,14 @@ simulador-mates/
       profile/logo/   → POST/DELETE del logo (server revalida por magia de bytes)
       profile/delete/ → POST eliminar cuenta (soft + hard delete + signOut)
       auth/exit/      → GET signOut server + redirect con mensaje neutro
-      links/          → POS 10A: POST publish (plan autoritativo ⇒ FREE 402 / inmutable versionado + Storage) · GET versiones+aggregados de aprobaciones
+      links/          → POS 10A: POST publish (plan autoritativo ⇒ FREE 402 / inmutable versionado + Storage) · GET versiones+aggregados de aprobaciones · DELETE de una versión propia
       links/[id]/approvals/ → POS 10A: POST pública sin sesión (404/410 + RLS insert-only)
       billing/checkout/     → POS 10B: POST alta de suscripción (gates sesión → email → precio → viva ⇒ preapproval MP + seed `subscriptions` inactiva)
       webhooks/mercadopago/ → POS 10B: ÚNICO webhook de dinero (firma HMAC fail-close 403 · pull del recurso · dedupe `mp_payment_id` + CAS · emails legítimos R10)
     v/[linkId]/       → POS 10A: MODO CLIENTE (server service-role + páginas amables + /v público)
     setup/            → página amable si faltan env vars
   components/        → auth / profile / editor / studio / paywall / quote (pos 9) / links (pos 10A) / session / ui
-    links/           → variants-card.tsx (borrador A/B/C del panel) · link-modal.tsx (publish+versiones) · client-viewer.tsx (Modo Cliente UI) · viewer-scene.tsx (escena 3D pública)
+    links/           → variants-card.tsx (aviso: un solo diseño por enlace) · link-modal.tsx (publish+versiones+borrado) · client-viewer.tsx (Modo Cliente UI) · viewer-scene.tsx (escena 3D pública)
     quote/           → quote-modal.tsx (modal #quoteModal completo) · ficha-render.ts (motor único makeQuoteCanvas) · ficha-pdf.ts (A4 pdf-lib) · foto-hd.ts (Foto HD)
   lib/
     permissions.ts   → MATRIZ R2 (única fuente, alineada a spec_auth §3-R2)
@@ -66,7 +66,7 @@ simulador-mates/
     exports/ticket.ts → TICKET DE EXPORT pos 8: HMAC-SHA256 v1 (5 min EXACTOS + verify timing-safe) — la ficha pos 9 pide su descarga con el hash del snapshot
     exports/ticket-server.ts → POS 9: helpers de server compartidos (ticketSecret env + planOf fail-closed) — las 3 rutas de /api/exports usan EL MISMO
     quote/           → POS 9: snapshot.ts (snapshot inmutable + formatos de tarjeta + hash f1 + currentOverflowCheck) · texts.ts (wrapObservations + nomenclatura de archivos) · export-flow.ts (ticket→verificar + cota 5MB + descarga + registro QA)
-    links/           → POS 10A: identity.ts (linkId R2 + colisiones) · payload.ts (schemaVersion 2 + risk R7 + linkDraft) · states.ts (estados/vigencia + wa.me share/aprobación + código APROBADA) · asset-encode.ts (≤300 KB escalera PNG) · view-shape.ts (buildPublicView tolerante + legacy 1:1)
+    links/           → POS 10A: identity.ts (linkId R2 + colisiones) · payload.ts (schemaVersion 2 + risk R7 + linkDraft legacy) · states.ts (estados/vigencia + wa.me share/aprobación + código APROBADA) · asset-encode.ts (≤300 KB escalera PNG) · view-shape.ts (buildPublicView tolerante + legacy 1:1)
     payments/        → POS 10B (sin SDK de MP; PURO el core): core.ts (máquina R1/R4/R8/R9 + gracia 5 d corridos + ciclo anclado tz AR + formatos ARS + resolvePlan) · mercadopago.ts (REST v1 preapproval/payments) · webhook.ts (firma HMAC manifiesto `id;request-id;ts` timing-safe) · mail.ts (Resend + degradación honesta a log) · reconcile.ts (dunning al-vuelo: ventanas vencidas + drift MP + realineo del plan)
     store/editor.ts  → zustand: estado del editor = snapshot de projects.state (+ linkDraft pos 10A)
     projects/        → persistence (restore/upsert + borrador local) · use-autosave (2 s + backoff)
@@ -294,17 +294,19 @@ red un momento para ver el banner del borrador local.
 
 | Requisito | Estado |
 | :--- | :--- |
-| Links versionados inmutables (R1): cada publish crea `linkId` nuevo, jamás UPDATE de payload; historial con agregados de aprobaciones | ✅ tabla `links` insert-only (`0004`), `POST /api/links` con `version=max+1`, `GET /api/links?projectId=` para el panel |
+| Links versionados inmutables (R1): cada publish crea `linkId` nuevo, jamás UPDATE de payload; historial con agregados de aprobaciones | ✅ tabla `links` insert-only (`0004`), `POST /api/links` con `version=max+1`, `GET /api/links?projectId=` para el panel, `DELETE /api/links/{id}` (ownership server-side, cascade de aprobaciones + limpieza de `link-assets/{id}`) |
+| Cantidad de enlaces por cuenta | **Sin tope duro**: un PRO publica todas las versiones que quiera (cada publish es un `linkId` nuevo). El panel lista hasta **100 versiones por proyecto** (las más nuevas primero); FREE no puede publicar (402). Cada versión vence a los 30 días, pero la fila sigue existiendo hasta que se elimina |
 | `linkId` 6 chars `[a-z0-9]` (R2) canónico case-insensitive con reintentos de colisión; URL `/v/{id}` desde el origin del request | ✅ `lib/links/identity.ts` (`generateUniqueLinkId` inyectable, 23 tests) |
 | Payload `schemaVersion 2` (R4): labels ≤40 truncado elegante, escala %⇒fracción 0–1.10 3 dec, rotación módulo 360, espejo; compat legacy 1:1 | ✅ `lib/links/payload.ts` + `buildPublicView` (`view-shape.ts`) re-arbitra todo en el visor (10 tests) |
-| Assets re-encodados (R3): ≤1024²/≤300 KB por variante en URLs de larga vida; `mateConfig` construido SERVER-SIDE desde `projects.state` | ✅ PNG escalera 1024/768/512 (`asset-encode.ts`, alpha intacto) → `link-assets/{id}/design.ext` público + original ≤10 MB → `designs/{user}/{project}` privado + logo del taller copiado POR VERSIÓN (`{id}/logo.png`, degrada a iniciales si falla) |
+| Assets re-encodados (R3): ≤1024²/≤300 KB por diseño en URLs de larga vida; `mateConfig` construido SERVER-SIDE desde `projects.state` | ✅ PNG escalera 1024/768/512 (`asset-encode.ts`, alpha intacto) → `link-assets/{id}/design.ext` público + original ≤10 MB → `designs/{user}/{project}` privado + logo del taller copiado POR VERSIÓN (`{id}/logo.png`, degrada a iniciales si falla) |
 | Vigencia 30 días + "por vencer" ≤5 días (R5); estados del editor con prioridad aprobado>vencido>por_vencer>vigente | ✅ `lib/links/states.ts` (`linkEditionState`/`editionBadgeText`) + badge en el modal de versiones |
 | Publicación con desborde documentado (R7): confirmación por variante + `risk` congelado INTERNO (el cliente jamás lo ve) | ✅ `currentOverflowCheck` por `scalePct` de cada variante + mini-diálogo de la shell reutilizado con CTAs "Publicar de todas formas"/"Volver a ajustar" + `LinkVariantRisk` en el payload |
 | Paywall server-side (R8): FREE ⇒ 402 `links.generate` + Paywall; abrir/ver/aprobar público SIN sesión | ✅ plan desde `users` con service-role (fail-closed) en POST; middleware: `/v` deliberadamente fuera del redirect a /auth |
 | Aprobación registrada ANTES de abrir WhatsApp (R6), acumulable, badge "APROBADO Opción B" | ✅ `POST /api/links/[id]/approvals` (404 inexistente / 410 vencido / variante validada contra el payload) + INSERT con cliente ANÓNIMO ⇒ la DB (`approvals_public_insert` + `link_open_for_approval`) es la última palabra; texto de WhatsApp nombra la opción EXACTA |
-| Export del panel completo: Copiar Enlace / Enviar por WhatsApp con mensaje pre-armado EXACTO / vence el DD/AA | ✅ `link-modal.tsx` (draft+versiones+resultado; share `wa.me/?text=` SIN destinatario — WhatsApp abre el selector de contactos y no depende del número del Perfil) |
-| Borrador de variantes persiste en `projects.state.linkDraft` (labels/configs sobreviven la recarga) | ✅ `StoredVariantRow`/`normalizeVariantRows` (`payload.ts`) + `setLinkDraft` en el store + normalizador jsonb |
-| Modo Cliente §4: top bar marca + "Vista Previa Oficial", giro 0.5 RPM pausable por el dedo, zoom/pinche, selector A/B/C + acordeón (Modelo/Virola mm/Cuerpo) + CTA verde full-width | ✅ `client-viewer.tsx` + `viewer-scene.tsx` (misma librería 3D del editor, SIN guías/medidas/watermark; crossfade ≤300 ms por capas de la textura — cámara y ritmo del giro jamás se resetean) |
+| Export del panel completo: Copiar Enlace / Enviar por WhatsApp con mensaje pre-armado EXACTO / vence el DD/AA / eliminar una versión propia | ✅ `link-modal.tsx` (draft+versiones+resultado; share `wa.me/?text=` SIN destinatario — WhatsApp abre el selector de contactos y no depende del número del Perfil; borrado con confirmación inline) |
+| Decisión nov-2026: **un solo diseño por enlace** (A/B/C desactivadas) | ✅ tarjeta `variants-card.tsx` con el aviso "Solo se puede enviar un diseño por ahora"; `buildPublishVariant()` publica el diseño vigente como `A` y `POST /api/links` exige exactamente 1 variante; los links viejos con A/B/C se siguen leyendo |
+| Borrador de variantes persiste en `projects.state.linkDraft` (se conserva para una futura reactivación; la tarjeta ya no lo edita) | ✅ `StoredVariantRow`/`normalizeVariantRows` (`payload.ts`) + `setLinkDraft` en el store + normalizador jsonb |
+| Modo Cliente §4: top bar marca + "Vista Previa Oficial", giro 0.5 RPM pausable por el dedo, zoom/pinche, selector A/B/C (solo links legacy) + acordeón (Modelo/Virola mm/Cuerpo) + CTA verde full-width | ✅ `client-viewer.tsx` + `viewer-scene.tsx` (misma librería 3D del editor, SIN guías/medidas/watermark; crossfade ≤300 ms por capas de la textura — cámara y ritmo del giro jamás se resetean; el selector se oculta cuando el payload trae un solo diseño) |
 | Páginas amables §6: inexistente/vencido/no disponible; variante con asset caído queda deshabilitada y las demás siguen | ✅ `app/v/[linkId]/page.tsx` (service-role, expiración ANTES de servir contenido) + `not-found.tsx` + gating por `assets` fallidos en el visor |
 | Fallback sin WhatsApp (spec usuario R5): código `APROBADA-{VARIANTE}-{LINKID}` copiable + "Ponete en contacto con tu vendedor…" | ✅ `approvalCode()` + panel del código en el visor (el evento IGUAL registra, R6); con número `wa.me` directo tras el POST (reintentos con backoff en red rota) |
 | linkId vigente ligado al DNA de la ficha (PASSTHROUGH de pos 9) | ✅ la shell consulta el link activo al abrir `#quoteModal` y lo pasa a `captureFichaSnapshot.linkId`; si el GET resuelve después del open, la Ficha recaptura el snapshot y reusa ese enlace en PDF y WhatsApp |
@@ -315,7 +317,7 @@ red un momento para ver el banner del borrador local.
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links + pagos, 288 tests)
+npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links + pagos, 292 tests)
 ```
 
 ## Roadmap (fuente: `../simulador_Mates/orden_de_implementacion.md`)
@@ -329,7 +331,7 @@ npm run test        # Vitest (matriz R2 + branding + catálogo + virola + color 
 7. ✅ **Escala fina 70–110 % + desborde (chorreo) + espejo** — commiteada (`b8cb203`; post-entrega `141f094`: Auto retirado por decisión del titular + nitidez SVG)
 8. ✅ **Protección FREE (watermark cocida, bloqueo DOM, 402 ticket)** — auth paso B, commiteada (05-nov)
 9. ✅ **Ficha técnica + Foto HD + registro QA** — modal `#quoteModal` (snapshot + 9 tarjetas + PNG 2160 ≤5MB + PDF A4 + ticket verificar), commiteada (06-nov)
-10. ✅ **10A — Enlace Comercial compartible + Modo Cliente** — links con variantes A/B/C + `linkId` al DNA de la ficha + `/v/[linkId]` público, commiteada (`7d81e73`)
+10. ✅ **10A — Enlace Comercial compartible + Modo Cliente** — links inmutables versionados + `linkId` al DNA de la ficha + `/v/[linkId]` público, commiteada (`7d81e73`). **Ajuste nov-2026**: publish de UN solo diseño (A/B/C desactivadas, legacy sigue visible) + borrado de versiones propias con confirmación
 11. ✅ **10B — Mercado Pago: pagos, suscripción y comprobantes** — Checkout Pro + `price_frozen` grandfathering + webhook HMAC con dedupe + dunning al-vuelo + Centro de Suscripción, commiteada (`43e27cd`, 06-nov; QA del titular con sandbox pendiente — plan en `PROYECTO.md` §10)
 
 Cada bloque de trabajo se abre leyendo la spec fuente: los números (latencias,

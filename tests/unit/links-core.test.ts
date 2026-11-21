@@ -18,7 +18,10 @@ import {
 import {
   LINK_LABEL_MAX,
   LINK_SCHEMA_VERSION,
+  PUBLISH_VARIANTS_MAX,
+  SINGLE_PUBLISH_VARIANT_LABEL,
   buildLinkPayload,
+  buildPublishVariant,
   isLegacyPayload,
   isPublishableDraft,
   normalizeVariantLabel,
@@ -173,6 +176,37 @@ describe('§6 — publicable: ≥1 y ≤3 variantes, ids únicos A/B/C con label
     expect(isPublishableDraft([draft(), draft({ id: 'A' })])).toBe(false); // ids duplicados
     expect(isPublishableDraft([draft({ label: '   ' })])).toBe(false);
     expect(isPublishableDraft([draft({ id: 'D' as LinkVariantId })])).toBe(false); // D jamás existió
+  });
+
+  it('el publish actual exige UNA sola variante (A/B/C desactivadas)', () => {
+    expect(PUBLISH_VARIANTS_MAX).toBe(1);
+    expect(isPublishableDraft([draft()], PUBLISH_VARIANTS_MAX)).toBe(true);
+    expect(isPublishableDraft([draft(), draft({ id: 'B' })], PUBLISH_VARIANTS_MAX)).toBe(false);
+    expect(isPublishableDraft([], PUBLISH_VARIANTS_MAX)).toBe(false);
+  });
+});
+
+describe('§6 — buildPublishVariant: el diseño vigente como única opción', () => {
+  it('toma escala/rotación/espejo del editor con los normalizadores canónicos', () => {
+    const variant = buildPublishVariant({ scale: 92.3, rotation: 370, mirror: true });
+    expect(variant).toEqual({
+      id: 'A',
+      label: SINGLE_PUBLISH_VARIANT_LABEL,
+      scalePct: 92.5, // paso 0.5% de pos 7
+      rotationDeg: 10, // módulo 360
+      mirror: true,
+    });
+  });
+
+  it('basura numérica cae a los defaults del editor (100% / 0°)', () => {
+    const variant = buildPublishVariant({
+      scale: Number.NaN,
+      rotation: Number.NaN,
+      mirror: false,
+    });
+    expect(variant.scalePct).toBe(100);
+    expect(variant.rotationDeg).toBe(0);
+    expect(variant.mirror).toBe(false);
   });
 });
 

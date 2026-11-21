@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Copy, ExternalLink, Loader2, MessageCircle, RefreshCw, Send, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, MessageCircle, RefreshCw, Send, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   canonicalLinkUrl,
@@ -11,7 +11,7 @@ import {
   type LinkEditionState,
 } from '@/lib/links/states';
 import { encodeLinkTexture, encodeOriginalFromCanvas, LINK_TEXTURE_MAX_BYTES } from '@/lib/links/asset-encode';
-import { includedRows, type LinkVariantRisk, type StoredVariantRow } from '@/lib/links/payload';
+import { buildPublishVariant } from '@/lib/links/payload';
 import { useEditorStore } from '@/lib/store/editor';
 import { currentOverflowCheck } from '@/lib/quote/snapshot';
 import type { OverflowCheck } from '@/lib/overflow';
@@ -53,7 +53,6 @@ export default function LinkModal({
   onClose,
   projectId,
   designAsset,
-  rows,
   onPaywallRequest,
   onPublishConfirm,
 }: {
@@ -61,7 +60,6 @@ export default function LinkModal({
   onClose: () => void;
   projectId: string | null;
   designAsset: DesignAsset | null;
-  rows: StoredVariantRow[];
   onPaywallRequest: () => void;
   /** Confirmación de desborde con los CTA de la shell (Promise-based). */
   onPublishConfirm: (check: OverflowCheck, ctas: readonly string[]) => Promise<boolean>;
@@ -72,8 +70,11 @@ export default function LinkModal({
   const [versions, setVersions] = useState<LinkVersionRow[] | null>(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [blocker, setBlocker] = useState<string | null>(null);
-  /** Errores de publish/copiar DENTRO del modal (la shell queda detrás). */
+  /** Errores de publish/copiar/eliminar DENTRO del modal (la shell queda detrás). */
   const [error, setError] = useState<string | null>(null);
+  /** Confirmación inline antes de borrar una versión (sin window.confirm). */
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   /* Al abrir: reset + listado de versiones (R1 panel del editor). */
   useEffect(() => {
@@ -82,6 +83,8 @@ export default function LinkModal({
     setCopied(false);
     setBlocker(null);
     setError(null);
+    setConfirmDeleteId(null);
+    setDeletingId(null);
     if (!projectId) {
       setBlocker('Guardá el proyecto (un cambio en la escena alcanza) para poder publicar.');
     } else {
@@ -94,39 +97,12 @@ export default function LinkModal({
     }
   }, [open, projectId]);
 
-  const included = rows.filter((r) => r.included);
-
-  /* R7: el desborde SIEMPRE se evalúa por variante (cada opcional tiene su
-   * escala) con el ÚNICO motor de la ficha/diseño; el cliente del link jamás
-   * ve estos valores — van congelados como `risk` al payload. */
-  const perVariantRisk = (row: StoredVariantRow): { check: OverflowCheck | null; risk: LinkVariantRisk } => {
-    const s = useEditorStore.getState();
-    const check = currentOverflowCheck({
-      hasDesignAsset: designAsset != null,
-      inkEnvelope: s.inkEnvelope,
-      inkScanDegraded: s.inkScanDegraded,
-      baseSideMm: designAsset?.baseSideMm ?? s.extDiameter,
-      extDiameterMm: s.extDiameter,
-      intDiameterMm: s.intDiameter,
-      scalePct: row.scalePct,
-    });
-    const risk: LinkVariantRisk = check
-      ? {
-          status: check.status,
-          outsideMm: check.overflowOuterMm || check.overflowOuter ? check.overflowOuterMm : null,
-          innerMm: check.overflowInnerMm || check.overflowInner ? check.overflowInnerMm : null,
-          approx: s.inkScanDegraded,
-        }
-      : { status: 'none', outsideMm: null, innerMm: null, approx: false };
-    return { check, risk };
-  };
-
   async function handlePublish(): Promise<void> {
     if (busy) return;
     setBlocker(null);
     setError(null);
     const s = useEditorStore.getState();
-    /* §6: publicar exige al menos 1 variante con diseño y mate configurado. */
+    /* §6: publicar exige el diseño cargado y el mate configurado. */
     if (!projectId) {
       setBlocker('Guardá el proyecto para poder publicar.');
       return;
@@ -135,26 +111,29 @@ export default function LinkModal({
       setBlocker('Cargá el diseño del grabado para congelar la versión (vive en la pestaña Diseño).');
       return;
     }
-    const includedIds = includedRows(rows);
-    if (includedIds.length === 0) {
-      setBlocker('Marcá al menos una opción (A/B/C) para publicar.');
-      return;
-    }
+
+    /* Variantes desactivadas: se publica el diseño VIGENTE como única opción. */
+    const variant = buildPublishVariant({
+      scale: s.design.scale,
+      rotation: s.design.rotation,
+      mirror: s.design.mirror,
+    });
 
     setBusy(true);
     try {
-      const riskByVariant: Partial<Record<StoredVariantRow['id'], LinkVariantRisk>> = {};
-      /* R7: confirmación ANTES de publicar si ALGUNA variante incluida desborda. */
-      const offending = included
-        .map((row) => ({ row, ...perVariantRisk(row) }))
-        .find((x) => x.check?.status === 'overflow');
-      if (offending) {
-        riskByVariant[offending.row.id] = offending.risk;
-        const ok = await onPublishConfirm(offending.check!, PUBLISH_CONFIRM_CTAS);
+      /* R7: confirmación ANTES de publicar si el diseño actual desborda. */
+      const check = currentOverflowCheck({
+        hasDesignAsset: true,
+        inkEnvelope: s.inkEnvelope,
+        inkScanDegraded: s.inkScanDegraded,
+        baseSideMm: designAsset.baseSideMm,
+        extDiameterMm: s.extDiameter,
+        intDiameterMm: s.intDiameter,
+        scalePct: variant.scalePct,
+      });
+      if (check?.status === 'overflow') {
+        const ok = await onPublishConfirm(check, PUBLISH_CONFIRM_CTAS);
         if (!ok) return;
-      }
-      for (const row of included) {
-        if (!riskByVariant[row.id]) riskByVariant[row.id] = perVariantRisk(row).risk;
       }
 
       /* R3: re-encodación en el cliente (textura ≤300 KB con alpha intacto). */
@@ -174,13 +153,7 @@ export default function LinkModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId,
-          variants: included.map(({ id, label, scalePct, rotationDeg, mirror }) => ({
-            id,
-            label,
-            scalePct,
-            rotationDeg,
-            mirror,
-          })),
+          variants: [variant],
           design: {
             textureBase64: texture.base64,
             textureMime: texture.mime,
@@ -229,6 +202,30 @@ export default function LinkModal({
       setTimeout(() => setCopied(false), 2200);
     } catch {
       setError('El navegador bloqueó el portapapeles: copiá a mano.');
+    }
+  }
+
+  async function handleDelete(linkId: string): Promise<void> {
+    if (deletingId) return;
+    setDeletingId(linkId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/links/${linkId}`, { method: 'DELETE' });
+      if (response.status === 401) {
+        setError('La sesión venció: iniciá sesión de nuevo.');
+        return;
+      }
+      if (!response.ok) {
+        setError('No se pudo eliminar el enlace (intenta de nuevo).');
+        return;
+      }
+      setVersions((prev) => (prev ?? []).filter((v) => v.linkId !== linkId));
+      setConfirmDeleteId(null);
+      if (result?.linkId === linkId) setResult(null);
+    } catch {
+      setError('No se pudo eliminar el enlace (revisá la conexión).');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -315,11 +312,10 @@ export default function LinkModal({
         ) : (
           /* ── draft + versiones ──────────────────────────────────────────── */
           <div className="mt-4 space-y-3">
-            {included.length === 0 && (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] text-amber-200">
-                No hay opciones incluidas: marcalas en la tarjeta «Variantes del Enlace» del panel.
-              </p>
-            )}
+            <p className="rounded-lg border border-line bg-surface px-2.5 py-2 text-[10px] leading-relaxed text-stone-500">
+              Se publica el <span className="text-stone-300">diseño actual</span> con su rotación,
+              escala y espejo. Las variantes A/B/C están desactivadas por ahora.
+            </p>
             {blocker && (
               <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] text-amber-200">
                 {blocker}
@@ -338,7 +334,7 @@ export default function LinkModal({
 
             <div>
               <h3 className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                Versiones de este proyecto (nueva primero)
+                Versiones de este proyecto{versions ? ` (${versions.length})` : ''} · nueva primero
               </h3>
               {versionsLoading && <p className="mt-2 text-[10px] text-stone-600">Cargando versiones…</p>}
               {versions && versions.length === 0 && (
@@ -346,7 +342,7 @@ export default function LinkModal({
               )}
               {versions && versions.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
-                  {versions.slice(0, 8).map((v) => {
+                  {versions.map((v) => {
                     const state: LinkEditionState = linkEditionState(
                       { expiresAtMs: Date.parse(v.expiresAt), approved: v.approvalsCount > 0 },
                       Date.now(),
@@ -355,34 +351,77 @@ export default function LinkModal({
                     return (
                       <li
                         key={v.linkId}
-                        className="flex items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[11px]"
+                        className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[11px]"
                       >
-                        <span className="text-stone-400">#{v.version}</span>
-                        <code className="text-gold-soft">/v/{v.linkId}</code>
-                        <span
-                          className={`ml-auto rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                            state === 'vigente'
-                              ? 'border-emerald-500/40 text-emerald-400'
-                              : state === 'por_vencer'
-                                ? 'border-amber-500/40 text-amber-300'
-                                : state === 'aprobado'
-                                  ? 'border-gold/50 text-gold-soft'
-                                  : 'border-line text-stone-600'
-                          }`}
-                        >
-                          {editionBadgeText(state, v.lastApprovedVariant)}
-                        </span>
-                        <span className="text-[9px] text-stone-600">
-                          vence {formatEsDate(v.expiresAt)} ({linkDaysLeft(Date.parse(v.expiresAt), Date.now())} d)
-                          {v.approvalsCount > 0 ? ` · ${v.approvalsCount} ✓` : ''}
-                        </span>
-                        <button
-                          onClick={() => navigator.clipboard?.writeText(url).catch(() => {})}
-                          className="text-stone-500 hover:text-stone-200"
-                          aria-label={`Copiar enlace ${v.linkId}`}
-                        >
-                          <Copy className="size-3" />
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-stone-400">#{v.version}</span>
+                          <code className="text-gold-soft">/v/{v.linkId}</code>
+                          <span
+                            className={`ml-auto rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                              state === 'vigente'
+                                ? 'border-emerald-500/40 text-emerald-400'
+                                : state === 'por_vencer'
+                                  ? 'border-amber-500/40 text-amber-300'
+                                  : state === 'aprobado'
+                                    ? 'border-gold/50 text-gold-soft'
+                                    : 'border-line text-stone-600'
+                            }`}
+                          >
+                            {editionBadgeText(state, v.lastApprovedVariant)}
+                          </span>
+                          <span className="text-[9px] text-stone-600">
+                            vence {formatEsDate(v.expiresAt)} (
+                            {linkDaysLeft(Date.parse(v.expiresAt), Date.now())} d)
+                            {v.approvalsCount > 0 ? ` · ${v.approvalsCount} ✓` : ''}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard?.writeText(url).catch(() => {})}
+                            className="text-stone-500 hover:text-stone-200"
+                            aria-label={`Copiar enlace ${v.linkId}`}
+                          >
+                            <Copy className="size-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfirmDeleteId((id) => (id === v.linkId ? null : v.linkId))
+                            }
+                            disabled={deletingId !== null}
+                            className={
+                              confirmDeleteId === v.linkId
+                                ? 'text-rose-300'
+                                : 'text-stone-500 hover:text-rose-300'
+                            }
+                            aria-label={`Eliminar enlace ${v.linkId}`}
+                            title="Eliminar enlace"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </div>
+                        {confirmDeleteId === v.linkId && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1.5">
+                            <span className="text-[10px] text-rose-200">
+                              ¿Eliminar /v/{v.linkId} y sus aprobaciones?
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(v.linkId)}
+                              disabled={deletingId === v.linkId}
+                              className="rounded-md border border-rose-400/40 px-2 py-0.5 text-[10px] font-bold text-rose-200 hover:bg-rose-500/20 disabled:opacity-60"
+                            >
+                              {deletingId === v.linkId ? 'Eliminando…' : 'Sí, eliminar'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              disabled={deletingId === v.linkId}
+                              className="px-1.5 py-0.5 text-[10px] text-stone-400 hover:text-stone-200 disabled:opacity-60"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        )}
                       </li>
                     );
                   })}

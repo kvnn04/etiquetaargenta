@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { planOf, type ExportsPlan } from '@/lib/exports/ticket-server';
 import { normalizeScale } from '@/lib/overflow';
 import {
-  LINK_VARIANTS_MAX,
+  PUBLISH_VARIANTS_MAX,
   isLinkVariantId,
   isPublishableDraft,
   normalizeVariantLabel,
@@ -30,8 +30,9 @@ import { canonicalLinkUrl, LINK_TTL_MS, whatsappShareHref, whatsappShareText } f
  *      autoritativa). FREE ⇒ 402 'PAYWALL_REQUIRED' con capability
  *      links.generate — la UI abre el Paywall (patrón pos 8/9: nadie decide
  *      en el cliente).
- *   3. Valida el draft (≥1 y ≤3 variantes / ids únicos A–C / labels ≤40) y el
- *      ownership del proyecto (fail-closed: la fila tiene que ser SUYA).
+ *   3. Valida el draft (1 sola variante: A/B/C desactivadas por decisión del
+ *      titular; label ≤40) y el ownership del proyecto (fail-closed: la fila
+ *      tiene que ser SUYA). Los links legacy con A/B/C siguen vigentes.
  *   4. El mateConfig del payload (R4) SE CONSTRUYE DESDE projects.state
  *      server-side — el cliente no manda config: lo congelado es la DB.
  *   5. Genera linkId R2 con reintentos de colisión (consulta live).
@@ -152,28 +153,30 @@ export async function POST(request: NextRequest) {
   if (!body || typeof body.projectId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.projectId)) {
     return NextResponse.json({ error: 'BAD_REQUEST', reason: 'project_id' }, { status: 400 });
   }
-  if (!Array.isArray(body.variants)) {
-    return NextResponse.json({ error: 'BAD_REQUEST', reason: 'variants' }, { status: 400 });
+  if (!Array.isArray(body.variants) || body.variants.length !== PUBLISH_VARIANTS_MAX) {
+    // Variantes A/B/C desactivadas: exactamente UNA opción por publish.
+    return NextResponse.json(
+      { error: 'BAD_REQUEST', reason: 'variants', detail: 'single_variant' },
+      { status: 400 },
+    );
   }
 
-  /* ── Draft de variantes: raw del cliente ⇒ normalizado server ──────────── */
-  const drafts: LinkVariantDraft[] = [];
-  for (const rawVariant of body.variants.slice(0, LINK_VARIANTS_MAX)) {
-    const candidate = (rawVariant ?? {}) as Record<string, unknown>;
-    if (!isLinkVariantId(candidate.id)) {
-      return NextResponse.json({ error: 'BAD_REQUEST', reason: 'variant_id' }, { status: 400 });
-    }
-    drafts.push({
+  /* ── Draft de la variante única: raw del cliente ⇒ normalizado server ──── */
+  const candidate = (body.variants[0] ?? {}) as Record<string, unknown>;
+  if (!isLinkVariantId(candidate.id)) {
+    return NextResponse.json({ error: 'BAD_REQUEST', reason: 'variant_id' }, { status: 400 });
+  }
+  const drafts: LinkVariantDraft[] = [
+    {
       id: candidate.id as LinkVariantId,
       label: normalizeVariantLabel(candidate.label),
       // % canónico del editor (normalizeScale re-fija [70..110] paso 0.5%)
       scalePct: normalizeScale(candidate.scalePct),
       rotationDeg: rotationDegPayload(candidate.rotationDeg),
       mirror: Boolean(candidate.mirror),
-    });
-  }
-  if (!isPublishableDraft(drafts)) {
-    // ≥1 y ≤3 variantes, ids únicos, labels no vacíos
+    },
+  ];
+  if (!isPublishableDraft(drafts, PUBLISH_VARIANTS_MAX)) {
     return NextResponse.json({ error: 'BAD_REQUEST', reason: 'variants' }, { status: 400 });
   }
 

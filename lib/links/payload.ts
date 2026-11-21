@@ -137,12 +137,41 @@ export function rotationDegPayload(deg: unknown): number {
  * ¿El draft es publicable? (§6: "al menos 1 variante con diseño y el mate
  * configurado; 3 variantes máximo"). Las configs llegan NORMALIZADAS — acá
  * solo se controla cantidad + ids válidos y sin duplicados.
+ *
+ * `max` permite que el publish actual exija UNA sola variante
+ * (`PUBLISH_VARIANTS_MAX`) sin romper la validación legacy de A/B/C que usan
+ * los payloads ya publicados.
  */
-export function isPublishableDraft(variants: readonly LinkVariantDraft[]): boolean {
-  if (variants.length < 1 || variants.length > LINK_VARIANTS_MAX) return false;
+export function isPublishableDraft(
+  variants: readonly LinkVariantDraft[],
+  max: number = LINK_VARIANTS_MAX,
+): boolean {
+  if (variants.length < 1 || variants.length > max) return false;
   const ids = new Set(variants.map((v) => v.id));
   if (ids.size !== variants.length) return false;
   return variants.every((v) => isLinkVariantId(v.id) && v.label.trim().length > 0);
+}
+
+/**
+ * Decisión del titular (nov-2026): por ahora el Enlace Comercial publica UN
+ * SOLO diseño. El payload y el visor siguen leyendo links legacy con A/B/C.
+ */
+export const PUBLISH_VARIANTS_MAX = 1;
+export const SINGLE_PUBLISH_VARIANT_LABEL = 'Diseño actual';
+
+/** Variante única del publish: toma rotación/escala/espejo VIGENTES del editor. */
+export function buildPublishVariant(design: {
+  scale: number;
+  rotation: number;
+  mirror: boolean;
+}): LinkVariantDraft {
+  return {
+    id: 'A',
+    label: SINGLE_PUBLISH_VARIANT_LABEL,
+    scalePct: normalizeScale(design.scale),
+    rotationDeg: rotationDegPayload(design.rotation),
+    mirror: Boolean(design.mirror),
+  };
 }
 
 /** Armado puro del payload (R4). `assetUrl` ya lo subió el server. */

@@ -194,10 +194,8 @@ export default function EditorShell({
    * asset es de sesión (el upload real al Storage llega en pos 10), así que el
    * badge cuenta el asset EN MEMORIA: reemplazo libre dentro del mismo slot. */
   const designAsset = useEditorStore((s) => s.designAsset);
-  /* Pos 10A: projectId/linkDraft directamente del store — el modal publica
-   * contra el proyecto actual y consume el borrador de variantes. */
+  /* Pos 10A: projectId del store — el modal publica el diseño vigente. */
   const projectId = useEditorStore((s) => s.projectId);
-  const linkDraft = useEditorStore((s) => s.linkDraft);
   const freeDemo = profile.plan === 'free';
 
   /* Restore del proyecto más reciente (R1 Happy Path: "restaura su último
@@ -466,8 +464,9 @@ export default function EditorShell({
           {/* CUARTA tarjeta (§4 spec_rotacion + spec_escala): Cargar Archivo / Edición del Vector */}
           <DesignCard />
 
-          {/* Pos 10A (decisión del titular): tarjeta "Variantes del Enlace" —
-              configs A/B/C del MISMO diseño; persiste en projects.state. */}
+          {/* Pos 10A: variantes A/B/C DESACTIVADAS por decisión del titular
+              (nov-2026). La tarjeta informa y el enlace publica el diseño
+              vigente como única opción. */}
           <VariantsCard />
 
           {actionHint && (
@@ -594,7 +593,6 @@ export default function EditorShell({
         }}
         projectId={projectId}
         designAsset={designAsset}
-        rows={linkDraft}
         onPaywallRequest={() => setPaywallOpen(true)}
         onPublishConfirm={(check, ctas) => askOverflowConfirm(check, ctas)}
       />

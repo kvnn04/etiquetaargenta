@@ -342,11 +342,12 @@ export default function ClientViewer({ view }: { view: PublicLinkView }) {
         )}
       </section>
 
-      {/* ── Barra inferior: selector A/B/C + acordeón + CTA (§4) ────────────── */}
+      {/* ── Barra inferior: selector (solo si hay A/B/C) + acordeón + CTA ───── */}
       <section className="max-h-[45vh] space-y-2.5 overflow-y-auto border-t border-white/10 bg-black/40 px-4 pb-4 pt-3 backdrop-blur">
-        {/* Selector plano de opciones (chips) */}
-        <div className="flex flex-wrap gap-1.5">
-          {view.variants.map((v) => {
+        {/* Selector plano de opciones: los links nuevos publican UNA sola. */}
+        {view.variants.length > 1 && (
+          <div className="flex flex-wrap gap-1.5">
+            {view.variants.map((v) => {
             const unloaded = Boolean(v.assetUrl && !assets.has(v.assetUrl));
             const failed = Boolean(v.assetUrl && assets.get(v.assetUrl) === null);
             const disabled = !v.healthy || failed || (loading && unloaded);
@@ -372,8 +373,9 @@ export default function ClientViewer({ view }: { view: PublicLinkView }) {
                 </span>
               </button>
             );
-          })}
-        </div>
+            })}
+          </div>
+        )}
 
         {/* Acordeón de resumen: Modelo / Virola (mm) / Cuerpo — SOLO eso (R7) */}
         <div className="text-[11px]">
@@ -415,8 +417,9 @@ export default function ClientViewer({ view }: { view: PublicLinkView }) {
                 Copiar código de aprobación
               </Button>
               <p className="text-[10px] leading-relaxed text-stone-500">
-                Ponete en contacto con tu vendedor indicando que aprobaste la Opción{' '}
-                {activeVariant?.id ?? 'A'}.
+                {view.variants.length === 1
+                  ? 'Ponete en contacto con tu vendedor indicando que aprobaste este diseño.'
+                  : `Ponete en contacto con tu vendedor indicando que aprobaste la Opción ${activeVariant?.id ?? 'A'}.`}
               </p>
             </div>
           )
@@ -435,7 +438,10 @@ export default function ClientViewer({ view }: { view: PublicLinkView }) {
                 </>
               ) : (
                 <>
-                  <MessageCircle className="size-4" /> ¡Aprobar Opción Seleccionada!
+                  <MessageCircle className="size-4" />
+                  {view.variants.length === 1
+                    ? '¡Aprobar este diseño!'
+                    : '¡Aprobar Opción Seleccionada!'}
                 </>
               )}
             </Button>
