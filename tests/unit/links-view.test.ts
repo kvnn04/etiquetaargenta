@@ -77,7 +77,7 @@ describe('R6 — cierre por WhatsApp nombrando la opción EXACTA', () => {
     expect(href).toContain(encodeURIComponent('"Opción X"'));
   });
 
-  it('sin número válido ⇒ null (nunca wa.me inválido — mismo contrato del share)', () => {
+  it('aprobación sin número válido ⇒ null (nunca wa.me inválido; el share ya no depende del Perfil)', () => {
     expect(whatsappApprovalHref(null, 'https://mocap.app/v/3a8f9b', 'Opción A')).toBeNull();
     expect(whatsappApprovalHref('+123', 'https://mocap.app/v/3a8f9b', 'Opción A')).toBeNull();
   });

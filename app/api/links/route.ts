@@ -352,7 +352,7 @@ export async function POST(request: NextRequest) {
     expiresAt: insert.data.expires_at,
     url,
     message: whatsappShareText(url),
-    whatsappHref: whatsappShareHref(profile?.whatsapp_e164 ?? null, url),
+    whatsappHref: whatsappShareHref(url),
   });
 }
 

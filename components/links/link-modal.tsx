@@ -34,7 +34,8 @@ export interface PublishResult {
   expiresAt: string;
   url: string;
   message: string;
-  whatsappHref: string | null;
+  /** `wa.me/?text=…` sin destinatario: WhatsApp abre el selector de contactos. */
+  whatsappHref: string;
 }
 
 /** CTA EXACTOS del confirm de desborde al PUBLICAR (adaptación de la voz
@@ -282,19 +283,16 @@ export default function LinkModal({
                 {copied ? '¡Copiado!' : 'Copiar Enlace'}
               </Button>
             </div>
-            {result.whatsappHref ? (
-              <a href={result.whatsappHref} target="_blank" rel="noreferrer" className="block">
-                <Button variant="green" size="md" className="w-full">
-                  <MessageCircle className="size-4" />
-                  Enviar por WhatsApp
-                </Button>
-              </a>
-            ) : (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] text-amber-200">
-                Sin WhatsApp configurado en tu Perfil: compartí el enlace con el botón «Copiar
-                Enlace» — el visitante igual puede aprobar y se registra la opción elegida (R6).
-              </p>
-            )}
+            <a href={result.whatsappHref} target="_blank" rel="noreferrer" className="block">
+              <Button variant="green" size="md" className="w-full">
+                <MessageCircle className="size-4" />
+                Enviar por WhatsApp
+              </Button>
+            </a>
+            <p className="text-[10px] text-stone-600">
+              WhatsApp abre el selector de contactos: elegí a tu cliente. El número de tu Perfil
+              queda como destino de la aprobación, no como destinatario de este envío.
+            </p>
             <div className="rounded-lg border border-line bg-surface px-2.5 py-2 text-[11px] leading-relaxed text-stone-400">
               {result.message}
             </div>

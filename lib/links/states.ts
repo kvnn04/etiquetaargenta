@@ -8,9 +8,10 @@
  * vencido: página amable — jamás redirect a otra versión.
  * R6: la aprobación registra `POST /links/{linkId}/approvals` ANTES de abrir
  * WhatsApp; badge "APROBADO Opción B" en el editor.
- * R8: mensaje pre-armado EXACTO de la spec §4 con URL-encoding sobre
- * `wa.me/{phone}?text=`; NÚMERO en E.164 (spec usuario §3); sin número ⇒ null
- * (el cliente queda con "Copiar Enlace" solitario).
+ * R8: mensaje pre-armado EXACTO de la spec §4 con URL-encoding. El SHARE del
+ * taller usa `wa.me/?text=` SIN destinatario (selector de contactos): el E.164
+ * del Perfil es el número del taller para la APROBACIÓN del cliente, no el
+ * destinatario del enlace (usarlo acá mandaba el link al propio taller).
  * Módulo PURO: el route pasa el request origin para la URL canónica.
  * ============================================================================ */
 
@@ -83,14 +84,19 @@ export function whatsappShareText(linkUrl: string): string {
 }
 
 /**
- * `wa.me/{digits}?text={en-encoded-text}` (R8). `phoneE164` llega con '+';
- * wan.me quiere SOLO dígitos. Sin número válido ⇒ null: el modal queda con
- * "Copiar Enlace" solitario y el mensaje omitido (R8 exacto).
+ * COMPARTIR el enlace con el cliente final: `wa.me/?text=…` SIN número de
+ * destinatario. WhatsApp abre el selector de contactos y el taller elige a
+ * quién mandarlo (su cliente, no su propio número de negocio).
+ *
+ * El E.164 del Perfil sigue siendo el destino del CTA de APROBACIÓN (R6,
+ * `whatsappApprovalHref`): el cliente le escribe AL taller. Son dos flujos
+ * distintos y mezclarlos mandaba el link al WhatsApp del propio taller.
+ *
+ * Siempre devuelve href: compartir depende del WhatsApp del dispositivo, no
+ * de que el Perfil tenga número cargado.
  */
-export function whatsappShareHref(phoneE164: string | null, linkUrl: string): string | null {
-  const digits = (phoneE164 ?? '').replace(/\D/g, '');
-  if (digits.length < 6) return null; // señal de E.164 roto: jamás wa.me inválido
-  return `https://wa.me/${digits}?text=${encodeURIComponent(whatsappShareText(linkUrl))}`;
+export function whatsappShareHref(linkUrl: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(whatsappShareText(linkUrl))}`;
 }
 
 /* -------------------------------------------------------------------------- */

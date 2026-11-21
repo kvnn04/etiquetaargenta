@@ -275,15 +275,13 @@ describe('R2/R8 — URL canónica + cierre por WhatsApp', () => {
     );
   });
 
-  it('wa.me/{E164}?text= url-encoded (R8); sin PhoneNumber válido ⇒ null', () => {
+  it('share a `wa.me/?text=` SIN destinatario (selector de contactos) y texto url-encoded', () => {
     const url = 'https://simulador.com/v/3a8f9b';
-    const href = whatsappShareHref('+5491112345678', url);
-    expect(href).toBe(`https://wa.me/5491112345678?text=${encodeURIComponent(whatsappShareText(url))}`);
-    // El '+', espacios y guiones del E164 humano ⇒ solo dígitos
-    expect(whatsappShareHref('+54 9 11 1234-5678', url)).toBe(
-      `https://wa.me/5491112345678?text=${encodeURIComponent(whatsappShareText(url))}`,
+    expect(whatsappShareHref(url)).toBe(
+      `https://wa.me/?text=${encodeURIComponent(whatsappShareText(url))}`,
     );
-    expect(whatsappShareHref(null, url)).toBeNull(); // Copiar Enlace solitario
-    expect(whatsappShareHref('12345', url)).toBeNull(); // jamás wa.me inválido
+    /* Regresión QA en vivo: el enlace del taller NO debe direccionarse al
+     * número del Perfil (eso abría el chat del propio taller). */
+    expect(whatsappShareHref(url)).not.toContain('wa.me/549');
   });
 });

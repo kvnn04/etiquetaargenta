@@ -403,25 +403,10 @@ export default function QuoteModal({
       return;
     }
     const url = canonicalLinkUrl(linkId, window.location.origin);
-    const href = whatsappShareHref(profile.whatsappE164, url);
     setPosHint(null);
-    if (href) {
-      window.open(href, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    /* R8: sin número jamás se arma un wa.me inválido — se copia el enlace. */
-    void (async () => {
-      try {
-        await navigator.clipboard.writeText(url);
-        setPosHint(
-          `Sin WhatsApp configurado en tu Perfil: copiamos el enlace (${url}). Pegalo en tu chat o agregá tu número en el Perfil.`,
-        );
-      } catch {
-        setPosHint(
-          `Sin WhatsApp configurado en tu Perfil y el navegador bloqueó el portapapeles. Copiá el enlace a mano: ${url}`,
-        );
-      }
-    })();
+    /* El share NO lleva número: WhatsApp abre el selector y el taller elige al
+     * cliente. El E.164 del Perfil es el destino de la aprobación (R6). */
+    window.open(whatsappShareHref(url), '_blank', 'noopener,noreferrer');
   }
 
   if (!open) return null;
