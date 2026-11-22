@@ -22,10 +22,10 @@ Todo lo que se construye acá proviene de un **paquete de especificaciones cerra
 
 | Documento | Rol |
 | :--- | :--- |
-| `README.md` | Índice del paquete + §5 **Contratos Transversales** (cada regla vive en UNA spec) |
-| 9 archivos `spec_*.md` | Reglas de negocio, cálculos, UI y criterios QA por módulo |
+| `README.md` | Índice del paquete + §6 **Contratos Transversales** (cada regla vive en UNA spec) |
+| specs `spec_*.md` | Reglas de negocio, cálculos, UI y criterios QA por módulo; las posiciones 11–13 son borradores v0.1 con 7 preguntas abiertas |
 | `guia_de_tecnologias.md` | Stack decidido (Next.js App Router + R3F + Supabase + Mercado Pago) y riesgos |
-| `orden_de_implementacion.md` | Secuencia de construcción en **10 posiciones / 3 olas** |
+| `orden_de_implementacion.md` | Secuencia de construcción: **10 posiciones base + segunda ola (11–13)** |
 
 Además existe un **prototipo visual de referencia** (fuera del repo):
 `../Mate_Studio_Premium_Cliente v1.html` — un HTML de un solo archivo con Three.js que ya demuestra las ideas
@@ -703,7 +703,7 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 1. **Matriz R2** decide TODO: todo el editor es FREE; exportes/links/white-label/`pro:true` son PRO.
 2. **El server manda**: el cliente solo decora candados; limpiar localStorage no concede nada (anti-trampa).
-3. **Cada regla vive en UNA spec** (README §5): nombres de eventos/constantes se implementan citándolas (ej. `permissions.ts` — citado por todas).
+3. **Cada regla vive en UNA spec** (README §6): nombres de eventos/constantes se implementan citándolas (ej. `permissions.ts` — citado por todas).
 4. **Números inmutables en su spec de origen**: ej. `D_int ≤ D_ext − 8 mm` (guías), imán ±4° (rotación),
    escaneo 512² α≥128 ≤25ms (escala), threshold L=0.55 (color), ticket 5min (ficha), gracia 5 días (pagos).
 5. **Brand congelado por versión de link** (pos 10A ✅) — los cambios de perfil no mutan links vivos.
@@ -812,19 +812,25 @@ con chequeo anti `test_user`, dominio canónico, webhook entregado por MP, migra
 final, cobro real de verificación, Resend, deploy, observabilidad y rollback) + checklist por
 fases A–F con criterio de cierre cada una y DOD de go-live en §6.
 
-Y después: nada más de plan — las 10 posiciones del `orden_de_implementacion.md` están
-commiteadas (10B cierra el ciclo: `8bf0d25` → `4136e36`); queda iterar con feedback del taller
-real.
+**Segunda ola (21-nov, borradores v0.1):** se sumaron tres specs con 7 preguntas abiertas cada
+una: `spec_sync_de_pagos_y_reverificacion.md` (sync de pagos por `external_reference` y
+"Verifico de nuevo" real), `spec_paginas_legales.md` (términos, privacidad, arrepentimiento y
+baja según la Disposición 954/2025) y `spec_reembolsos_y_contracargos.md` (refunds y
+chargebacks automáticos). Sync y legal entran antes del go-live; reembolsos puede esperar al
+post-lanzamiento. Orden en `orden_de_implementacion.md` posiciones 11–13.
+
+Y después: la primera ola (10 posiciones) está commiteada (10B cierra el ciclo: `8bf0d25` →
+`4136e36`); queda cerrar las decisiones de la segunda ola e iterar con feedback del taller real.
 
 ---
 
 ## 11. Orden de lectura sugerido (para volver al proyecto en el futuro)
 
 1. **Este archivo** — entender qué es, en qué punto estamos y por qué.
-2. `../simulador_Mates/README.md` — contratos transversales (§5).
+2. `../simulador_Mates/README.md` — contratos transversales (§6).
 3. La spec de la posición que se vaya a trabajar (según `orden_de_implementacion.md`).
 4. Código: `lib/permissions.ts` → `middleware.ts` → `app/` → `components/` (orden de dependencia).
 
 > Regla práctica: si dos documentos parecen contradecirse, gana la spec citada como única fuente
-> en `../simulador_Mates/README.md §5`. Todos los números comprometidos se cambian ALLÍ y se re-verifican
+> en `../simulador_Mates/README.md §6`. Todos los números comprometidos se cambian ALLÍ y se re-verifican
 > los consumidores.
