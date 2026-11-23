@@ -1,7 +1,7 @@
 # QA de integración — Posición 13 (reembolsos y contracargos)
 
 **Fecha:** 23-nov-2026 · **Entorno:** Supabase TEST + Mercado Pago TEST + Next dev local
-**Resultado:** ✅ **12/12 escenarios QA** y **362/362 tests unitarios**; `tsc --noEmit` sin errores.
+**Resultado:** ✅ **12/12 escenarios QA** y **366/366 tests unitarios**; `tsc --noEmit` sin errores.
 
 Este documento registra la corrida real del QA de la posición 13 contra la base TEST y la
 cuenta de Mercado Pago configurada en `.env`. No se usaron mocks de base de datos: el fold
@@ -110,3 +110,39 @@ junto con su evidencia legal. La cuenta queda consistente con MP.
   verifica que el merge monótono **no revierte** el `refunded`/`partially_refunded` local.
 - **Emails:** se enviaron correos reales a `kherrera@pioix.edu.ar` y alertas internas al
   `EMAIL_FROM` (fallback de `LEGAL_EMAIL`, que no está configurado).
+
+---
+
+## 6. Fix posterior — loop de sync en `/perfil` sin fila de ciclo (23-nov-2026)
+
+Durante la verificación manual apareció un caso que el QA no cubría: `kherrera`
+(`ced3fa8c-…`) tiene `users.plan='pro'` y **cero filas en `subscriptions`** (foto inicial
+restaurada por el propio QA). Cada `GET /perfil` tardaba 3–8 s y, a veces, logueaba
+`[mp preapproval search] "The operation was aborted due to timeout"`.
+
+**Causa.** El lease/TTL de R12.3 vive en `subscriptions.last_synced_at`; sin fila no hay
+dónde medirlo. El sync caía al watermark de `checkout_intents`, buscaba preapprovals en MP,
+adoptaba el más nuevo (`d776879f…`, ya `cancelled`) y escribía `users.mp_preapproval_id`,
+pero no podía persistir `subscriptions.preapproval_id` porque la fila no existe. El próximo
+render repetía la búsqueda: loop sin estado durable.
+
+**Fix.**
+
+- `syncUserCycle` corta con `outcome='no_subscription'` antes de tocar MP cuando no hay fila,
+  el plan ya no es `free`, el trigger es `perfil` y no es `force`.
+- `reconcileUserCycle` hace el mismo corte antes de invocar al sync (evita el round-trip
+  extra a `users`/`subscriptions` en el render).
+- La recuperación de un seed perdido sigue disponible con el botón **“Verifico de nuevo”**
+  (`force:true`) y con la vuelta del checkout.
+- Sin fila, el sync usa `users.mp_preapproval_id` como hint para no re-buscar el preapproval
+  en cada verificación manual; con fila sigue mandando `subscriptions.preapproval_id`.
+- `/preapproval/search` on-read se corta a **3 s** (`SYNC_PREAPPROVAL_ON_READ_TIMEOUT_MS`);
+  el manual conserva el presupuesto completo.
+- `users` y `subscriptions` se leen en paralelo para no pagar dos round-trips antes de
+  decidir.
+
+**Evidencia.** `GET /perfil` autenticado ⇒ 200 con “Plan PRO”, **2,4 s** en dev y sin ningún
+`[mp sync]` ni `[mp preapproval search]` en el log. `syncUserCycle({trigger:'manual',
+force:true})` sigue devolviendo `ok` usando el hint. **366/366 tests unitarios** (4 nuevos en
+`payments-sync.test.ts`), typecheck 0.
+

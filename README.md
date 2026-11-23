@@ -11,7 +11,7 @@ cliente por enlace y cierran la venta. Implementación del paquete de especifica
 
 **Posición 13 — reembolsos y contracargos (23-nov-2026)**: el webhook y el sync reconocen `refunded`, `partially_refunded` y `charged_back` (topic de pagos) y el topic de contracargos (`chargeback` / `topic_chargebacks_wh`). El pull autoritativo (`GET /v1/payments/{id}` / `GET /v1/chargebacks/{id}`) actualiza `payments.status` + `refunded_amount` (acumulado, clampeado a `amount`) y registra cada novedad en `payment_adjustments` (append-only, dedupe por `kind + mp_source_id` o `(mp_payment_id, kind, occurred_at)`). Un reembolso/contracargo **total del ciclo vigente** pasa `subscriptions.status='revocada'`, `closure_reason='refund'|'chargeback'`, `closed_at`, `users.plan='free'` y cancela el preapproval viejo; un **parcial** mantiene el plan hasta el fin del ciclo; un **ciclo pasado** solo se audita. La carrera refund/approved la gana el reembolso (un `approved` posterior nunca activa PRO) y un reintento responde `200` sin mutar ni reenviar email. UI: badges `REEMBOLSADO`/`CONTRACARGO`, historial con monto original + devuelto y “Reactivar PRO” con checkout nuevo (`/editor?paywall=1`). Migración **`0009_refunds_chargebacks.sql`** aplicada el 23-nov-2026 y **QA de integración 12/12** contra Supabase TEST + MP (ver `docs/qa-posicion-13.md`); los pagos semilla resultaron `live_mode: true`, así que el fold se validó con eventos sintéticos y **no se movió dinero real**.
 
-**362 tests** unitarios pasando en Vitest (+ **12/12** QA de integración), build de producción 30 rutas 100% verde y TypeScript strict 0 errores.
+**366 tests** unitarios pasando en Vitest (+ **12/12** QA de integración), build de producción 30 rutas 100% verde y TypeScript strict 0 errores.
 Mapa completo y evidencia: `PROYECTO.md`.
 
 ---
@@ -25,7 +25,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 | Backend | Supabase (Postgres + RLS + Auth + Realtime) vía `@supabase/ssr` |
 | Estado | Zustand 5 — store del editor (snapshot de `projects.state`) |
 | 3D | three 0.187 + @react-three/fiber 9.8 + drei 10.7 (catálogo lathe + virola 3 mallas + PBR pos 5 + grabado rotación/escala/espejo pos 6–7 + guías + pulso de desborde + auto-giro) |
-| Test unit | Vitest 4 (362 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A + **pagos core 32 + webhook/firma 11 pos 10B + sync/ventana/reparación/transporte 18 pos 11 + legal 25 pos 12 + reembolsos/contracargos 15 pos 13 + origin/back_url 6 pos 13** en `tests/unit/`) |
+| Test unit | Vitest 4 (366 tests: matriz R2 + branding + catálogo + virola pos 4 + color pos 5 + diseño pos 6-7 + desborde pos 7 + ticket export pos 8 + ficha snapshot/textos pos 9 + links núcleo/visor pos 10A + **pagos core 32 + webhook/firma 11 pos 10B + sync/ventana/reparación/transporte 22 pos 11 + legal 25 pos 12 + reembolsos/contracargos 15 pos 13 + origin/back_url 6 pos 13** en `tests/unit/`) |
 | PDF | pdf-lib 1.17 (pos 9: envoltorio A4 de la ficha; carga diferida con `import()`, fuera del chunk inicial) |
 
 > Pinning deliberado: `next@15.5` (línea estable) por compatibilidad oficial con
@@ -415,7 +415,7 @@ plan no cambia; el spec §4 describe el email del cambio de estado, no el de aud
 npm run dev         # editor + API
 npm run build       # build de producción (typecheck incluido)
 npm run typecheck   # tsc --noEmit
-npm run test        # Vitest unitario (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links + pagos + sync + legal + reembolsos, 362 tests)
+npm run test        # Vitest unitario (matriz R2 + branding + catálogo + virola + color + diseño + desborde + ticket export + ficha snapshot/textos + links + pagos + sync + legal + reembolsos, 366 tests)
 npm run test:qa     # QA de integración (Supabase TEST + MP TEST + Next dev; requiere QA_ALLOW_MUTATIONS=1)
 ```
 

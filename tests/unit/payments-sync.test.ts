@@ -8,12 +8,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   SYNC_MANUAL_COOLDOWN_MS,
+  SYNC_PREAPPROVAL_ON_READ_TIMEOUT_MS,
   SYNC_TTL_ACTIVE_MS,
   SYNC_TTL_INACTIVE_MS,
   isWithinSyncWindow,
+  preapprovalSearchTimeoutMs,
   retryAfterSeconds,
   selectPaymentsToApply,
   selectPaymentsToAudit,
+  shouldSkipOnReadSync,
   syncWindowMs,
   watermarkMsOf,
   type LocalPayment,
@@ -67,6 +70,77 @@ describe('R12.3 — TTL on-read y cooldown manual', () => {
     expect(retryAfterSeconds(T0 - 5_000, 20_000, T0)).toBe(15);
     expect(retryAfterSeconds(T0, 20_000, T0)).toBe(20);
     expect(retryAfterSeconds(T0 - 30_000, 20_000, T0)).toBe(1);
+  });
+});
+
+describe('R12.2/R12.3 — on-read sin fila de ciclo (fix 23-nov-2026)', () => {
+  it('plan PRO/PRO_GRACE sin subscriptions ⇒ no consulta MP en /perfil', () => {
+    expect(
+      shouldSkipOnReadSync({
+        hasSubscription: false,
+        plan: 'pro',
+        force: false,
+        trigger: 'perfil',
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipOnReadSync({
+        hasSubscription: false,
+        plan: 'pro_grace',
+        force: false,
+        trigger: 'perfil',
+      }),
+    ).toBe(true);
+  });
+
+  it('plan FREE sin subscriptions conserva la recuperación de seed perdido', () => {
+    expect(
+      shouldSkipOnReadSync({
+        hasSubscription: false,
+        plan: 'free',
+        force: false,
+        trigger: 'perfil',
+      }),
+    ).toBe(false);
+  });
+
+  it('con fila, manual o force ⇒ nunca se saltea', () => {
+    expect(
+      shouldSkipOnReadSync({
+        hasSubscription: true,
+        plan: 'pro',
+        force: false,
+        trigger: 'perfil',
+      }),
+    ).toBe(false);
+    expect(
+      shouldSkipOnReadSync({
+        hasSubscription: false,
+        plan: 'pro',
+        force: true,
+        trigger: 'perfil',
+      }),
+    ).toBe(false);
+    expect(
+      shouldSkipOnReadSync({
+        hasSubscription: false,
+        plan: 'pro',
+        force: false,
+        trigger: 'manual',
+      }),
+    ).toBe(false);
+  });
+
+  it('la búsqueda de preapproval on-read se corta a 3 s; la manual usa el presupuesto', () => {
+    expect(
+      preapprovalSearchTimeoutMs({ trigger: 'perfil', remainingMs: 8_000 }),
+    ).toBe(SYNC_PREAPPROVAL_ON_READ_TIMEOUT_MS);
+    expect(
+      preapprovalSearchTimeoutMs({ trigger: 'perfil', remainingMs: 1_500 }),
+    ).toBe(1_500);
+    expect(
+      preapprovalSearchTimeoutMs({ trigger: 'manual', remainingMs: 8_000 }),
+    ).toBe(8_000);
   });
 });
 

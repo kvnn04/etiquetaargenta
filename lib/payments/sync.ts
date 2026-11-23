@@ -47,6 +47,7 @@ export const SYNC_MANUAL_COOLDOWN_MS = 20_000; // 20 s entre clics manuales
 export const SYNC_WINDOW_SLACK_MS = DAY_MS; // last_checkout_at − 1 día
 export const SYNC_ON_READ_BUDGET_MS = 8_000; // presupuesto del render /perfil
 export const SYNC_MANUAL_BUDGET_MS = 30_000; // presupuesto del botón
+export const SYNC_PREAPPROVAL_ON_READ_TIMEOUT_MS = 3_000; // no bloquear /perfil
 export const SYNC_MAX_PAYMENTS = 100; // cap por corrida
 export const SYNC_PAGE_SIZE = 50; // páginas de /payments/search
 
@@ -56,6 +57,7 @@ export type SyncOutcomeKind =
   | 'ok'
   | 'cooldown'
   | 'no_watermark'
+  | 'no_subscription'
   | 'mp_unavailable'
   | 'user_missing'
   | 'deleted'
@@ -119,6 +121,39 @@ export function syncWindowMs(input: {
 }): number {
   if (input.force) return SYNC_MANUAL_COOLDOWN_MS;
   return input.status === 'activa' ? SYNC_TTL_ACTIVE_MS : SYNC_TTL_INACTIVE_MS;
+}
+
+/**
+ * On-read sin fila de ciclo: no hay `subscriptions.last_synced_at` durable
+ * donde medir el TTL. Si el gating ya está en PRO (cuenta legada o seed
+ * perdido), consultar MP en cada `/perfil` solo agrega latencia y vuelve a
+ * adoptar el mismo preapproval cancelado. La recuperación sigue disponible
+ * con `force` (botón manual o vuelta del checkout), que es el único caso
+ * donde vale la pena buscar sin lease.
+ */
+export function shouldSkipOnReadSync(input: {
+  hasSubscription: boolean;
+  plan: Plan;
+  force: boolean;
+  trigger: SyncTrigger;
+}): boolean {
+  return (
+    !input.hasSubscription &&
+    !input.force &&
+    input.trigger === 'perfil' &&
+    input.plan !== 'free'
+  );
+}
+
+/** Presupuesto de `/preapproval/search`: el on-read no espera más de 3 s. */
+export function preapprovalSearchTimeoutMs(input: {
+  trigger: SyncTrigger;
+  remainingMs: number;
+}): number {
+  const remaining = Math.max(0, input.remainingMs);
+  return input.trigger === 'manual'
+    ? remaining
+    : Math.min(remaining, SYNC_PREAPPROVAL_ON_READ_TIMEOUT_MS);
 }
 
 /** Segundos que faltan para poder reintentar (mínimo 1, nunca 0). */
@@ -376,12 +411,27 @@ export async function syncUserCycle(
 
     const service = createSupabaseServiceClient();
 
-    /* 1) Usuario (cuenta eliminada: no se sincroniza, §6). */
-    const userRes = await service
-      .from('users')
-      .select('id, deleted_at, plan')
-      .eq('id', userId)
-      .maybeSingle<{ id: string; deleted_at: string | null; plan: Plan }>();
+    /* 1+2) Usuario y fila del ciclo en paralelo: el render on-read no debe
+     * pagar dos round-trips a Supabase antes de decidir si consulta MP. */
+    const [userRes, subRes] = await Promise.all([
+      service
+        .from('users')
+        .select('id, deleted_at, plan, mp_preapproval_id')
+        .eq('id', userId)
+        .maybeSingle<{
+          id: string;
+          deleted_at: string | null;
+          plan: Plan;
+          mp_preapproval_id: string | null;
+        }>(),
+      service
+        .from('subscriptions')
+        .select(
+          'status, price_frozen, preapproval_id, cycle_anchor, grace_expires_at, period_end, last_checkout_at, last_synced_at, created_at',
+        )
+        .eq('user_id', userId)
+        .maybeSingle<SubSyncRow>(),
+    ]);
     if (userRes.error) {
       console.error('[mp sync user read]:', userRes.error.message);
       return base({ outcome: 'error' });
@@ -391,19 +441,46 @@ export async function syncUserCycle(
       return base({ outcome: 'deleted', plan: userRes.data.plan ?? 'free' });
     }
 
-    /* 2) Fila del ciclo + lease (R12.3). */
-    const subRes = await service
-      .from('subscriptions')
-      .select(
-        'status, price_frozen, preapproval_id, cycle_anchor, grace_expires_at, period_end, last_checkout_at, last_synced_at, created_at',
-      )
-      .eq('user_id', userId)
-      .maybeSingle<SubSyncRow>();
     if (subRes.error) {
       console.error('[mp sync sub read]:', subRes.error.message);
       return base({ outcome: 'error', plan: userRes.data.plan });
     }
     const sub = subRes.data ?? null;
+
+    /* Sin fila de ciclo no hay lease durable: si el plan ya está en PRO, el
+     * on-read no consulta MP (fix 23-nov-2026: cuentas legadas sin
+     * `subscriptions` golpeaban MP en cada /perfil y adoptaban un preapproval
+     * cancelado en loop). El botón manual y la vuelta del checkout (`force`)
+     * conservan la recuperación de seed perdido. */
+    if (
+      shouldSkipOnReadSync({
+        hasSubscription: sub != null,
+        plan: userRes.data.plan ?? 'free',
+        force: opts.force ?? false,
+        trigger: opts.trigger,
+      })
+    ) {
+      const plan = userRes.data.plan ?? 'free';
+      console.log(
+        '[mp sync]',
+        JSON.stringify({
+          user: userId,
+          trigger: opts.trigger,
+          since: null,
+          scanned: 0,
+          missing: 0,
+          applied: 0,
+          repaired: 0,
+          audited: 0,
+          preapproval: 'unchanged',
+          plan,
+          status: null,
+          ms: Date.now() - started,
+          outcome: 'no_subscription',
+        }),
+      );
+      return base({ outcome: 'no_subscription', plan, status: null });
+    }
 
     const windowMs = syncWindowMs({
       force: opts.force ?? false,
@@ -520,16 +597,24 @@ export async function syncUserCycle(
       );
     }
 
-    /* 5) Preapproval: adoptar si falta (R12.8); leer al final. */
-    let preapprovalId = sub?.preapproval_id ?? null;
+    /* 5) Preapproval: adoptar si falta (R12.8); leer al final.
+     * Sin fila de ciclo, `users.mp_preapproval_id` es la única memoria del
+     * último preapproval adoptado: evita re-buscarlo en cada verificación
+     * manual. Con fila, manda `subscriptions.preapproval_id` (una re-alta
+     * puede haber creado uno nuevo y el hint de users quedar viejo). */
+    let preapprovalId =
+      sub?.preapproval_id ?? (sub ? null : userRes.data.mp_preapproval_id) ?? null;
     let preapproval: NonNullable<SyncOutcome['preapproval']> = 'unchanged';
 
     if (!preapprovalId && sub?.status !== 'revocada') {
       const remaining = deadline - Date.now();
       if (remaining > 0) {
         const searchPre = await searchPreapprovalsByExternalReference(userId, {
-          limit: 10,
-          timeoutMs: remaining,
+          limit: 50,
+          timeoutMs: preapprovalSearchTimeoutMs({
+            trigger: opts.trigger,
+            remainingMs: remaining,
+          }),
         });
         const ownPreapprovals = searchPre.ok
           ? searchPre.data.filter((p) => p.externalReference === userId)
@@ -539,11 +624,14 @@ export async function syncUserCycle(
             (a, b) => (parseMs(b.dateCreated) ?? 0) - (parseMs(a.dateCreated) ?? 0),
           )[0];
           preapprovalId = newest.id;
-          const updSub = await service
-            .from('subscriptions')
-            .update({ preapproval_id: preapprovalId })
-            .eq('user_id', userId);
-          if (updSub.error) console.error('[mp sync preapproval adopt sub]:', updSub.error.message);
+          if (sub) {
+            const updSub = await service
+              .from('subscriptions')
+              .update({ preapproval_id: preapprovalId })
+              .eq('user_id', userId);
+            if (updSub.error)
+              console.error('[mp sync preapproval adopt sub]:', updSub.error.message);
+          }
           const updUser = await service
             .from('users')
             .update({ mp_preapproval_id: preapprovalId })

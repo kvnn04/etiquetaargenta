@@ -32,6 +32,7 @@ import {
 } from '@/lib/payments/core';
 import { getPreapproval, hasMercadoPagoCredentials } from '@/lib/payments/mercadopago';
 import {
+  shouldSkipOnReadSync,
   syncUserCycle,
   type SyncOutcome,
   type SyncTrigger,
@@ -66,6 +67,7 @@ export interface ReconcileOutcome {
     | 'sync_repaired'
     | 'sync_cooldown'
     | 'sync_no_watermark'
+    | 'sync_no_subscription'
     | 'sync_mp_unavailable'
     | 'sync_user_missing'
     | 'sync_deleted'
@@ -290,6 +292,24 @@ export async function reconcileUserCycle(
   const local = await reconcileLocal(userId, { skipRemote: mode === 'sync' });
   if (mode === 'local') return local;
 
+  /* Sin fila de ciclo y plan ya en PRO: el on-read no consulta MP. No hay
+   * `last_synced_at` durable para medir el TTL y `syncUserCycle` volvería a
+   * leer las mismas dos tablas solo para descubrir que no hay lease (fix
+   * 23-nov-2026: cuentas legadas sin `subscriptions` golpeaban MP en cada
+   * /perfil). La recuperación de seed perdido sigue en el botón manual y en
+   * la vuelta del checkout (`force`). */
+  if (
+    local.reason === 'sin_fila' &&
+    shouldSkipOnReadSync({
+      hasSubscription: false,
+      plan: local.planBefore,
+      force: options.force ?? false,
+      trigger: options.trigger ?? 'perfil',
+    })
+  ) {
+    return { ...local, reason: 'sync_no_subscription' };
+  }
+
   let sync: SyncOutcome;
   try {
     sync = await syncUserCycle(userId, {
@@ -318,13 +338,15 @@ export async function reconcileUserCycle(
         ? 'sync_cooldown'
         : sync.outcome === 'no_watermark'
           ? 'sync_no_watermark'
-          : sync.outcome === 'mp_unavailable'
-            ? 'sync_mp_unavailable'
-            : sync.outcome === 'user_missing'
-              ? 'sync_user_missing'
-              : sync.outcome === 'deleted'
-                ? 'sync_deleted'
-                : 'sync_error';
+          : sync.outcome === 'no_subscription'
+            ? 'sync_no_subscription'
+            : sync.outcome === 'mp_unavailable'
+              ? 'sync_mp_unavailable'
+              : sync.outcome === 'user_missing'
+                ? 'sync_user_missing'
+                : sync.outcome === 'deleted'
+                  ? 'sync_deleted'
+                  : 'sync_error';
 
   // Un error de DB/MP no debe pintar FREE: se conserva el estado local.
   const preserveLocal = sync.outcome === 'error' || sync.outcome === 'user_missing';
