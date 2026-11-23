@@ -8,7 +8,6 @@ import {
   KHER_EMAIL,
   KHER_PASSWORD,
   KHER_USER_ID,
-  QA_ORIGIN,
   captureResend,
   loginCookie,
   serviceClient,
@@ -37,7 +36,7 @@ import {
  * Requiere Supabase TEST con `0010_link_responses.sql` aplicada a mano.
  * ========================================================================== */
 
-const BASE_URL = QA_ORIGIN;
+const BASE_URL = 'http://127.0.0.1:3100';
 const WHATSAPP = '5491112345678';
 
 interface ActionBody {
@@ -74,6 +73,7 @@ interface ResponseRow {
 }
 
 let service: SupabaseClient;
+let owner: SupabaseClient;
 let server: NextServer;
 let capture: ResendCapture;
 let cookie = '';
@@ -222,7 +222,19 @@ beforeAll(async () => {
     );
   }
 
-  const project = await service
+  /* projects solo tiene grants para `authenticated` (0001): el service-role de
+   * este proyecto no hereda el INSERT. El proyecto QA se crea como el propio
+   * taller, igual que la app. */
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  owner = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signIn = await owner.auth.signInWithPassword({ email: KHER_EMAIL, password: KHER_PASSWORD });
+  if (signIn.error) throw new Error(`login QA: ${signIn.error.message}`);
+
+  const project = await owner
     .from('projects')
     .insert({ user_id: KHER_USER_ID, title: 'QA posición 14 — respuestas', state: {} })
     .select('id')
@@ -243,7 +255,7 @@ afterAll(async () => {
   capture?.restore();
   await server?.stop();
   if (projectId) {
-    const { error } = await service.from('projects').delete().eq('id', projectId);
+    const { error } = await owner.from('projects').delete().eq('id', projectId);
     if (error) console.error('[QA pos 14 cleanup]:', error.message);
   }
 });

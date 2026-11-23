@@ -71,6 +71,12 @@ alter table public.link_responses enable row level security;
 revoke all on public.link_responses from anon, authenticated;
 grant select, insert, update on public.link_responses to service_role;
 
+-- COMPAT LEGACY (R14.13): `0004` declaró el INSERT público en link_approvals
+-- (policy `approvals_public_insert`) pero confió en los grants automáticos de
+-- Supabase, que este proyecto NO aplica. Sin este grant, la aprobación legacy
+-- falla con 42501. La policy sigue siendo la que valida link abierto/vigente.
+grant insert on public.link_approvals to anon, authenticated, service_role;
+
 comment on table public.link_responses is
   'Posición 14: decisión y observación del cliente por link (una fila, una vez).';
 comment on column public.link_responses.decision is
@@ -198,6 +204,17 @@ begin
 
   if v_has_response and v_response.decision is not null then
     if v_response.decision = p_decision and v_response.decision_variant_id = p_variant_id then
+      -- R14.4/R14.7: un motivo DISTINTO no es un reintento idempotente.
+      if p_decision = 'rejected'
+         and p_observation is not null
+         and v_response.observation is not null
+         and v_observation <> v_response.observation then
+        return jsonb_build_object(
+          'ok', false,
+          'code', 'OBSERVATION_TAKEN',
+          'response', to_jsonb(v_response)
+        );
+      end if;
       if p_decision = 'approved' or p_channel = v_response.decision_channel then
         return jsonb_build_object('ok', true, 'already', true, 'response', to_jsonb(v_response));
       end if;
