@@ -29,3 +29,6 @@ Thumbs.db
 # playwright/test artifacts
 /test-results/
 /playwright-report/
+
+# supabase cli (cache local, nunca se commitea)
+supabase/.temp/
