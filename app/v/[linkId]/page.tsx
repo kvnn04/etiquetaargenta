@@ -12,6 +12,9 @@
  *     vencido (R5: la escena no existe para el visitante);
  *   · vigente ⇒ jsonb crudo ⇒ buildPublicView (normalizador tolerante) ⇒
  *     ClientViewer (client-only; R3F no puede SSR).
+ *   · posición 14: la respuesta del cliente (decisión + observación) vive en
+ *     `link_responses` y se lee con service-role; los links legacy sin fila
+ *     usan la última `link_approvals` como decisión aprobada (R14.13).
  * noindex en metadata: las propuestas son enlaces privados por cliente.
  * ============================================================================ */
 
@@ -20,6 +23,7 @@ import { notFound } from 'next/navigation';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { canonicalizeLinkId } from '@/lib/links/identity';
 import { buildPublicView, type PublicLinkView } from '@/lib/links/view-shape';
+import { toPublicLinkResponse, type PublicLinkResponse } from '@/lib/links/responses';
 import ClientViewer from '@/components/links/client-viewer';
 
 export const dynamic = 'force-dynamic'; // vigencia en vivo: cache prohibida
@@ -33,6 +37,11 @@ export const metadata = {
 interface LinkRow {
   payload: unknown;
   expires_at: string;
+}
+
+export interface LegacyApproval {
+  variantId: string;
+  approvedAt: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -159,5 +168,49 @@ export default async function PublicLinkPage({
     return <ExpiredNotice view={view} />; // R5: el contenido JAMÁS se muestra vencido
   }
 
-  return <ClientViewer view={view} />;
+  /* Posición 14: estado inicial de la respuesta. Ambas lecturas son
+   * fail-soft: si la migración 0010 todavía no se aplicó, el visor sigue
+   * funcionando como posición 10A (sin decisión nueva). */
+  const [responseRes, legacyRes] = await Promise.all([
+    service
+      .from('link_responses')
+      .select(
+        'link_id, decision, decision_variant_id, decided_at, decision_channel, decision_email_sent_at, decision_email_error, observation, observed_at, observation_channel, observation_email_sent_at, observation_email_error',
+      )
+      .eq('link_id', linkId)
+      .maybeSingle(),
+    service
+      .from('link_approvals')
+      .select('variant_id, approved_at')
+      .eq('link_id', linkId)
+      .order('approved_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (responseRes.error) {
+    console.error('[link response read]:', responseRes.error.message);
+  }
+  if (legacyRes.error) {
+    console.error('[link legacy approval read]:', legacyRes.error.message);
+  }
+
+  const initialResponse: PublicLinkResponse | null = responseRes.error
+    ? null
+    : toPublicLinkResponse(responseRes.data);
+  const legacyRow = legacyRes.data as { variant_id?: unknown; approved_at?: unknown } | null;
+  const legacyApproval: LegacyApproval | null =
+    !legacyRes.error &&
+    typeof legacyRow?.variant_id === 'string' &&
+    typeof legacyRow?.approved_at === 'string'
+      ? { variantId: legacyRow.variant_id, approvedAt: legacyRow.approved_at }
+      : null;
+
+  return (
+    <ClientViewer
+      view={view}
+      initialResponse={initialResponse}
+      legacyApproval={legacyApproval}
+    />
+  );
 }

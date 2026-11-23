@@ -2,9 +2,10 @@
  * MAILER TRANSACCIONAL — posición 10B (spec_pagos.md R6/R8/R9 + §5 Resend)
  * ----------------------------------------------------------------------------
  * R10: la lista de emails LEGÍTIMOS es cerrada: recibo de cobro, aviso de
- * gracia, cierre programado (+ ciclo de vida de cuenta, ya definidos en la
- * spec de usuario). CERO email de recuperación de checkout abandonado — ese
- * único registro vive en `checkout_intents`.
+ * gracia, cierre programado, reembolsos/contracargos (pos 13), decisión y
+ * observación del cliente del enlace (pos 14), ciclo de vida de cuenta y
+ * legales. CERO email de recuperación de checkout abandonado — ese único
+ * registro vive en `checkout_intents`.
  * Degradación HONESTA (decisión del titular): sin RESEND_API_KEY o sin
  * EMAIL_FROM ⇒ el evento se logea `[mail <kind>]` y NADA más falla — el
  * estado de dinero es la fuente; el email es un aviso, no su puerta.
@@ -26,7 +27,10 @@ export type MailKind =
   | 'alerta_pago'
   /* Posición 12 (R13.4/R13.6/R13.10): acuses y alertas legales. */
   | 'solicitud_legal'
-  | 'alerta_legal';
+  | 'alerta_legal'
+  /* Posición 14 (R14.5): decisión/observación del cliente del enlace. */
+  | 'decision_cliente'
+  | 'observacion_cliente';
 
 export interface MailContent {
   kind: MailKind;

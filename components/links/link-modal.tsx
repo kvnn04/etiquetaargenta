@@ -12,6 +12,13 @@ import {
 } from '@/lib/links/states';
 import { encodeLinkTexture, encodeOriginalFromCanvas, LINK_TEXTURE_MAX_BYTES } from '@/lib/links/asset-encode';
 import { buildPublishVariant } from '@/lib/links/payload';
+import {
+  channelLabel,
+  emailStatusLabel,
+  formatLinkDate,
+  type LinkChannel,
+  type LinkDecision,
+} from '@/lib/links/responses';
 import { useEditorStore } from '@/lib/store/editor';
 import { currentOverflowCheck } from '@/lib/quote/snapshot';
 import type { OverflowCheck } from '@/lib/overflow';
@@ -26,6 +33,18 @@ export interface LinkVersionRow {
   expiresAt: string;
   approvalsCount: number;
   lastApprovedVariant: string | null;
+  /** Posición 14: decisión + observación del cliente (null si no hay fila). */
+  decision: LinkDecision | null;
+  decisionVariantId: string | null;
+  decidedAt: string | null;
+  decisionChannel: LinkChannel | null;
+  decisionEmailSentAt: string | null;
+  decisionEmailError: string | null;
+  observation: string | null;
+  observedAt: string | null;
+  observationChannel: LinkChannel | null;
+  observationEmailSentAt: string | null;
+  observationEmailError: string | null;
 }
 
 export interface PublishResult {
@@ -187,6 +206,17 @@ export default function LinkModal({
           expiresAt: data.expiresAt,
           approvalsCount: 0,
           lastApprovedVariant: null,
+          decision: null,
+          decisionVariantId: null,
+          decidedAt: null,
+          decisionChannel: null,
+          decisionEmailSentAt: null,
+          decisionEmailError: null,
+          observation: null,
+          observedAt: null,
+          observationChannel: null,
+          observationEmailSentAt: null,
+          observationEmailError: null,
         },
         ...(prev ?? []),
       ]);
@@ -343,9 +373,27 @@ export default function LinkModal({
               {versions && versions.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
                   {versions.map((v) => {
+                    const approved =
+                      v.decision === 'approved' || (!v.decision && v.approvalsCount > 0);
                     const state: LinkEditionState = linkEditionState(
-                      { expiresAtMs: Date.parse(v.expiresAt), approved: v.approvalsCount > 0 },
+                      {
+                        expiresAtMs: Date.parse(v.expiresAt),
+                        approved,
+                        rejected: v.decision === 'rejected',
+                      },
                       Date.now(),
+                    );
+                    const badgeVariant =
+                      v.decision === 'approved' ? v.decisionVariantId : v.lastApprovedVariant;
+                    const observationEmailStatus = emailStatusLabel(
+                      v.observationChannel,
+                      v.observationEmailSentAt,
+                      v.observationEmailError,
+                    );
+                    const decisionEmailStatus = emailStatusLabel(
+                      v.decisionChannel,
+                      v.decisionEmailSentAt,
+                      v.decisionEmailError,
                     );
                     const url = canonicalLinkUrl(v.linkId, window.location.origin);
                     return (
@@ -358,17 +406,24 @@ export default function LinkModal({
                           <code className="text-gold-soft">/v/{v.linkId}</code>
                           <span
                             className={`ml-auto rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                              state === 'vigente'
-                                ? 'border-emerald-500/40 text-emerald-400'
-                                : state === 'por_vencer'
-                                  ? 'border-amber-500/40 text-amber-300'
-                                  : state === 'aprobado'
-                                    ? 'border-gold/50 text-gold-soft'
-                                    : 'border-line text-stone-600'
+                              state === 'rechazado'
+                                ? 'border-rose-500/40 text-rose-300'
+                                : state === 'aprobado'
+                                  ? 'border-gold/50 text-gold-soft'
+                                  : state === 'vigente'
+                                    ? 'border-emerald-500/40 text-emerald-400'
+                                    : state === 'por_vencer'
+                                      ? 'border-amber-500/40 text-amber-300'
+                                      : 'border-line text-stone-600'
                             }`}
                           >
-                            {editionBadgeText(state, v.lastApprovedVariant)}
+                            {editionBadgeText(state, badgeVariant)}
                           </span>
+                          {v.observation && (
+                            <span className="rounded-full border border-sky-500/40 px-1.5 py-0.5 text-[9px] font-bold uppercase text-sky-300">
+                              CON OBSERVACIÓN
+                            </span>
+                          )}
                           <span className="text-[9px] text-stone-600">
                             vence {formatEsDate(v.expiresAt)} (
                             {linkDaysLeft(Date.parse(v.expiresAt), Date.now())} d)
@@ -399,10 +454,39 @@ export default function LinkModal({
                             <Trash2 className="size-3" />
                           </button>
                         </div>
+                        {v.observation && (
+                          <details className="mt-1.5 rounded-md border border-white/10 bg-black/20 px-2 py-1.5">
+                            <summary className="cursor-pointer text-[10px] font-bold text-sky-300">
+                              {v.decision === 'rejected'
+                                ? 'Motivo del rechazo'
+                                : 'Observación del cliente'}
+                            </summary>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-stone-300">
+                              {v.observation}
+                            </p>
+                            <p className="mt-1 text-[9px] text-stone-500">
+                              {formatLinkDate(v.observedAt)} ·{' '}
+                              {channelLabel(v.observationChannel)}
+                              {observationEmailStatus ? ` · ${observationEmailStatus}` : ''}
+                            </p>
+                            {v.decision === 'rejected' && v.decisionChannel && (
+                              <p className="mt-0.5 text-[9px] text-stone-500">
+                                Aviso de rechazo: {channelLabel(v.decisionChannel)}
+                                {decisionEmailStatus ? ` · ${decisionEmailStatus}` : ''}
+                              </p>
+                            )}
+                          </details>
+                        )}
+                        {v.decision && (
+                          <p className="mt-1 text-[9px] text-stone-600">
+                            Decisión: {v.decision === 'approved' ? 'aprobada' : 'rechazada'} ·{' '}
+                            {formatLinkDate(v.decidedAt)}
+                          </p>
+                        )}
                         {confirmDeleteId === v.linkId && (
                           <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1.5">
                             <span className="text-[10px] text-rose-200">
-                              ¿Eliminar /v/{v.linkId} y sus aprobaciones?
+                              ¿Eliminar /v/{v.linkId} y sus respuestas?
                             </span>
                             <button
                               type="button"

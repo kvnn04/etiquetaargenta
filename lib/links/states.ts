@@ -6,8 +6,9 @@
  * EDITOR: `vigente` / `por vencer` (≤5 días: badge ámbar + sugerir regenerar)
  * / `vencido` / `aprobado` (badge con la última opción). Al abrir un link
  * vencido: página amable — jamás redirect a otra versión.
- * R6: la aprobación registra `POST /links/{linkId}/approvals` ANTES de abrir
- * WhatsApp; badge "APROBADO Opción B" en el editor.
+ * R6: la aprobación registra `POST /links/{linkId}/decision` ANTES de abrir
+ * WhatsApp (la ruta legacy `/approvals` queda como alias, pos 14); badge
+ * "APROBADO Opción B" en el editor.
  * R8: mensaje pre-armado EXACTO de la spec §4 con URL-encoding. El SHARE del
  * taller usa `wa.me/?text=` SIN destinatario (selector de contactos): el E.164
  * del Perfil es el número del taller para la APROBACIÓN del cliente, no el
@@ -25,8 +26,11 @@ export const LINK_TTL_MS = LINK_TTL_DAYS * 86_400_000;
 export const LINK_WARN_DAYS = 5;
 export const LINK_WARN_MS = LINK_WARN_DAYS * 86_400_000;
 
-/** Estado del EDITOR para una versión (R5 — los cuatro con su prioridad). */
-export type LinkEditionState = 'vigente' | 'por_vencer' | 'vencido' | 'aprobado';
+/**
+ * Estado del EDITOR para una versión (R5 + R14.10 — prioridad):
+ * rechazado > aprobado > vencido > por_vencer > vigente.
+ */
+export type LinkEditionState = 'vigente' | 'por_vencer' | 'vencido' | 'aprobado' | 'rechazado';
 
 /** daysLeft = techo a días (badge negativo censurado a 0). */
 export function linkDaysLeft(expiresAtMs: number, nowMs: number): number {
@@ -34,23 +38,28 @@ export function linkDaysLeft(expiresAtMs: number, nowMs: number): number {
 }
 
 /**
- * Estado visible de UNA versión del editor (R5, prioridad exacta):
- * aprobado > vencido > por_vencer > vigente. La vigencia igual se muestra en
- * la fila (fecha de vencimiento), pero el BADGE gana el de aprobación.
+ * Estado visible de UNA versión del editor (R5/R14.10, prioridad exacta):
+ * rechazado > aprobado > vencido > por_vencer > vigente. La vigencia igual se
+ * muestra en la fila (fecha de vencimiento), pero el BADGE de la decisión gana.
+ * `rejected` es opcional para no romper a los consumidores de la posición 10A.
  */
 export function linkEditionState(input: {
   expiresAtMs: number;
   approved: boolean;
+  rejected?: boolean;
 }, nowMs: number): LinkEditionState {
+  if (input.rejected) return 'rechazado';
   if (input.approved) return 'aprobado';
   if (nowMs >= input.expiresAtMs) return 'vencido';
   if (input.expiresAtMs - nowMs <= LINK_WARN_MS) return 'por_vencer';
   return 'vigente';
 }
 
-/** Etiqueta del badge en el panel de versiones (R5 + R6). */
+/** Etiqueta del badge en el panel de versiones (R5 + R6 + R14.10). */
 export function editionBadgeText(state: LinkEditionState, lastVariant: string | null): string {
   switch (state) {
+    case 'rechazado':
+      return 'RECHAZADO';
     case 'aprobado':
       return lastVariant ? `APROBADO Opción ${lastVariant}` : 'APROBADO';
     case 'por_vencer':

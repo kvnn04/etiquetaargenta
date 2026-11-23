@@ -23,9 +23,9 @@ Todo lo que se construye acá proviene de un **paquete de especificaciones cerra
 | Documento | Rol |
 | :--- | :--- |
 | `README.md` | Índice del paquete + §6 **Contratos Transversales** (cada regla vive en UNA spec) |
-| specs `spec_*.md` | Reglas de negocio, cálculos, UI y criterios QA por módulo; la 13 es borrador v0.1 con 7 preguntas abiertas (11 y 12 ya cerraron las suyas) |
+| specs `spec_*.md` | Reglas de negocio, cálculos, UI y criterios QA por módulo; las specs 11–14 ya cerraron sus preguntas (la 14 es la decisión/observación del cliente) |
 | `guia_de_tecnologias.md` | Stack decidido (Next.js App Router + R3F + Supabase + Mercado Pago) y riesgos |
-| `orden_de_implementacion.md` | Secuencia de construcción: **10 posiciones base + segunda ola (11–13)** |
+| `orden_de_implementacion.md` | Secuencia de construcción: **10 posiciones base + segunda ola (11–14)** |
 
 Además existe un **prototipo visual de referencia** (fuera del repo):
 `../Mate_Studio_Premium_Cliente v1.html` — un HTML de un solo archivo con Three.js que ya demuestra las ideas
@@ -36,22 +36,28 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 13 ✅ (segunda ola — 23-nov)
+## 2. Dónde estamos: posición 14 ✅ (segunda ola — 23-nov)
 
 La primera ola (posiciones 1–10B) está cerrada y con QA en vivo del sandbox de MP
 (07-nov). La **segunda ola** sumó la posición **11 — sync de pagos y
 "Verifico de nuevo" real** (22-nov), la posición **12 — páginas legales,
-aceptación en checkout y derechos del consumidor** (23-nov) y la posición
-**13 — reembolsos y contracargos del Plan PRO** (23-nov): el webhook y el sync
-reconocen `refunded`/`partially_refunded`/`charged_back` y el topic de
-contracargos, actualizan `payments` + `payment_adjustments` y revocan el ciclo
-vigente (`revocada`/`free`) o mantienen el plan si el reembolso es parcial.
-**La ola quedó completa.** `0008_legal.sql` y `0009_refunds_chargebacks.sql`
-quedaron **aplicadas** en Supabase (23-nov) y la posición 13 pasó un **QA de
-integración 12/12** contra Supabase TEST + MP TEST (`docs/qa-posicion-13.md`).
-Antes de abrir cobros reales faltan la identidad `LEGAL_ENTITY_*`, la revisión
-legal firmada y un end-to-end con un pago nuevo `live_mode:false` (los pagos
-semilla del QA son `live_mode:true`, así que no se reembolsaron).
+aceptación en checkout y derechos del consumidor** (23-nov), la posición
+**13 — reembolsos y contracargos del Plan PRO** (23-nov) y la posición
+**14 — decisión y observaciones del cliente** (23-nov): el cliente aprueba o
+rechaza desde `/v/[linkId]`, el rechazo exige un motivo de 1–280 code points y
+la observación única puede ir sola o antes/después de aprobar. El aviso sale por
+email al taller o por WhatsApp; la fila se guarda antes del envío y el email es
+fail-soft. El panel muestra badge, observación, fecha, canal y estado del email;
+la aprobación legacy de `link_approvals` cuenta como decisión.
+**La ola queda completa en código.** `0008_legal.sql` y
+`0009_refunds_chargebacks.sql` quedaron **aplicadas** en Supabase (23-nov) y la
+posición 13 pasó un **QA de integración 12/12** contra Supabase TEST + MP TEST
+(`docs/qa-posicion-13.md`). La migración **`0010_link_responses.sql`** de la
+posición 14 está **pendiente de aplicar a mano** en Supabase TEST; el QA de
+integración (`tests/qa/link-responses.qa.test.ts`) está escrito y espera esa
+migración. Antes de abrir cobros reales faltan la identidad `LEGAL_ENTITY_*`, la
+revisión legal firmada y un end-to-end con un pago nuevo `live_mode:false` (los
+pagos semilla del QA son `live_mode:true`, así que no se reembolsaron).
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
@@ -74,14 +80,19 @@ El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero
 13. ✅ 12 — Páginas legales, aceptación en checkout y derechos del consumidor
     (23-nov: migración `0008` **aplicada**, 25 tests nuevos, flujo de baja con
     doble opt-in + cola manual perezosa y evidencia versionada; QA técnico en §8)
-14. ✅ 13 — Reembolsos y contracargos del Plan PRO ← ESTAMOS ACÁ
+14. ✅ 13 — Reembolsos y contracargos del Plan PRO
     (23-nov: migración `0009` **aplicada**, 15 tests nuevos, `payment_adjustments`
     append-only, revocación del ciclo vigente, parcial sin bajar el plan, carrera
     refund/approved y UI del Centro; QA técnico + **integración 12/12** en §8 y
     `docs/qa-posicion-13.md`)
+15. ✅ 14 — Decisión y observaciones del cliente ← ESTAMOS ACÁ
+    (23-nov: aprobar/rechazar + observación única 1–280, avisos email/WhatsApp,
+    panel con badge/fecha/canal/email, legacy como decisión; migración `0010`
+    **pendiente de aplicar a mano** y QA de integración escrito esperando esa
+    migración; 28 tests unitarios nuevos)
 ```
 
-**Segunda ola completa:** 11 (sync) + 12 (legal) + 13 (reembolsos/contracargos).
+**Segunda ola:** 11 (sync) + 12 (legal) + 13 (reembolsos/contracargos) + 14 (decisión/observaciones).
 
 La posición 4 entregó la **edición milimétrica de virola**, la **anatomía formal en 3 mallas**
 (`virolaTopMesh` corona superior anular plana para grabado/guías, `virolaOuterWallMesh` faldón
@@ -239,7 +250,7 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: **366 tests** (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7 + ticket pos 8 + ficha snapshot/textos pos 9 + links pos 10A + pagos/webhook pos 10B + sync pos 11 + legal pos 12 + reembolsos/contracargos pos 13 + origin/back_url pos 13) |
+| Test unit | Vitest | 4.1.12 | hoy: **394 tests** (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7 + ticket pos 8 + ficha snapshot/textos pos 9 + links pos 10A + pagos/webhook pos 10B + sync pos 11 + legal pos 12 + reembolsos/contracargos pos 13 + origin/back_url pos 13 + respuestas/emails del cliente pos 14) |
 | 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
 | PDF | pdf-lib | 1.17 (instalado en la posición 9) | envoltorio A4 de la ficha; carga diferida con `import()` |
 | Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
@@ -292,6 +303,10 @@ simulador-mates/
 │       ├── legal/privacidad/route.ts      ← POS 12: POST público de derechos de datos (5 días hábiles)
 │       ├── billing/checkout/route.ts      ← POS 10B/12/13: POST alta (gates sesión/email/precio/viva/legal ⇒ preapproval + seed; permite `revocada` y cancela el preapproval viejo)
 │       ├── billing/refresh/route.ts       ← POS 11: POST "Verifico de nuevo" real (401/429/502/503/200)
+│       ├── links/route.ts                 ← POS 10A/14: POST publish + GET versiones/agregados/decisión/observación + DELETE de una versión propia
+│       ├── links/[linkId]/decision/route.ts     ← POS 14: POST pública de decisión (aprobado/rechazado, motivo obligatorio, 404/410/409)
+│       ├── links/[linkId]/observations/route.ts ← POS 14: POST pública de observación única 1..280
+│       ├── links/[linkId]/approvals/route.ts    ← POS 10A/14: alias legacy sobre `link_register_decision` (doble escritura)
 │       ├── webhooks/mercadopago/route.ts  ← POS 10B/13: firma HMAC + pull autoritativo + dedupe/CAS + refunds/chargebacks (topic de pagos y de contracargos) + emails
 │       └── auth/exit/route.ts      ← GET signOut server + redirect /auth?cuenta=inhabilitada
 │
@@ -301,9 +316,9 @@ simulador-mates/
 │   ├── profile/danger-confirm.tsx ← doble confirmación R8 (palabra ELIMINAR + botón final)
 │   ├── editor/editor-shell.tsx    ← top bar + escena 3D (dynamic ssr:false) + restore + panel gated + watermark/bloqueo DOM por plan (pos 8) + modal #quoteModal y foto HD (pos 9) + tarjeta informativa de variantes + modal del Enlace (10A)
 │   ├── editor/top-bar.tsx         ← badge por plan + logo/iniciales + ícono Perfil (todas las plans) + badge demo reactivo 0/1→1/1 (pos 8 R3)
-│   ├── links/link-modal.tsx       ← ★ POS 10A: MODAL del ENLACE — vista draft+versiones (badges R5, copiar, WhatsApp, eliminar con confirmación) + publish (402⇒Paywall, confirm de desborde R7 con CTAs, re-encode R3) + resultado (Copiar/Enviar/vence)
+│   ├── links/link-modal.tsx       ← ★ POS 10A/14: MODAL del ENLACE — draft+versiones (badges R5 + `RECHAZADO`/`CON OBSERVACIÓN`, copiar, WhatsApp, eliminar) + publish (402⇒Paywall, desborde R7, re-encode R3) + observación/fecha/canal/email (R14.10)
 │   ├── links/variants-card.tsx    ← ★ POS 10A: tarjeta "Variantes del Enlace" — decisión nov-2026: A/B/C desactivadas, aviso "Solo se puede enviar un diseño por ahora" (el borrador legacy en projects.state se conserva)
-│   ├── links/client-viewer.tsx    ← ★ POS 10A: MODO CLIENTE UI — assets×URL única (fail⇒"no disponible"), crossfade ≤300 ms, chips A/B/C solo en links legacy, acordeón, CTA R6 (POST ANTES de wa.me · reintentos backoff · código APROBADA literal) + págs amables
+│   ├── links/client-viewer.tsx    ← ★ POS 10A/14: MODO CLIENTE UI — assets×URL única (fail⇒"no disponible"), crossfade ≤300 ms, chips A/B/C solo en links legacy, acordeón, aprobar/rechazar + observación 1..280 (contador, foco, ≥44 px, estados solo-lectura, fallback email→WhatsApp) + código APROBADA
 │   ├── links/viewer-scene.tsx     ← ★ POS 10A: ESCENA 3D PÚBLICA — mismas libs del editor (lathe+PBR+compositor) pero para el payload congelado; giro 0.5 RPM pausable, cámara fijada por silueta, SIN guías/medidas/watermark
 │   ├── legal/legal-footer.tsx     ← ★ POS 12: footer con los dos BOTONES (client-safe) + links a Términos/Privacidad/Defensa; variantes prominent/compact
 │   ├── legal/legal-identity.tsx   ← POS 12: bloque de identidad del proveedor (declara visiblemente lo que falta, no inventa)
@@ -344,9 +359,13 @@ simulador-mates/
 │   ├── compose-engraving.ts        ← ★ compositor compartido del grabado (extraído de studio-scene en pos 9): Escala→Espejo→Rotación + tinte burn + máscara anular — la escena y la ficha usan EL MISMO pipeline
 │   ├── links/identity.ts           ← ★ POS 10A: linkId R2 (6 chars [a-z0-9], canónico case-insensitive) + colisiones inyectadas
 │   ├── links/payload.ts            ← ★ POS 10A: payload schemaVersion 2 (R4 fracción/rotación/labels≤40) + risk R7 congelado + linkDraft legacy A/B/C (StoredVariantRow) + `buildPublishVariant` (publish actual de UN diseño)
-│   ├── links/states.ts             ← ★ POS 10A: vigencia/estados R5 (prioridad aprobado>vencido>por_vencer) + URL canónica + wa.me share/aprobación R6/R8 + código APROBADA + RPM del visor
+│   ├── links/states.ts             ← ★ POS 10A/14: vigencia/estados R5 (prioridad rechazado>aprobado>vencido>por_vencer>vigente) + URL canónica + wa.me share/aprobación R6/R8 + código APROBADA + RPM del visor
 │   ├── links/asset-encode.ts       ← ★ POS 10A: re-encode client-only (PNG ≤300 KB escalera 1024/768/512 con alpha) + original ≤10 MB
 │   ├── links/view-shape.ts         ← ★ POS 10A: buildPublicView (jsonb ⇒ vista del visor: re-arbitra contratos, presets válidos, gating por asset, legado 1:1)
+│   ├── links/responses.ts          ← ★ POS 14: PURO — 280 code points, normalización, validación decisión/canal, fila pública, badges, fecha AR con huso fijo, textos/hrefs WhatsApp
+│   ├── links/server.ts             ← ★ POS 14: carga pública service-role, existencia de variante/label congelado, email del taller, WhatsApp disponible
+│   ├── links/response-service.ts   ← ★ POS 14: orquestación RPC + email fail-soft + estado `*_email_*` + href de WhatsApp + alias legacy
+│   ├── links/mail.ts               ← ★ POS 14: avisos `decision_cliente`/`observacion_cliente` (HTML escapado, sin datos del cliente, Idempotency-Key)
 │   ├── legal/config.ts            ← ★ POS 12: versiones, identidad `LEGAL_ENTITY_*`, metadata/canonical, leyenda de precio
 │   ├── legal/links.ts             ← ★ POS 12: rutas públicas client-safe (footer en componentes cliente)
 │   ├── legal/requests.ts          ← ★ POS 12: núcleo PURO — códigos ARR/BAJA/PRIV, validación, ventana 10 días, rate limit, token SHA-256 24 h, gate de checkout, escape/honeypot/Origin
@@ -384,7 +403,8 @@ simulador-mates/
 │   │   ├── 0006_price_pro_36799.sql     ← POS 10B: precio vigente ARS 36.799/mes en pricing_config
 │   │   ├── 0007_payment_sync.sql        ← POS 11: last_checkout_at/last_synced_at + applied_at/email_*/source + backfill 10B + índices (aplicada 23-nov)
 │   │   ├── 0008_legal.sql               ← POS 12: legal_acceptances (evidencia versionada, RLS owner) + legal_requests (service-role) + índices + helper `legal_find_user_by_email` (aplicar a mano)
-│   │   └── 0009_refunds_chargebacks.sql ← POS 13: estados de pago + refunded_amount/status_detail/updated_at + `revocada`/closure_reason/closed_at + payment_adjustments append-only (RLS owner select) (aplicar a mano)
+│   │   ├── 0009_refunds_chargebacks.sql ← POS 13: estados de pago + refunded_amount/status_detail/updated_at + `revocada`/closure_reason/closed_at + payment_adjustments append-only (RLS owner select) (aplicar a mano)
+│   │   └── 0010_link_responses.sql      ← POS 14: link_responses (decisión/observación única, constraints, RLS service-role-only) + RPCs `link_register_decision`/`link_register_observation` (⏳ aplicar a mano en TEST)
 │   └── ops/
 │       ├── 0901_backfill_user_rows.sql ← reparación: fila faltante en public.users (cuenta nacida pre-migración)
 │       ├── 0910_base_grants.sql        ← grants ampliados users/projects/pricing (aplicada 04-nov)
@@ -409,6 +429,9 @@ simulador-mates/
 │   ├── unit/compose-engraving.test.ts ← 1 test: pipeline compartido del grabado (escena ⇄ ficha)
 │   ├── unit/legal-core.test.ts    ← 25 tests pos 12: códigos limpios, validación (email/nombre/fecha/mensaje/declaraciones), ventana 10 días AR, rate limit email/IP, token 64 hex + SHA-256 + TTL, gate de checkout versionado, escape/mask, honeypot/Origin
 │   ├── unit/payments-refunds.test.ts ← 15 tests pos 13: clamp/acumulado, estado autoritativo (approved con devolución ⇒ parcial/total), merge monótono, ciclo vigente, impacto Q1–Q4, `revocada` ⇒ free, transiciones y carrera refund/approved
+│   ├── unit/links-responses.test.ts ← 22 tests pos 14: 280 code points (emoji/acentos), normalización, decisión/canal, fila pública, badges/fecha AR, textos/hrefs WhatsApp
+│   ├── unit/links-mail.test.ts      ← 6 tests pos 14: asuntos, HTML escapado, motivo/canal/fecha, sin datos del cliente, Idempotency-Key
+│   ├── qa/link-responses.qa.test.ts ← QA de integración pos 14 (⏳ espera migración `0010`): RPCs, inmutabilidad, doble escritura, 280, idempotencia, emails capturados, legacy, RLS anon
 │   └── unit/virola.test.ts        ← 31 tests: R1 clamps/rangos dinámicos, R2 métricas, R3 cascada <100ms, R4/R5 guías coplanares, R6 triada, R7 auto-giro
 ├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
 ├── three/visual-skeleton.ts       ← constantes visuales pos 4 + LATHE_SEAM_PHI_START
@@ -746,6 +769,48 @@ taller + alerta operativa a `LEGAL_EMAIL`/`EMAIL_FROM`, sin prometer plazos.
   dinero, pero el impacto en el plan sigue la regla del ciclo vigente; el
   anti-resurrección no bloquea la auditoría del reembolso.
 
+### Posición 14 — Decisión y observaciones del cliente (según `spec_decision_y_observaciones_del_cliente.md`)
+
+La posición 14 cierra el lazo comercial del link: el cliente ya no solo aprueba
+por WhatsApp, también puede **rechazar con motivo** y dejar **una observación**
+antes o después de aprobar. No reimplementa el visor ni la vigencia de 10A:
+extiende la barra inferior y agrega una tabla de respuesta única por link con
+RPCs transaccionales. La decisión es inmutable y global (otro dispositivo ve la
+misma); la observación es independiente y no se consume al aprobar.
+
+| Ref | Requisito | Implementación | Estado |
+| :-- | :-- | :-- | :-- |
+| R14.1 | Una decisión inmutable por link, global/server-side | `link_responses` PK `link_id` + `link_register_decision` con `select ... for update`; aprobar/rechazar dos veces ⇒ `409 DECISION_TAKEN` | ✅ |
+| R14.2 | La variante debe existir en el payload congelado | `linkVariantExists` + chequeo de la RPC contra `payload->variants`; el label del email/WhatsApp sale del payload | ✅ |
+| R14.3 | Rechazo con observación obligatoria 1–280 | RPC devuelve `OBSERVATION_REQUIRED`; el route responde `400 {error:'BAD_REQUEST', reason:'observation_required'}`; motivo nuevo o reutilizado en la misma fila | ✅ |
+| R14.4 | Una observación por link, sola o como motivo; aprobar no la consume | `link_register_observation`; rechazo reutiliza la existente; segundo texto distinto ⇒ `409 OBSERVATION_TAKEN`; mismo texto/canal ⇒ `200 already` | ✅ |
+| R14.5 | Canales email/WhatsApp | Dos botones; email al email de la cuenta del taller (`auth.admin.getUserById`) sin datos del cliente; WhatsApp con `wa.me` y texto pre-armado | ✅ |
+| R14.6 | Guardar antes de enviar; email fail-soft | La RPC persiste primero; `sendLinkDecisionMail`/`sendLinkObservationMail` marcan `*_email_sent_at` o `*_email_error`; si falla, la UI ofrece WhatsApp y el panel conserva el estado | ✅ |
+| R14.7 | Idempotencia sin duplicar fila ni email | Mismo payload ⇒ `200 already:true`; `Idempotency-Key` `link-decision:{id}`/`link-observation:{id}`; reintento no reenvía | ✅ |
+| R14.8 | UI del cliente | `client-viewer.tsx`: aprobar/rechazar separados, textarea obligatorio en rechazo, contador `n/280`, foco al primer error, targets ≥44 px, tarjetas de solo lectura y fallback | ✅ |
+| R14.9 | Vigencia/existencia | `loadPublicLink` ⇒ `410 LINK_EXPIRED` / `404 NOT_FOUND`; la página vencida no muestra contenido; sin escrituras | ✅ |
+| R14.10 | Panel del taller | `GET /api/links` devuelve decisión/observación/canales/emails; `link-modal.tsx` muestra `RECHAZADO`, `CON OBSERVACIÓN`, fecha AR, canal y estado del email; prioridad de badge `rechazado > aprobado > vencido` | ✅ |
+| R14.11 | Seguridad | `link_responses` sin policies ni grants para `anon`/`authenticated`; RPCs `security definer` con EXECUTE solo `service_role`; el email no incluye contacto del cliente | ✅ |
+| R14.12 | Emails legítimos + escape | `decision_cliente`/`observacion_cliente` en `MailKind` y en la lista cerrada R10; HTML escapado; asunto sin saltos; `Reply-To` no se setea | ✅ |
+| R14.13 | Legacy `link_approvals` | La última aprobación vieja cuenta como decisión aprobada y bloquea una nueva; la observación sigue disponible una vez; `/approvals` queda como alias sobre la RPC | ✅ |
+| R14.14 | Límite real de 280 code points | `[...text].length` en el cliente/route + `char_length` en PostgreSQL; normaliza `\r\n`, controles y 3+ saltos; emojis/acentos cuentan como code points | ✅ |
+| §5 | Migración | `supabase/migrations/0010_link_responses.sql` (tabla + constraints + RLS service-role-only + 2 RPCs; idempotente, sin DROP) | ⏳ pendiente de aplicar a mano en TEST |
+| §9 | QA | `links-responses.test.ts` (22) + `links-mail.test.ts` (6) + `tests/qa/link-responses.qa.test.ts`; typecheck y build verdes | ✅ unitario · ⏳ integración |
+
+**Decisiones Q1–Q8 (v0.2) aplicadas:** una sola vez global/server-side; rechazo con
+motivo obligatorio; aprobar y observar independientes; 280 code points; dos botones
+(email/WhatsApp); email al taller sin datos del cliente; panel con badge, observación,
+fecha y canal; spec primero y revisión antes de implementar. **Fuera de alcance:**
+chat, adjuntos, email al cliente, cambio de decisión y reapertura del mismo link.
+
+**Desviaciones declaradas:** (1) el contrato de error usa
+`400 {error:'BAD_REQUEST', reason:'observation_required'}` en vez del código plano
+`OBSERVATION_REQUIRED` del borrador, para seguir el estilo de las rutas existentes;
+(2) la aprobación legacy de `link_approvals` no se backfillea a `link_responses`:
+se interpreta al leer y la RPC la usa como bloqueo, así el histórico queda intacto;
+(3) el email de rechazo incluye el motivo y los dos canales (observación y aviso),
+aunque el canal del aviso sea el mismo, porque el taller necesita el contexto completo.
+
 ---
 
 ## 6. Cómo fluye en runtime (recorrido de un usuario real)
@@ -868,10 +933,10 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–13 adentro) |
-| `npm run test` (Vitest) | ✅ **366/366** — 8 de matriz R2 + 23 de branding + 13 de catálogo (+`linkDraft`) + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + 16 de textos ficha pos 9 + 24 de snapshot ficha pos 9 + 26 de links core + 10 de visor pos 10A + **32 de pagos core + 11 de webhook/firma pos 10B + 22 de sync pos 11 + 25 de legal pos 12 + 15 de reembolsos/contracargos pos 13 + 6 de origin/back_url pos 13** + 3 de perfil/cuenta + 1 del compositor compartido |
-| `npm run test:qa` (integración) | ✅ **12/12** contra Supabase TEST + MP TEST + Next dev (`docs/qa-posicion-13.md`): constraints/RLS, parcial, total vigente, ciclo pasado, contracargo + reverso, carrera refund/approved, usuario ajeno, fallo de cancelación (Q6), “Reactivar PRO”, webhook HTTP y Resend real |
-| `npm run build` (producción) | ✅ **30 rutas** — la posición 13 no suma rutas: extiende `/perfil`, `/editor?paywall=1`, `/api/billing/checkout` y `/api/webhooks/mercadopago`; se mantienen las 5 páginas públicas de POS 12 y las 4 APIs legales; `/editor` 30.1 kB / 228 kB First Load y `/perfil` 14 kB / 204 kB (Centro de Suscripción server-side con RLS del dueño); `/v/[linkId]` 6.52 kB / 131 kB (Modo Cliente por `dynamic ssr:false`); el motor 3D, pdf-lib y los módulos server-only siguen fuera de los bundles cliente |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–14 adentro) |
+| `npm run test` (Vitest) | ✅ **394/394** — 8 de matriz R2 + 23 de branding + 13 de catálogo (+`linkDraft`) + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + 16 de textos ficha pos 9 + 24 de snapshot ficha pos 9 + 26 de links core + 10 de visor pos 10A + **32 de pagos core + 11 de webhook/firma pos 10B + 22 de sync pos 11 + 25 de legal pos 12 + 15 de reembolsos/contracargos pos 13 + 6 de origin/back_url pos 13 + 22 de respuestas pos 14 + 6 de emails pos 14** + 3 de perfil/cuenta + 1 del compositor compartido |
+| `npm run test:qa` (integración) | ✅ **12/12** de la posición 13 contra Supabase TEST + MP TEST + Next dev (`docs/qa-posicion-13.md`): constraints/RLS, parcial, total vigente, ciclo pasado, contracargo + reverso, carrera refund/approved, usuario ajeno, fallo de cancelación (Q6), “Reactivar PRO”, webhook HTTP y Resend real. ⏳ La posición 14 tiene `tests/qa/link-responses.qa.test.ts` escrito, esperando aplicar `0010` en Supabase TEST |
+| `npm run build` (producción) | ✅ **32 rutas** — la posición 14 suma `POST /api/links/[linkId]/decision` y `POST /api/links/[linkId]/observations` (y reconvierte `/approvals` en alias); se mantienen las 5 páginas públicas de POS 12 y las 4 APIs legales; `/editor` 30.3 kB / 229 kB First Load y `/perfil` 14 kB / 204 kB (Centro de Suscripción server-side con RLS del dueño); `/v/[linkId]` 9.47 kB / 134 kB suma la UI de decisión/observación (Modo Cliente por `dynamic ssr:false`); el motor 3D, pdf-lib y los módulos server-only siguen fuera de los bundles cliente |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
@@ -893,6 +958,7 @@ select column_name from information_schema.columns
 | **QA Posición 11** (22–23-nov, técnica) | Núcleo puro ✅ (**18 tests** en `payments-sync.test.ts`: TTL 60 s/6 h/20 s manual, `retryAfterSeconds`, ventana `watermark − 1 día` con bordes exactos, watermark `last_checkout_at → created_at → checkout_intent`, selección de faltantes/reparables en orden ASC, exclusión de otro usuario/pending/viejos/ya aplicados/refunded, auditoría solo de viejos ausentes, `decideExistingPayment` (applied/repair/ignore), validación `user_mismatch`/`unsupported_status`/`currency_not_ars`/`amount_invalid`/`invalid_date`/`preapproval_mismatch` y `old=true`, gracia de rechazo desde `date_last_updated` + **regresión 23-nov** de la URL de `/preapproval/search`: MP devuelve 400 con `sort` + `criteria` separados y exige `sort=date_created:desc`; el body del error ahora se loguea) ✅ · `applyPayment`/`applyPreapproval` extraídos del webhook ⇒ **un solo camino** para webhook y sync (dedupe `mp_payment_id`, CAS por estado, `applied_at` recién con ciclo+plan consistentes, claim de email `email_claimed_at` 5 min / 3 intentos / idempotency key) ✅ · sync con lease CAS y presupuestos 8 s on-read / 30 s manual; `?pago=success\|pending` fuerza, el resto respeta TTL; el editor queda en modo local ✅ · preapproval: adopta el más nuevo **solo** si el local es NULL y filtra `external_reference` propio; cancelled/paused ⇒ cierre programado sin duplicar email (CAS) ✅ · anti-resurrección: pagos fuera de la ventana se insertan como auditoría (`source='sync'`) sin mutar plan; los emails de auditados no se reintentan ✅ · endpoint `POST /api/billing/refresh` con contrato 401/503/429/502/200 y `Retry-After`; UI con fetch real, spinner, countdown, `aria-live`, constancia, "Verifico de nuevo" siempre sin PRO y soporte tras 2 intentos (SLA 24 h) ✅ · migración `0007` con backfill de filas 10B para que el primer sync no re-aplique históricos ni reenvíe recibos viejos ✅ · build 21 rutas sin leaks server-only ✅. **Estado:** `0007` aplicada (23-nov) y fix del 400 de `/preapproval/search` en el working tree; QA con MP real en curso (checklist §10) |
 | **QA Posición 12** (23-nov, técnica) | Núcleo puro ✅ (**25 tests** en `legal-core.test.ts`: códigos `ARR/BAJA/PRIV-YYYYMMDD-XXXX` sin caracteres ambiguos, validación de email/nombre/fecha/mensaje/declaraciones, ventana de 10 días corridos con calendario AR, rate limit 1/email/5 min + 5/IP/hora, token de 64 hex + SHA-256 + TTL 24 h, gate de checkout versionado, escape/mask y honeypot/Origin) ✅ · páginas públicas fuera del middleware, con identidad por envs y fallback visible, metadata/versión/fecha, print CSS y `aria-live` ✅ · formularios públicos con honeypot y respuestas 400/429/503 honestas; acuse en pantalla + email y alerta interna ✅ · baja con doble opt-in: el POST no cancela, token de un solo uso, verificación del email de la cuenta y del `external_reference`, cancelación vía `applyPreapproval` (`source:'legal'`, `suppressEmail`) y cola manual perezosa al vencer (sin `confirmed_at`, reenvío con el mismo código) ✅ · checkout: checkbox desmarcado, evidencia `terms`+`privacy` con IP/user-agent **antes** del preapproval, `409 LEGAL_NOT_ACCEPTED`/`409 LEGAL_VERSION_CHANGED`/`503 EVIDENCIA_NO_DISPONIBLE` fail-closed ✅ · `/perfil`: banner no bloqueante, bloque “Tus derechos”, canales/horario y lectura de aceptaciones con RLS del dueño ✅ · migración `0008_legal.sql` idempotente + helper `legal_find_user_by_email` ✅ · **smoke de producción (23-nov)**: `/terminos`, `/privacidad`, `/arrepentimiento`, `/baja` y `/baja/confirmar` ⇒ 200 sin sesión; `POST /api/legal/arrepentimiento` vacío con Origin propio ⇒ 400 y con Origin ajeno ⇒ 403 ✅. **Estado 23-nov:** `0008` aplicada; pendientes identidad legal, QA end-to-end con Resend/MP reales y firma del abogado. |
 | **QA Posición 13** (23-nov, técnica) | Núcleo puro ✅ (**15 tests** en `payments-refunds.test.ts`: `clampRefundedAmount` 0…`amount`, `effectiveRefundedAmount` desde `transaction_amount_refunded`/`refunds`, `resolveRefundStatus` approved+devolución ⇒ parcial/total, merge monótono `charged_back > refunded > partially_refunded > approved/rejected`, `isCurrentCyclePayment` solo con el último pago que financia (`approved`/`partially_refunded`), impacto `revoke`/`partial_keep`/`audit` para total/parcial/ciclo pasado, `revocada` ⇒ `free` y transiciones R11) ✅ · webhook: topics `payment`/`chargeback`/`topic_chargebacks_wh`/`chargebacks`, firma HMAC fail-close y gates en orden (firma → `data.id` → pull → usuario → dedupe → transición → email) ✅ · `applyRefundEvent`: insert/update del pago con CAS y merge monótono, `payment_adjustments` append-only con dedupe `(kind, mp_source_id)`/`(mp_payment_id, kind, occurred_at)`, revocación solo si el pago es el ciclo vigente y la suscripción está viva, cancelación del preapproval + alerta si MP falla, email al taller solo con `newAdjustments > 0` e impacto ≠ audit, reintento ⇒ 200 sin duplicar ✅ · carrera refund/approved: el `approved` posterior cae en `refund_wins`/`already_applied` y no activa PRO ✅ · aislamiento: `external_reference` ajeno o `mp_payment_id` de otro usuario ⇒ `payment_owner_mismatch` con log y cero mutaciones ✅ · sync: incluye refund-like fuera de la ventana R12.4 y no adopta preapproval con `revocada` ✅ · UI: badges `REEMBOLSADO`/`CONTRACARGO`, banner parcial solo del pago que financia, historial original+devuelto y “Reactivar PRO” ⇒ `/editor?paywall=1` con checkout nuevo ✅ · checkout permite `revocada`, cancela el preapproval viejo si sigue vivo y limpia `closure_reason`/`closed_at`/`grace_expires_at`/`period_end` al sembrar ✅ · migración `0009` idempotente (CHECK por definición en `pg_constraint`, sin `DROP TABLE`) ✅ · **366/366 tests, typecheck 0, build 30 rutas** ✅ · **QA de integración 12/12** (23-nov, Supabase TEST + MP TEST): constraints `23514`/`23502`, parcial, total vigente, ciclo pasado, contracargo + reverso, carrera refund/approved, usuario ajeno, fallo de cancelación Q6, “Reactivar PRO”, webhook HTTP (403/502/200) y Resend real ✅. Los pagos semilla son `live_mode:true`: el fold se validó con eventos sintéticos y **no se movió dinero real**; queda un end-to-end con un pago nuevo `live_mode:false` (`docs/qa-posicion-13.md`). |
+| **QA Posición 14** (23-nov, técnica) | Núcleo puro ✅ (**22 tests** en `links-responses.test.ts` + **6** en `links-mail.test.ts`): 280 code points con emojis/acentos, normalización `\r\n`/controles/saltos, validación decisión/canal, `toPublicLinkResponse` tolerante, badges/fecha AR con huso fijo, textos/hrefs WhatsApp de rechazo/observación, emails escapados sin datos del cliente e Idempotency-Key ✅ · rutas públicas: `POST decision` (aprobado sin observación/canal, rechazo con motivo 1..280 y canal, `400 {error:'BAD_REQUEST', reason}` exacto, 404/410, 409 `DECISION_TAKEN`) y `POST observations` (observación sola/antes/después, 409 `OBSERVATION_TAKEN`, `WHATSAPP_UNAVAILABLE` sin número) ✅ · UI: tarjetas `APROBADO`/`RECHAZADO`, contador, foco al primer error, targets ≥44 px, solo-lectura y fallback email→WhatsApp ✅ · panel: `GET /api/links` con decisión/observación/canales/emails y badge `RECHAZADO`/`CON OBSERVACIÓN` ✅ · migración `0010` idempotente (tabla + constraints + RLS service-role-only + RPCs `security definer`) ✅ · **394/394 tests, typecheck 0, build 32 rutas** ✅ · **QA de integración pendiente:** aplicar `0010` a mano en Supabase TEST y correr `tests/qa/link-responses.qa.test.ts` (RPCs, doble escritura, 280, idempotencia, emails capturados, legacy, RLS anon) |
 | Git | ✅ `21054e0` docs 10B (demo visual del titular: alta hospedada + binding post-alta inmutable) · `9b13e7f` docs 10B (titular consume la salida limpia + CTA en vivo — 502 honesto en test) · `d476cb3` docs 10B (QA en vivo con sandbox MP: evidencias QA1–QA5 + desviaciones) · `4136e36` fix 10B (el 400 de MP imprime las `cause` exactas) · `ab90418` fix 10B (`grace_expires_at` en la 0005 — schema del ciclo faltante) · `43e27cd` **posición 10B** (dunning al-vuelo: reconcile en editor + perfil con corte de ventanas y realineo de plan) · `04273e3` 10B paso 4 (Centro de Suscripción: tarjeta + historial con constancia + Portal MP) · `e56ca32` 10B paso 3 (webhook blindado `/api/webhooks/mercadopago` + mailer Resend) · `9c31f79` 10B paso 2 (Checkout Pro: wrapper REST MP + `POST /api/billing/checkout` + paywall con CTA real) · `8bf0d25` 10B paso 1 (núcleo puro de pagos + migración 0005 + envs MP/Resend) · `4f35790` fix 10A (aprobación pública sin RETURNING — select de anon revocado por diseño) · `3782470` fix 10A (grants service-role projects/links/link_approvals + log `[links ownership]`) · `7d81e73` **posición 10A** (enlace comercial compartible + Modo Cliente: variantes A/B/C del mismo diseño, publish inmutable versionado + Storage re-encodado, aprobación R6 ANTES de wa.me, visor `/v/[linkId]` con crossfade ≤300 ms) · `b385c00` 10A paso 3 (rutas API links + service-role — titular) · `676fefa` 10A paso 2 (identity/payload/estados + migración 0004 — titular) · `094e73b` **posición 9** (ficha: modal #quoteModal + PNG HD 2160 + PDF A4 + Foto HD + ticket verificar + registro QA) · `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
@@ -924,9 +990,31 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
+### Posición 14 — implementación cerrada, QA pendiente de migración (23-nov-2026)
+
+La implementación está **verde** (394/394 tests unitarios, typecheck 0, build de
+producción con 32 rutas). Falta:
+
+1. ⏳ **Aplicar `0010_link_responses.sql` a mano** en el SQL Editor de Supabase TEST
+   (no hay `DATABASE_URL`): tabla `link_responses`, constraints, RLS
+   service-role-only y RPCs `link_register_decision`/`link_register_observation`.
+   Verificar con las consultas del pie de la migración (`service_ok=true`,
+   `anon_no=false`).
+2. ⏳ **Correr el QA de integración** `tests/qa/link-responses.qa.test.ts` con
+   `QA_ALLOW_MUTATIONS=1`: una decisión + doble escritura legacy, rechazo con
+   motivo/280, observación sola/antes/después, idempotencia, email capturado,
+   fallback sin WhatsApp, legacy `link_approvals`, 410/404 y RLS anon.
+3. **Revisar el visor real en móvil:** aprobar/rechazar, contador `n/280`, foco al
+   primer error, teclado, targets ≥44 px y tarjetas de solo lectura.
+4. **Email real con Resend:** confirmar asunto/cuerpo de `decision_cliente` y
+   `observacion_cliente`, que el HTML escape el motivo y que no viaje ningún dato
+   de contacto del cliente.
+5. **Producción:** aplicar `0010` antes del deploy. Sin la tabla el visor sigue en
+   modo 10A (fail-soft), pero las rutas nuevas responden `503 UNAVAILABLE`.
+
 ### Posición 13 — cerrada con QA de integración (23-nov-2026)
 
-La implementación está **verde** (366/366 tests unitarios, typecheck 0, build de producción
+La implementación quedó **verde en ese corte** (366/366 tests unitarios, typecheck 0, build de producción
 con 30 rutas) y la migración `0009_refunds_chargebacks.sql` está **aplicada** en Supabase
 (23-nov). El **QA de integración 12/12** contra Supabase TEST + MP TEST está documentado en
 `docs/qa-posicion-13.md` y verificado de punta a punta sobre la base real:
@@ -965,7 +1053,7 @@ preapprovals fueron reales. Queda un end-to-end 100 % real con un pago nuevo
 
 ### Posición 12 — cierre y QA pendiente (23-nov-2026)
 
-La implementación está **verde** (366/366 tests, typecheck 0, build de producción con 30
+La implementación quedó **verde en ese corte** (366/366 tests, typecheck 0, build de producción con 30
 rutas) y la migración `0008_legal.sql` está **aplicada** en Supabase (23-nov). Falta:
 
 1. ✅ **`0008_legal.sql` aplicada** a mano en el SQL Editor. Verificado por el checkout

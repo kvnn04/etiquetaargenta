@@ -16,6 +16,7 @@ import {
 } from '@/lib/links/payload';
 import { generateUniqueLinkId } from '@/lib/links/identity';
 import { canonicalLinkUrl, LINK_TTL_MS, whatsappShareHref, whatsappShareText } from '@/lib/links/states';
+import { toPublicLinkResponse, type LinkResponseRow } from '@/lib/links/responses';
 
 /* ============================================================================
  * /api/links — PUBLICADOR DE ENLACES COMERCIALES (posición 10A)
@@ -429,17 +430,49 @@ export async function GET(request: NextRequest) {
     perLink.set(ap.link_id, acc);
   }
 
+  /* Posición 14: decisión + observación por link. Fail-soft: si la migración
+   * 0010 todavía no se aplicó, el panel sigue mostrando el badge legacy. */
+  const responses = linkIds.length
+    ? await service
+        .from('link_responses')
+        .select(
+          'link_id, decision, decision_variant_id, decided_at, decision_channel, decision_email_sent_at, decision_email_error, observation, observed_at, observation_channel, observation_email_sent_at, observation_email_error',
+        )
+        .in('link_id', linkIds)
+    : { data: [] as LinkResponseRow[], error: null };
+  if (responses.error) {
+    console.error('[links responses]:', responses.error.message);
+  }
+  const responseByLink = new Map<string, LinkResponseRow>();
+  for (const row of (responses.data ?? []) as LinkResponseRow[]) {
+    if (row.link_id) responseByLink.set(row.link_id, row);
+  }
+
   return NextResponse.json({
     ok: true as const,
-    versions: (rows.data ?? []).map((r) => ({
-      linkId: r.link_id,
-      version: r.version,
-      createdAt: r.created_at,
-      expiresAt: r.expires_at,
-      approvalsCount: perLink.get(r.link_id)?.count ?? 0,
-      lastApprovedVariant: perLink.get(r.link_id)?.lastVariant ?? null,
-      lastApprovedAt: perLink.get(r.link_id)?.lastAt ?? null,
-    })),
+    versions: (rows.data ?? []).map((r) => {
+      const response = toPublicLinkResponse(responseByLink.get(r.link_id));
+      return {
+        linkId: r.link_id,
+        version: r.version,
+        createdAt: r.created_at,
+        expiresAt: r.expires_at,
+        approvalsCount: perLink.get(r.link_id)?.count ?? 0,
+        lastApprovedVariant: perLink.get(r.link_id)?.lastVariant ?? null,
+        lastApprovedAt: perLink.get(r.link_id)?.lastAt ?? null,
+        decision: response?.decision ?? null,
+        decisionVariantId: response?.decisionVariantId ?? null,
+        decidedAt: response?.decidedAt ?? null,
+        decisionChannel: response?.decisionChannel ?? null,
+        decisionEmailSentAt: response?.decisionEmailSentAt ?? null,
+        decisionEmailError: response?.decisionEmailError ?? null,
+        observation: response?.observation ?? null,
+        observedAt: response?.observedAt ?? null,
+        observationChannel: response?.observationChannel ?? null,
+        observationEmailSentAt: response?.observationEmailSentAt ?? null,
+        observationEmailError: response?.observationEmailError ?? null,
+      };
+    }),
   });
 }
 

@@ -144,7 +144,10 @@ export interface NextServer {
   stop: () => Promise<void>;
 }
 
-export async function startNextServer(port: number): Promise<NextServer> {
+export async function startNextServer(
+  port: number,
+  envOverrides: Record<string, string> = {},
+): Promise<NextServer> {
   const nextBin = path.resolve(process.cwd(), 'node_modules/next/dist/bin/next');
   // MP rechaza `http://localhost:...` como back_url ("must be a valid URL",
   // verificado 23-nov-2026). Next dev usa `nextUrl.origin = localhost` por
@@ -154,6 +157,7 @@ export async function startNextServer(port: number): Promise<NextServer> {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      ...envOverrides,
       NODE_ENV: 'development',
       // El .env de QA no configura soporte: el QA del contracargo necesita
       // ejercitar el CTA "Contactar soporte" sin inventar un canal real.
