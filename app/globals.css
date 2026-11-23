@@ -39,3 +39,103 @@ body {
   background: rgba(201, 170, 118, 0.25);
   border-radius: 9999px;
 }
+
+/* --------------------------------------------------------------------------
+ * Páginas legales (posición 12): lectura larga, foco visible y contraste.
+ * Sin dependencia de @tailwindcss/typography: el proyecto no lo instala.
+ * ------------------------------------------------------------------------ */
+.legal-prose {
+  max-width: 75ch;
+  margin-inline: auto;
+  color: var(--cream);
+}
+.legal-prose > header + * {
+  margin-top: 1.5rem;
+}
+.legal-prose h2 {
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--cream);
+}
+.legal-prose h3 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--cream);
+}
+.legal-prose p {
+  margin-top: 0.6rem;
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  color: #c7c2ba;
+}
+.legal-prose ul,
+.legal-prose ol {
+  margin-top: 0.65rem;
+  padding-left: 1.3rem;
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  color: #c7c2ba;
+}
+.legal-prose ul { list-style: disc; }
+.legal-prose ol { list-style: decimal; }
+.legal-prose li { margin-top: 0.35rem; }
+.legal-prose li::marker { color: rgba(201, 170, 118, 0.8); }
+.legal-prose strong { color: var(--cream); font-weight: 650; }
+.legal-prose a {
+  color: var(--gold-soft);
+  text-decoration: underline;
+  text-decoration-color: rgba(231, 197, 142, 0.35);
+  text-underline-offset: 3px;
+}
+.legal-prose a:hover { color: var(--gold); }
+.legal-prose a:focus-visible,
+.legal-prose button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.legal-prose code,
+.legal-prose .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+.legal-note {
+  margin-top: 2.25rem !important;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+  font-size: 0.6875rem !important;
+  line-height: 1.7 !important;
+  color: #8a857c !important;
+}
+
+/* Impresión: la página legal sale en claro y sin navegación. */
+@media print {
+  :root {
+    color-scheme: light;
+    --background: #ffffff;
+    --panel: #ffffff;
+    --panel-soft: #ffffff;
+    --line: #d6d3d1;
+    --cream: #1c1917;
+  }
+  body { background: #fff !important; color: #1c1917 !important; }
+  header nav,
+  footer,
+  .no-print { display: none !important; }
+  .legal-prose,
+  .legal-prose p,
+  .legal-prose ul,
+  .legal-prose ol,
+  .legal-prose li,
+  .legal-prose h1,
+  .legal-prose h2,
+  .legal-prose h3,
+  .legal-prose strong { color: #1c1917 !important; }
+  .legal-prose a { color: #1c1917 !important; text-decoration: underline; }
+  .legal-prose { max-width: none; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 0.65em; color: #57534e; }
+}

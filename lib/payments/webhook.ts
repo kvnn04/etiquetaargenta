@@ -75,7 +75,7 @@ export function verifyMpSignature(input: {
 /* Evento entrante: RUTA× (nueva form) × topic/id (query form legada)          */
 /* -------------------------------------------------------------------------- */
 
-export type MpWebhookKind = 'payment' | 'preapproval' | 'ignored';
+export type MpWebhookKind = 'payment' | 'preapproval' | 'chargeback' | 'ignored';
 
 export interface MpWebhookEvent {
   kind: MpWebhookKind;
@@ -92,6 +92,13 @@ export interface MpWebhookEvent {
 const isPreapprovalTopic = (topic: string): boolean =>
   topic === 'preapproval' || topic === 'subscription_preapproval';
 
+/**
+ * Topics de contracargo (R11.1/§3.4): MP usa `chargeback` en la API y
+ * `topic_chargebacks_wh` en el panel. Ambos apuntan a `/v1/chargebacks/{id}`.
+ */
+const isChargebackTopic = (topic: string): boolean =>
+  topic === 'chargeback' || topic === 'topic_chargebacks_wh' || topic === 'chargebacks';
+
 /** Nueva forma MP: POST JSON `{ type|topic, data:{ id } }`; legada: `?topic=&id=`. */
 export function parseWebhookEvent(payload: unknown, searchParams: URLSearchParams): MpWebhookEvent {
   // Query form (webhooks legados o QA manual con curl):
@@ -100,6 +107,7 @@ export function parseWebhookEvent(payload: unknown, searchParams: URLSearchParam
   if (qTopic && qId) {
     if (qTopic === 'payment') return { kind: 'payment', resourceId: qId };
     if (isPreapprovalTopic(qTopic)) return { kind: 'preapproval', resourceId: qId };
+    if (isChargebackTopic(qTopic)) return { kind: 'chargeback', resourceId: qId };
     return { kind: 'ignored', resourceId: qId };
   }
 
@@ -107,12 +115,14 @@ export function parseWebhookEvent(payload: unknown, searchParams: URLSearchParam
     | { type?: string; topic?: string; action?: string; data?: { id?: unknown } | unknown[] }
     | null;
   const type = body?.type ?? body?.topic;
-  // R7: eventos tratados — payment.updated y preapproval/subscription_preapproval
-  // (el resto se logea). `subscription_authorized_payment` es otro recurso
+  // R7/R11: eventos tratados — payment, preapproval/subscription_preapproval y
+  // chargeback/topic_chargebacks_wh (el resto se logea).
+  // `subscription_authorized_payment` es otro recurso
   // (/authorized_payments/{id}) y este flujo planless-pending no lo necesita.
   const id = body?.data && !Array.isArray(body.data) ? body.data.id : undefined;
   const resourceId = typeof id === 'string' || typeof id === 'number' ? String(id) : null;
   if (type === 'payment') return { kind: 'payment', resourceId };
   if (type && isPreapprovalTopic(type)) return { kind: 'preapproval', resourceId };
+  if (type && isChargebackTopic(type)) return { kind: 'chargeback', resourceId };
   return { kind: 'ignored', resourceId };
 }

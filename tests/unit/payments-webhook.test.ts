@@ -125,6 +125,16 @@ describe('ruteo del evento (body JSON nuevo + query legada)', () => {
       kind: 'preapproval',
       resourceId: '2c9prod',
     });
+    expect(parseWebhookEvent({ type: 'chargeback', data: { id: 'cb-1' } }, sp(''))).toEqual({
+      kind: 'chargeback',
+      resourceId: 'cb-1',
+    });
+    expect(
+      parseWebhookEvent({ topic: 'topic_chargebacks_wh', data: { id: 'cb-2' } }, sp('')),
+    ).toEqual({
+      kind: 'chargeback',
+      resourceId: 'cb-2',
+    });
     expect(parseWebhookEvent({ type: 'other', data: { id: 'x' } }, sp(''))).toEqual({
       kind: 'ignored',
       resourceId: 'x',
@@ -144,6 +154,10 @@ describe('ruteo del evento (body JSON nuevo + query legada)', () => {
     expect(parseWebhookEvent(null, sp('?topic=subscription_preapproval&id=2c9prod'))).toEqual({
       kind: 'preapproval',
       resourceId: '2c9prod',
+    });
+    expect(parseWebhookEvent(null, sp('?topic=chargeback&id=cb-3'))).toEqual({
+      kind: 'chargeback',
+      resourceId: 'cb-3',
     });
   });
 });

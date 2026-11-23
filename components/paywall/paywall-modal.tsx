@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   X,
   ShieldCheck,
@@ -16,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatArs } from '@/lib/payments/core';
+import { LEGAL_LINKS } from '@/lib/legal/links';
 
 /**
  * Modal Paywall (spec_autenticacion_y_modelo_freemium §4 + spec_pagos §4):
@@ -51,40 +53,67 @@ const ERROR_BY_CODE: Record<string, string> = {
   PAGOS_NO_CONFIGURADOS:
     'La caja de pagos aún no está configurada (faltan las credenciales de Mercado Pago).',
   MP_UNAVAILABLE: 'Mercado Pago no respondió — reintentá en unos minutos.',
+  EVIDENCIA_NO_DISPONIBLE:
+    'No pudimos registrar tu aceptación legal, así que no iniciamos el cobro. Reintentá en un rato.',
+  LEGAL_NOT_ACCEPTED: 'Marcá la aceptación de los Términos y la Política de Privacidad para pagar.',
+  LEGAL_VERSION_CHANGED:
+    'Actualizamos los documentos legales. Cerrá este paso, revisá las versiones vigentes y volvé a aceptar.',
 };
 
 export default function PaywallModal({
   open,
   price,
   priceError,
+  legalVersions,
   onClose,
 }: {
   open: boolean;
   price: PriceInfo | null;
   priceError: boolean;
+  /** Posición 12: versiones SERVER-SIDE (nunca se leen envs en el cliente). */
+  legalVersions: { terms: string; privacy: string };
   onClose: () => void;
 }) {
   const [phase, setPhase] = useState<CheckoutPhase>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  /* R13.12: checkbox SIEMPRE vacío y nunca premarcado. */
+  const [legalAccepted, setLegalAccepted] = useState(false);
   const router = useRouter();
 
-  /* Reabrir limpio: cada intento de pago arranca desde idle. */
+  /* Reabrir limpio: cada intento de pago arranca desde idle y sin aceptación. */
   useEffect(() => {
     if (!open) {
       setPhase('idle');
       setErrorMsg(null);
       setResendState('idle');
+      setLegalAccepted(false);
     }
   }, [open]);
 
   const startCheckout = useCallback(async () => {
+    if (!legalAccepted) {
+      setErrorMsg(ERROR_BY_CODE.LEGAL_NOT_ACCEPTED ?? null);
+      setPhase('error');
+      return;
+    }
     setPhase('starting');
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/billing/checkout', { method: 'POST' });
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legalAccepted: true,
+          termsVersion: legalVersions.terms,
+          privacyVersion: legalVersions.privacy,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { initPoint?: string; error?: string }
+        | null;
+
       if (res.ok) {
-        const body = (await res.json().catch(() => null)) as { initPoint?: string } | null;
         if (body?.initPoint) {
           // Checkout Pro: salida del app — MP hospeda el alta de tarjeta.
           setPhase('redirecting');
@@ -93,7 +122,6 @@ export default function PaywallModal({
         }
       }
       if (res.status === 409) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
         if (body?.error === 'EMAIL_NOT_VERIFIED') {
           setPhase('email'); // paso intermedio inline (§4)
           return;
@@ -102,8 +130,22 @@ export default function PaywallModal({
           setPhase('already_active'); // webhook tarde o página vieja
           return;
         }
+        if (body?.error === 'LEGAL_VERSION_CHANGED') {
+          /* R13.13: la versión cambió ⇒ hay que volver a aceptar la nueva,
+             nunca reutilizar el tilde de la versión anterior. */
+          setLegalAccepted(false);
+          setErrorMsg(ERROR_BY_CODE.LEGAL_VERSION_CHANGED ?? null);
+          setPhase('error');
+          router.refresh(); // trae las versiones vigentes del server
+          return;
+        }
+        if (body?.error === 'LEGAL_NOT_ACCEPTED') {
+          setLegalAccepted(false);
+          setErrorMsg(ERROR_BY_CODE.LEGAL_NOT_ACCEPTED ?? null);
+          setPhase('error');
+          return;
+        }
       }
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
       setErrorMsg(
         (body?.error && ERROR_BY_CODE[body.error]) ?? 'No pudimos iniciar el pago — reintentá.',
       );
@@ -112,7 +154,7 @@ export default function PaywallModal({
       setErrorMsg('No pudimos contactar la caja — revisá tu conexión y reintentá.');
       setPhase('error');
     }
-  }, []);
+  }, [legalAccepted, legalVersions, router]);
 
   const resendVerification = useCallback(async () => {
     setResendState('sending');
@@ -237,11 +279,64 @@ export default function PaywallModal({
           </div>
         ) : (
           <>
+            {/* R13.7/R13.12: aceptación EXPLÍCITA, sin premarcar. La evidencia
+                versionada se guarda server-side antes de crear el cobro. */}
+            <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-xl border border-line bg-black/20 px-3 py-3 text-[11px] leading-relaxed text-stone-300">
+              <input
+                type="checkbox"
+                checked={legalAccepted}
+                onChange={(event) => {
+                  setLegalAccepted(event.target.checked);
+                  if (errorMsg && (phase === 'error' || phase === 'idle')) {
+                    setErrorMsg(null);
+                    setPhase('idle');
+                  }
+                }}
+                aria-describedby="paywall-legal-detail"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[#b88a4e]"
+              />
+              <span>
+                Leí y acepto los{' '}
+                <Link
+                  href={LEGAL_LINKS.terms}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-gold-soft underline underline-offset-2 hover:text-gold"
+                >
+                  Términos y Condiciones
+                </Link>{' '}
+                (v{legalVersions.terms}) y la{' '}
+                <Link
+                  href={LEGAL_LINKS.privacy}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-gold-soft underline underline-offset-2 hover:text-gold"
+                >
+                  Política de Privacidad
+                </Link>{' '}
+                (v{legalVersions.privacy}) del Plan PRO.
+              </span>
+            </label>
+            <p id="paywall-legal-detail" className="mt-2 text-center text-[10px] leading-relaxed text-stone-600">
+              Suscripción mensual de renovación automática hasta que pidas la baja. Precio final en
+              ARS con impuestos incluidos. Podés arrepentirte dentro de los 10 días corridos y dar de
+              baja desde el{' '}
+              <Link
+                href={LEGAL_LINKS.cancellation}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-gold-soft"
+              >
+                Botón de Baja
+              </Link>
+              , sin login.
+            </p>
+
             <Button
               variant="green"
               size="lg"
-              className="mt-4 w-full"
-              disabled={!priceText || phase === 'starting'}
+              className="mt-3 w-full"
+              disabled={!priceText || !legalAccepted || phase === 'starting' || phase === 'redirecting'}
               onClick={startCheckout}
             >
               {phase === 'starting' && (
@@ -257,13 +352,16 @@ export default function PaywallModal({
               {(phase === 'idle' || phase === 'error') && <>Pagar Suscripción con Mercado Pago</>}
             </Button>
             {phase === 'error' && (
-              <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] text-red-400">
+              <p
+                role="alert"
+                className="mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] text-red-400"
+              >
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {errorMsg}
               </p>
             )}
             <p className="mt-3 text-center text-[10px] leading-relaxed text-stone-600">
               Cobro automático por tarjeta. Cancelable cuando quieras desde el Portal de Mercado
-              Pago.
+              Pago o desde el Botón de Baja de Servicio.
             </p>
           </>
         )}

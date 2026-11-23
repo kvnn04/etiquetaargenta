@@ -35,6 +35,7 @@ import DesignCard from '@/components/studio/design-card';
 import VariantsCard from '@/components/links/variants-card';
 import LinkModal from '@/components/links/link-modal';
 import AutoGiroBar from '@/components/studio/auto-giro-bar';
+import LegalFooter from '@/components/legal/legal-footer';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { DEV_DRAFT_KEY, loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
 import { useProjectPersistence } from '@/lib/projects/use-autosave';
@@ -130,16 +131,22 @@ function SaveChip({ dirty, lastSavedAt }: { dirty: boolean; lastSavedAt: string 
 export default function EditorShell({
   userId,
   profile,
+  legalVersions,
   devBypass = false,
+  initialPaywallOpen = false,
 }: {
   userId: string;
   profile: ShellProfile;
+  /** Posición 12 (R13.7/R13.13): versiones vigentes leídas SERVER-SIDE. */
+  legalVersions: { terms: string; privacy: string };
   /** DEV ONLY: sin sesión ni backend; el autosave vive en localStorage. */
   devBypass?: boolean;
+  /** Posición 13: “Reactivar PRO” abre el paywall normal en el editor. */
+  initialPaywallOpen?: boolean;
 }) {
   const [price, setPrice] = useState<PriceInfo | null>(null);
   const [priceError, setPriceError] = useState(false);
-  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(initialPaywallOpen);
   const [actionHint, setActionHint] = useState<string | null>(null);
   /* R7: estado del auto-giro — dispositivo solamente, NO se persiste. La
    * interacción sobre el lienzo (OrbitControls 'start') pausa el giro y queda
@@ -546,17 +553,19 @@ export default function EditorShell({
         </aside>
       </main>
 
-      <footer className="border-t border-line px-4 py-3 text-center text-[10px] leading-relaxed text-stone-600">
-        Posición 10A del plan: Enlace Comercial / Modo Cliente (publish congelado 30 días ·
-        variantes A/B/C · visor <span className="font-mono">/v/[linkId]</span> — fuente única:{' '}
-        <span className="font-mono">spec_ficha_comercial_interactiva_shareable_link.md</span>) ·
-        posición 9: Ficha Técnica (snapshot inmutable · PNG HD 2160 · PDF A4 · Foto HD —{' '}
-        <span className="font-mono">spec_detalle_del_modelo_en_ficha.md</span>) · posición 8:{' '}
-        <span className="font-mono">spec_autenticacion_y_modelo_freemium.md</span> · posición 7:{' '}
-        <span className="font-mono">spec_escala_y_alerta_de_desborde.md</span> · posición 6:{' '}
-        <span className="font-mono">spec_rotacion_archivo_svg_png.md</span> · posición 5:{' '}
-        <span className="font-mono">spec_seleccion_de_color.md</span>
-      </footer>
+      <div className="border-t border-line px-4 py-3" aria-label="Notas de implementación">
+        <p className="mx-auto max-w-3xl text-center text-[10px] leading-relaxed text-stone-600">
+          Posición 12: páginas legales y derechos del consumidor · Enlace Comercial / Modo Cliente
+          (publish congelado 30 días · variantes A/B/C · visor{' '}
+          <span className="font-mono">/v/[linkId]</span>) · Ficha Técnica (snapshot inmutable · PNG
+          HD 2160 · PDF A4 · Foto HD). Fuentes: <span className="font-mono">spec_paginas_legales.md</span>,{' '}
+          <span className="font-mono">spec_ficha_comercial_interactiva_shareable_link.md</span>,{' '}
+          <span className="font-mono">spec_detalle_del_modelo_en_ficha.md</span>.
+        </p>
+        <div className="mt-3">
+          <LegalFooter variant="compact" />
+        </div>
+      </div>
 
       {/* Pos 9: modal #quoteModal — snapshot inmutable + grilla + export.
           Las observaciones viven en la shell (sesión): sobreviven re-abrir.
@@ -635,6 +644,7 @@ export default function EditorShell({
         open={paywallOpen}
         price={price}
         priceError={priceError}
+        legalVersions={legalVersions}
         onClose={() => setPaywallOpen(false)}
       />
     </div>

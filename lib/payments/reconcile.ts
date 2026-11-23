@@ -31,6 +31,24 @@ import {
   type SubscriptionStatus,
 } from '@/lib/payments/core';
 import { getPreapproval, hasMercadoPagoCredentials } from '@/lib/payments/mercadopago';
+import {
+  syncUserCycle,
+  type SyncOutcome,
+  type SyncTrigger,
+} from '@/lib/payments/sync';
+
+export type ReconcileMode = 'local' | 'sync';
+
+export interface ReconcileOptions {
+  /** `local` (editor) = ventanas + drift MP + plan; `sync` (perfil) suma pagos. */
+  mode?: ReconcileMode;
+  /** Solo `sync`: fuerza el cooldown manual de 20 s (botón). */
+  force?: boolean;
+  /** Solo `sync`: trigger de observabilidad. */
+  trigger?: SyncTrigger;
+  /** Solo `sync`: presupuesto de red (tests/QA). */
+  budgetMs?: number;
+}
 
 export interface ReconcileOutcome {
   statusBefore: SubscriptionStatus | null;
@@ -43,7 +61,17 @@ export interface ReconcileOutcome {
     | 'ventana_vencida'
     | 'cancelacion_mp_conocida_async'
     | 'plan_realineado'
-    | 'sano';
+    | 'sano'
+    | 'sync_ok'
+    | 'sync_repaired'
+    | 'sync_cooldown'
+    | 'sync_no_watermark'
+    | 'sync_mp_unavailable'
+    | 'sync_user_missing'
+    | 'sync_deleted'
+    | 'sync_error';
+  /** Detalle de la corrida cuando `mode: 'sync'`. */
+  sync?: SyncOutcome;
 }
 
 interface SubDbRow {
@@ -61,7 +89,10 @@ const isoToMs = (iso: string | null): number | null =>
  * candados. `deleted_at` NO se mira acá: si la cuenta está eliminada las
  * rutas de auth ya cortan el flujo antes.
  */
-export async function reconcileUserCycle(userId: string): Promise<ReconcileOutcome> {
+async function reconcileLocal(
+  userId: string,
+  opts: { skipRemote?: boolean } = {},
+): Promise<ReconcileOutcome> {
   const service = createSupabaseServiceClient();
 
   const [subResult, userResult] = await Promise.all([
@@ -144,9 +175,10 @@ export async function reconcileUserCycle(userId: string): Promise<ReconcileOutco
 
   /* ---------- 2) Drift contra MP (pull SOLO si el estado sigue vivo) ------ */
   if (
-    sub.status === 'activa' ||
-    (sub.status === 'gracia' && graceMs != null && now < graceMs) ||
-    (sub.status === 'programada_cierre' && periodMs != null && now < periodMs)
+    !opts.skipRemote &&
+    (sub.status === 'activa' ||
+      (sub.status === 'gracia' && graceMs != null && now < graceMs) ||
+      (sub.status === 'programada_cierre' && periodMs != null && now < periodMs))
   ) {
     // Sin preapproval_id (cuenta vieja de antes de 10B): nada que pullear.
     const preapprovalRes = hasMercadoPagoCredentials()
@@ -240,5 +272,70 @@ export async function reconcileUserCycle(userId: string): Promise<ReconcileOutco
     planAfter: planExpected,
     touched: false,
     reason: 'sano',
+  };
+}
+
+/**
+ * Punto de entrada del render:
+ *   · `local` (editor): ventanas + drift MP + realineo, sin buscar pagos.
+ *   · `sync` (perfil): primero las ventanas LOCALES (sin pull remoto), después
+ *     `syncUserCycle` (pagos + preapproval + realineo final). Un fallo de MP
+ *     nunca rompe el render: el estado local sigue mandando.
+ */
+export async function reconcileUserCycle(
+  userId: string,
+  options: ReconcileOptions = {},
+): Promise<ReconcileOutcome> {
+  const mode = options.mode ?? 'local';
+  const local = await reconcileLocal(userId, { skipRemote: mode === 'sync' });
+  if (mode === 'local') return local;
+
+  let sync: SyncOutcome;
+  try {
+    sync = await syncUserCycle(userId, {
+      trigger: options.trigger ?? 'perfil',
+      force: options.force,
+      budgetMs: options.budgetMs,
+    });
+  } catch (e) {
+    console.error('[reconcile sync]:', e instanceof Error ? e.message : e);
+    return { ...local, reason: 'sync_error' };
+  }
+
+  const syncTouched =
+    sync.applied > 0 ||
+    sync.repaired > 0 ||
+    sync.audited > 0 ||
+    sync.preapproval === 'closed' ||
+    sync.preapproval === 'adopted';
+
+  const syncReason: ReconcileOutcome['reason'] =
+    sync.outcome === 'ok'
+      ? syncTouched
+        ? 'sync_repaired'
+        : 'sync_ok'
+      : sync.outcome === 'cooldown'
+        ? 'sync_cooldown'
+        : sync.outcome === 'no_watermark'
+          ? 'sync_no_watermark'
+          : sync.outcome === 'mp_unavailable'
+            ? 'sync_mp_unavailable'
+            : sync.outcome === 'user_missing'
+              ? 'sync_user_missing'
+              : sync.outcome === 'deleted'
+                ? 'sync_deleted'
+                : 'sync_error';
+
+  // Un error de DB/MP no debe pintar FREE: se conserva el estado local.
+  const preserveLocal = sync.outcome === 'error' || sync.outcome === 'user_missing';
+
+  return {
+    statusBefore: local.statusBefore,
+    statusAfter: preserveLocal ? local.statusAfter : (sync.status ?? local.statusAfter),
+    planBefore: local.planBefore,
+    planAfter: preserveLocal ? local.planAfter : sync.plan,
+    touched: local.touched || syncTouched,
+    reason: local.touched && !syncTouched ? local.reason : syncReason,
+    sync,
   };
 }

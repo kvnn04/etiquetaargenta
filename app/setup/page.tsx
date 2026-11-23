@@ -51,13 +51,15 @@ export default function SetupPage() {
           {row(serviceOk, 'SUPABASE_SERVICE_ROLE_KEY (server-side)')}
           <tr className="border-b border-line/50">
             <td className="py-2 pr-3 text-[10px] uppercase tracking-[.24em] text-gold-soft" colSpan={2}>
-              Posición 10 — Pagos (opcional para el resto del app)
+              Posiciones 10–11 — Pagos y sync (opcional para el resto del app)
             </td>
           </tr>
-          {row(pagosOk, 'MP_ACCESS_TOKEN + MP_WEBHOOK_SECRET (spec_pagos)')}
+          {row(pagosOk, 'MP_ACCESS_TOKEN + MP_WEBHOOK_SECRET (spec_pagos + sync)')}
           {row(envStatus('NEXT_PUBLIC_MP_PUBLIC_KEY'), 'NEXT_PUBLIC_MP_PUBLIC_KEY')}
           {row(envStatus('RESEND_API_KEY'), 'RESEND_API_KEY (emails transaccionales)')}
           {row(envStatus('EMAIL_FROM'), 'EMAIL_FROM (remitente verificado)')}
+          {row(envStatus('NEXT_PUBLIC_SUPPORT_EMAIL'), 'NEXT_PUBLIC_SUPPORT_EMAIL (soporte)')}
+          {row(envStatus('NEXT_PUBLIC_SUPPORT_WHATSAPP'), 'NEXT_PUBLIC_SUPPORT_WHATSAPP (soporte)')}
         </tbody>
       </table>
 

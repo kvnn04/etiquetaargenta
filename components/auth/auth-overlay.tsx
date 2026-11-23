@@ -6,6 +6,7 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import LegalFooter from '@/components/legal/legal-footer';
 
 /**
  * Auth Overlay (spec_autenticacion_y_modelo_freemium.md §4):
@@ -276,9 +277,13 @@ export default function AuthOverlay({ banner }: { banner?: string }) {
           </p>
 
           <p className="mt-8 text-center text-[10px] leading-relaxed text-stone-700">
-            Al crear tu cuenta aceptás que el producto fijado por las specs del paquete rige el
-            uso del simulador (matriz R2: todo el editor FREE; exportes, links y white-label PRO).
+            El Plan FREE no requiere tarjeta. El Plan PRO se contrata dentro del editor y exige
+            aceptar los Términos y la Política de Privacidad vigentes.
           </p>
+
+          {/* Posición 12 (R13.2): los dos botones legales son visibles también
+              antes de crear la cuenta, sin login. */}
+          <LegalFooter variant="prominent" className="mt-6 -mx-6 border-x-0 border-b-0 px-0" />
         </div>
       </section>
     </main>

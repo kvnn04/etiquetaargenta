@@ -6,21 +6,28 @@ import {
   BadgeCheck,
   Camera,
   Check,
+  FileText,
   ImageOff,
   Mail,
   MapPin,
   RefreshCw,
+  Scale,
+  ShieldCheck,
   Trash2,
   AtSign,
   Phone,
+  UserMinus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import LegalFooter from '@/components/legal/legal-footer';
+import { LEGAL_LINKS } from '@/lib/legal/links';
 import DangerConfirm from '@/components/profile/danger-confirm';
 import SubscriptionCard, {
   type PaymentRowView,
   type PagoBanner,
   type SubscriptionView,
+  type SupportChannels,
 } from '@/components/profile/subscription-card';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
@@ -96,6 +103,7 @@ export default function ProfilePanel({
   displayName,
   emailVerified,
   billing,
+  legal,
   initial,
   logo,
 }: {
@@ -108,6 +116,18 @@ export default function ProfilePanel({
     payments: PaymentRowView[];
     pago: PagoBanner;
     nowMs: number;
+    /** Lease del sync (R12.3): la card calcula el cooldown de 20 s. */
+    lastSyncedAtMs: number | null;
+    accountEmail: string | null;
+    support: SupportChannels;
+  };
+  /** Posición 12 (R13.7/R13.13): aceptación versionada y aviso no bloqueante. */
+  legal: {
+    current: { terms: string; privacy: string };
+    accepted: { terms: string | null; privacy: string | null };
+    stale: boolean;
+    /** Horario de atención electrónica (R13.14), configurable por env. */
+    hours: string;
   };
   initial: EditableFields;
   logo: LogoProps;
@@ -270,6 +290,44 @@ export default function ProfilePanel({
       </section>
 
       {/* ---------------------------------------------------------------- */}
+      {/* Posición 12: aviso legal NO bloqueante (R13.13)                  */}
+      {/* ---------------------------------------------------------------- */}
+      {legal.stale && (
+        <section
+          role="status"
+          className="rounded-xl border border-gold/35 bg-gold/10 px-4 py-3 text-[11px] leading-relaxed text-gold-soft"
+        >
+          <p className="flex items-center gap-2 text-xs font-bold">
+            <FileText className="h-3.5 w-3.5" aria-hidden /> Documentos legales actualizados
+          </p>
+          <p className="mt-1 text-stone-300">
+            Vigentes: Términos v{legal.current.terms} y Privacidad v{legal.current.privacy}. Tu
+            última aceptación registrada:{' '}
+            <span className="font-mono">
+              Términos {legal.accepted.terms ? `v${legal.accepted.terms}` : 'sin registro'} ·
+              Privacidad {legal.accepted.privacy ? `v${legal.accepted.privacy}` : 'sin registro'}
+            </span>
+            . No bloquea tu acceso actual: te pediremos aceptar la versión vigente en el próximo
+            checkout.
+          </p>
+          <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+            <a
+              href={LEGAL_LINKS.terms}
+              className="font-semibold underline decoration-gold/40 underline-offset-2 hover:text-cream"
+            >
+              Leer Términos
+            </a>
+            <a
+              href={LEGAL_LINKS.privacy}
+              className="font-semibold underline decoration-gold/40 underline-offset-2 hover:text-cream"
+            >
+              Leer Privacidad
+            </a>
+          </p>
+        </section>
+      )}
+
+      {/* ---------------------------------------------------------------- */}
       {/* CENTRO DE SUSCRIPCIÓN (10B — spec_pagos §4)                       */}
       {/* ---------------------------------------------------------------- */}
       <SubscriptionCard
@@ -277,6 +335,9 @@ export default function ProfilePanel({
         payments={billing.payments}
         pago={billing.pago}
         nowMs={billing.nowMs}
+        lastSyncedAtMs={billing.lastSyncedAtMs}
+        accountEmail={billing.accountEmail}
+        support={billing.support}
       />
 
       {/* ---------------------------------------------------------------- */}
@@ -512,6 +573,102 @@ export default function ProfilePanel({
       </section>
 
       {/* ---------------------------------------------------------------- */}
+      {/* Posición 12: derechos del consumidor (R13.2/R13.10)              */}
+      {/* ---------------------------------------------------------------- */}
+      <section
+        aria-labelledby="derechos-consumidor"
+        className="rounded-xl border border-gold/25 bg-panel p-4"
+      >
+        <h3
+          id="derechos-consumidor"
+          className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gold-soft"
+        >
+          <Scale className="h-3.5 w-3.5" aria-hidden /> Tus derechos
+        </h3>
+        <p className="mt-1 text-[11px] leading-relaxed text-stone-400">
+          Sin login, sin justificar el motivo y sin llamadas obligatorias. Atención electrónica:{' '}
+          {legal.hours}, con un mínimo de 8 horas por día hábil.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <a
+            href={LEGAL_LINKS.withdrawal}
+            className="rounded-lg border border-line bg-black/20 px-3 py-2.5 transition hover:border-gold/50 hover:bg-gold/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-bold text-stone-200">
+              <RefreshCw className="h-3.5 w-3.5 text-gold-soft" aria-hidden /> Arrepentimiento
+            </span>
+            <span className="mt-1 block text-[10px] leading-relaxed text-stone-500">
+              10 días corridos, reembolso del ciclo completo.
+            </span>
+          </a>
+          <a
+            href={LEGAL_LINKS.cancellation}
+            className="rounded-lg border border-line bg-black/20 px-3 py-2.5 transition hover:border-gold/50 hover:bg-gold/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-bold text-stone-200">
+              <UserMinus className="h-3.5 w-3.5 text-gold-soft" aria-hidden /> Baja de servicio
+            </span>
+            <span className="mt-1 block text-[10px] leading-relaxed text-stone-500">
+              Cancela el débito; el acceso sigue hasta el fin del ciclo pago.
+            </span>
+          </a>
+          <a
+            href={LEGAL_LINKS.privacyRights}
+            className="rounded-lg border border-line bg-black/20 px-3 py-2.5 transition hover:border-gold/50 hover:bg-gold/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-bold text-stone-200">
+              <ShieldCheck className="h-3.5 w-3.5 text-gold-soft" aria-hidden /> Datos personales
+            </span>
+            <span className="mt-1 block text-[10px] leading-relaxed text-stone-500">
+              Acceso, rectificación, supresión u oposición en 5 días hábiles.
+            </span>
+          </a>
+        </div>
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-relaxed text-stone-500">
+          <a
+            href={LEGAL_LINKS.terms}
+            className="underline decoration-gold/40 underline-offset-2 hover:text-gold-soft"
+          >
+            Términos y Condiciones
+          </a>
+          <a
+            href={LEGAL_LINKS.privacy}
+            className="underline decoration-gold/40 underline-offset-2 hover:text-gold-soft"
+          >
+            Política de Privacidad
+          </a>
+          <button
+            type="button"
+            onClick={() => setDangerOpen(true)}
+            className="underline decoration-gold/40 underline-offset-2 hover:text-rose-200"
+          >
+            Eliminar mi cuenta
+          </button>
+        </p>
+        <p className="mt-1 text-[10px] leading-relaxed text-stone-500">
+          También podés reclamar ante la{' '}
+          <a
+            href={LEGAL_LINKS.consumerDefense}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-gold/40 underline-offset-2 hover:text-gold-soft"
+          >
+            Defensa del Consumidor
+          </a>{' '}
+          o la{' '}
+          <a
+            href={LEGAL_LINKS.aaip}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-gold/40 underline-offset-2 hover:text-gold-soft"
+          >
+            AAIP
+          </a>
+          .
+        </p>
+      </section>
+
+      {/* ---------------------------------------------------------------- */}
       {/* Zona de peligro (R8)                                              */}
       {/* ---------------------------------------------------------------- */}
       <section className="rounded-xl border border-rose-500/20 bg-panel p-4">
@@ -545,6 +702,9 @@ export default function ProfilePanel({
         onCancel={() => !deleteBusy && setDangerOpen(false)}
         onConfirm={() => void deleteAccount()}
       />
+
+      {/* Posición 12 (R13.2): footer legal con los dos botones. */}
+      <LegalFooter variant="compact" className="mt-2 rounded-xl border border-line" />
     </div>
   );
 }

@@ -8,6 +8,9 @@
  *
  * R1: estados `inactiva → activa → gracia → activa | (FREE)` y
  *     `programada_cierre` (cancelación pedida, operativa hasta period_end).
+ *     La posición 13 agrega `revocada` (reembolso total o contracargo): el
+ *     dinero volvió y el acceso se corta; NUNCA se reutiliza el preapproval
+ *     viejo para resucitar el plan (R11.4/R11.6).
  *     El ciclo se ANCLA al día del primer pago; zona horaria canónica
  *     America/Argentina/Buenos_Aires (sin DST desde 2019: fija UTC−3.
  *     00:00 AR ≙ 03:00 UTC — así se construyen las fechas de ciclo).
@@ -17,8 +20,9 @@
  *     toman el precio VIGENTE). Un ciclo normal jamás retoca el monto: el
  *     suscriptor vigente no ve su precio subir.
  * R5: sin trial/cupones — no cabe acá ni acá; el FREE permanente es la prueba.
- * R7: `normalizeMpPaymentStatus` es la whitelist del webhook (approved/
- *     rejected); lo demás (pending/refunded/charged_back…) se ignora con log.
+ * R7: `normalizeMpPaymentStatus` es la whitelist del webhook. La posición 13
+ *     amplía la lista a refunded/partially_refunded/charged_back; pending y
+ *     cualquier estado desconocido siguen ignorándose con log.
  * R8: gracia de 5 días corridos desde el PRIMER rechazo (MP reintenta dentro
  *     de la ventana: un segundo rechazo NO re-abre los 5 días) y resolver de
  *     plan con downgrade a FREE preservando proyectos/assets/links.
@@ -48,12 +52,30 @@ export const SUBSCRIPTION_STATUSES = [
   'activa',
   'gracia',
   'programada_cierre',
+  'revocada',
 ] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
-/** Whitelist de estados de PAGO que mutan estado (§5 de payments + R7). */
-export const PAYMENT_STATUSES = ['approved', 'rejected'] as const;
+/** Estados VIVOS: los únicos desde los que un reembolso/contracargo revoca. */
+export const LIVE_SUBSCRIPTION_STATUSES = [
+  'activa',
+  'gracia',
+  'programada_cierre',
+] as const;
+
+/** Whitelist de estados de PAGO que mutan estado (§5 de payments + R7/R11.2). */
+export const PAYMENT_STATUSES = [
+  'approved',
+  'rejected',
+  'refunded',
+  'partially_refunded',
+  'charged_back',
+] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+/** Motivo del cierre de la suscripción (R11.4/R11.6 + R9). */
+export const CLOSURE_REASONS = ['refund', 'chargeback', 'dunning', 'cancel'] as const;
+export type ClosureReason = (typeof CLOSURE_REASONS)[number];
 
 /** Etiquetas del Centro de Suscripción (§4: Activa / En gracia / Cierre programado). */
 export const SUBSCRIPTION_STATUS_LABEL: Record<SubscriptionStatus, string> = {
@@ -61,7 +83,15 @@ export const SUBSCRIPTION_STATUS_LABEL: Record<SubscriptionStatus, string> = {
   activa: 'Activa',
   gracia: 'En gracia',
   programada_cierre: 'Cierre programado',
+  revocada: 'Revocada',
 };
+
+/** true ⇒ la suscripción todavía da acceso (o está por vencer) — R8/R9. */
+export function isLiveSubscriptionStatus(status: SubscriptionStatus): boolean {
+  return (
+    status === 'activa' || status === 'gracia' || status === 'programada_cierre'
+  );
+}
 
 /* -------------------------------------------------------------------------- */
 /* Montos (R3: ARS, formato argentino, el CLIENTE no calcula cifras)           */
@@ -221,7 +251,8 @@ export interface SubscriptionCursor {
  * de `users.plan` queda escrito pero aquí está la REGLA que lo decide, para
  * que webhook y reconciliación no puedan desincronizarse en el "cómo":
  *   activa ⇒ pro · gracia viva ⇒ pro_grace · programada_cierre (pre period_end)
- *   ⇒ pro · gracia vencida / programada expirada / inactiva ⇒ free (R8/R9).
+ *   ⇒ pro · gracia vencida / programada expirada / inactiva / revocada ⇒ free
+ *   (R8/R9/R11.4/R11.6).
  */
 export function resolvePlan(sub: SubscriptionCursor, nowMs: number): Plan {
   switch (sub.status) {
@@ -234,6 +265,7 @@ export function resolvePlan(sub: SubscriptionCursor, nowMs: number): Plan {
     case 'programada_cierre':
       return sub.periodEndMs != null && nowMs < sub.periodEndMs ? 'pro' : 'free';
     case 'inactiva':
+    case 'revocada':
       return 'free';
   }
 }
@@ -242,14 +274,18 @@ export function resolvePlan(sub: SubscriptionCursor, nowMs: number): Plan {
 /* Máquina de estados — decision pura; el caller persiste con compare-and-set  */
 /* -------------------------------------------------------------------------- */
 
-/** Eventos que la fila `subscriptions` entiende (R7 webhook + R8 job). */
+/** Eventos que la fila `subscriptions` entiende (R7 webhook + R8 job + R11). */
 export type SubscriptionEvent =
   | { kind: 'cobro_aprobado' }
   | { kind: 'cobro_rechazado'; rejectedAtMs: number }
   /** Portal de MP (cancelled) o pausa (paused) ⇒ sin más cobros (R9). */
   | { kind: 'cancelacion_programada'; periodEndMs: number }
   /** El reconciliador venció la ventana (R8). */
-  | { kind: 'gracia_vencida' };
+  | { kind: 'gracia_vencida' }
+  /** Reembolso TOTAL del ciclo vigente (R11.4): acceso cortado ya. */
+  | { kind: 'reembolso_total'; occurredAtMs: number }
+  /** Contracargo del ciclo vigente (R11.6): suspensión inmediata. */
+  | { kind: 'contracargo'; occurredAtMs: number };
 
 /** Patch a aplicar: `undefined` = no tocar, `null` = limpiar a NULL. */
 export interface SubscriptionPatch {
@@ -258,6 +294,9 @@ export interface SubscriptionPatch {
   freezePrice: boolean;
   graceExpiresAtMs?: number | null;
   periodEndMs?: number | null;
+  /** R11.4/R11.6 — motivo y fecha del cierre por revocación. */
+  closureReason?: ClosureReason | null;
+  closedAtMs?: number | null;
 }
 
 /** period_end correcto para UNA cancelación según el estado de origen (R9). */
@@ -273,15 +312,25 @@ export function cancelationPeriodEndMs(
   return nextCycleDateMs(input.anchorDay, input.nowMs);
 }
 
-/** Cambios de pago normalizados: `approved` | `rejected` | ignorar (null). */
+/**
+ * Cambios de pago normalizados (R7/R11.2): approved | rejected | refunded |
+ * partially_refunded | charged_back. Cualquier otro (pending/in_process/…) ⇒
+ * null: se logea y NO muta nada.
+ */
 export function normalizeMpPaymentStatus(raw: string): PaymentStatus | null {
   switch (raw) {
     case 'approved':
       return 'approved';
     case 'rejected':
       return 'rejected';
+    case 'refunded':
+      return 'refunded';
+    case 'partially_refunded':
+      return 'partially_refunded';
+    case 'charged_back':
+      return 'charged_back';
     default:
-      return null; // pending/in_process/refunded/charged_back/… ⇒ no muta (con log)
+      return null;
   }
 }
 
@@ -296,6 +345,12 @@ export function normalizeMpPaymentStatus(raw: string): PaymentStatus | null {
  *     (QA3: pago aprobado en cierre programado vuelve a activa).
  *   · `cobro_rechazado` desde `gracia` ⇒ null: NO re-abre los 5 días (R1:
  *     corridos desde el PRIMER rechazo) — el payment rechazado igual se registra.
+ *   · `cobro_aprobado` desde `revocada` ⇒ null: un cobro del preapproval VIEJO
+ *     no resucita el plan (R11.3/R11.8). La re-alta legítima pasa por un
+ *     checkout nuevo, que deja la fila en `inactiva` antes de cobrar.
+ *   · `reembolso_total`/`contracargo` desde un estado vivo ⇒ `revocada` con
+ *     `closure_reason` y `closed_at`; desde `inactiva`/`revocada` ⇒ null
+ *     (solo se audita el pago, R11.3/§3.3).
  *   · `gracia_vencida` ⇒ `inactiva` (downgrade R8 preservando TODO el contenido).
  */
 export function transitionSubscription(
@@ -304,6 +359,11 @@ export function transitionSubscription(
 ): SubscriptionPatch | null {
   switch (event.kind) {
     case 'cobro_aprobado': {
+      if (current === 'revocada') {
+        // R11.3/R11.8: el reembolso/contracargo GANA. Un approved tardío del
+        // preapproval viejo se registra como pago, pero no activa PRO.
+        return null;
+      }
       if (current === 'activa') {
         return { status: 'activa', freezePrice: false }; // ciclo normal: sin UPDATE
       }
@@ -342,6 +402,26 @@ export function transitionSubscription(
         return { status: 'inactiva', freezePrice: false, graceExpiresAtMs: null, periodEndMs: null };
       }
       return null;
+    }
+    case 'reembolso_total':
+    case 'contracargo': {
+      // Solo desde un ciclo VIVO: `inactiva` ya está en FREE y `revocada` ya
+      // fue cerrada (un contracargo posterior no duplica email ni transición).
+      if (
+        current !== 'activa' &&
+        current !== 'gracia' &&
+        current !== 'programada_cierre'
+      ) {
+        return null;
+      }
+      return {
+        status: 'revocada',
+        freezePrice: false,
+        graceExpiresAtMs: null,
+        periodEndMs: null,
+        closureReason: event.kind === 'reembolso_total' ? 'refund' : 'chargeback',
+        closedAtMs: event.occurredAtMs,
+      };
     }
   }
 }

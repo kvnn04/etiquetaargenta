@@ -5,6 +5,7 @@ import EditorShell, { type ShellProfile } from '@/components/editor/editor-shell
 import type { Plan } from '@/lib/permissions';
 import type { UserRecord } from '@/lib/types/db';
 import { reconcileUserCycle } from '@/lib/payments/reconcile';
+import { LEGAL_VERSIONS } from '@/lib/legal/config';
 import { isAuthBypassEnabled } from '@/lib/dev-auth';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,14 @@ export const dynamic = 'force-dynamic';
  * cache no autoritativa — spec_auth §3 Comportamiento del Sistema).
  * R8: si la fila está con deleted_at ⇒ signOut + mensaje neutro en /auth.
  */
-export default async function EditorPage() {
+export default async function EditorPage({
+  searchParams,
+}: {
+  /** Posición 13: “Reactivar PRO” del Centro abre el paywall normal. */
+  searchParams: Promise<{ paywall?: string }>;
+}) {
+  const initialPaywallOpen = (await searchParams).paywall === '1';
+
   /* DEV ONLY (DEV_AUTH_BYPASS=1): editor sin login. Perfil de prueba PRO para
    * trabajar las formas del mate sin marca de agua ni gates. */
   if (isAuthBypassEnabled()) {
@@ -23,6 +31,8 @@ export default async function EditorPage() {
       <EditorShell
         userId="dev-local"
         devBypass
+        initialPaywallOpen={initialPaywallOpen}
+        legalVersions={LEGAL_VERSIONS}
         profile={{
           exists: true,
           baseName: 'Taller Dev',
@@ -50,7 +60,9 @@ export default async function EditorPage() {
    * un solo render — la decisión del titular reemplaza al job nocturno mientras
    * no hay dominio/pg_cron. */
   try {
-    await reconcileUserCycle(user.id);
+    // R12.2: el editor NUNCA consulta pagos en MP — mantiene el render rápido
+    // y el PlanWatcher refresca por Realtime cuando el webhook/sync cambia el plan.
+    await reconcileUserCycle(user.id, { mode: 'local' });
   } catch (e) {
     console.error('[reconcile editor]:', e instanceof Error ? e.message : e); // fail-soft: el render sigue
   }
@@ -87,5 +99,12 @@ export default async function EditorPage() {
     instagramHandle: data?.instagram_handle ?? null,
   };
 
-  return <EditorShell userId={user.id} profile={profile} />;
+  return (
+    <EditorShell
+      userId={user.id}
+      profile={profile}
+      initialPaywallOpen={initialPaywallOpen}
+      legalVersions={LEGAL_VERSIONS}
+    />
+  );
 }

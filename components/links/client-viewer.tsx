@@ -26,6 +26,7 @@ import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Copy, Info, Loader2, MessageCircle, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import LegalFooter from '@/components/legal/legal-footer';
 import type { PublicLinkView, PublicVariantView } from '@/lib/links/view-shape';
 import type { LinkVariantId } from '@/lib/links/payload';
 import { approvalCode, canonicalLinkUrl, whatsappApprovalHref } from '@/lib/links/states';
@@ -268,27 +269,30 @@ export default function ClientViewer({ view }: { view: PublicLinkView }) {
   /* Payload dañado O (assets cargados y NINGUNO sano) ⇒ página amable (§6). */
   if (view.variants.length === 0 || (!loading && !anyAvailable)) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#0b0b0d] px-6 text-center">
-        <div className="max-w-sm space-y-3">
-          <Info className="mx-auto size-8 text-gold-soft" />
-          <h1 className="text-sm font-bold text-stone-100">Esta propuesta no está disponible</h1>
-          <p className="text-xs leading-relaxed text-stone-400">
-            El taller puede enviarte un enlace nuevo con las opciones vigentes.
-          </p>
-          {view.workshop.whatsapp && view.workshop.whatsapp.length >= 6 && (
-            <a
-              href={`https://wa.me/${view.workshop.whatsapp}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-block"
-            >
-              <Button variant="green" size="md">
-                <MessageCircle className="size-4" />
-                Contactar al taller
-              </Button>
-            </a>
-          )}
+      <main className="flex min-h-screen flex-col bg-[#0b0b0d]">
+        <div className="flex flex-1 items-center justify-center px-6 py-12 text-center">
+          <div className="max-w-sm space-y-3">
+            <Info className="mx-auto size-8 text-gold-soft" />
+            <h1 className="text-sm font-bold text-stone-100">Esta propuesta no está disponible</h1>
+            <p className="text-xs leading-relaxed text-stone-400">
+              El taller puede enviarte un enlace nuevo con las opciones vigentes.
+            </p>
+            {view.workshop.whatsapp && view.workshop.whatsapp.length >= 6 && (
+              <a
+                href={`https://wa.me/${view.workshop.whatsapp}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block"
+              >
+                <Button variant="green" size="md">
+                  <MessageCircle className="size-4" />
+                  Contactar al taller
+                </Button>
+              </a>
+            )}
+          </div>
         </div>
+        <LegalFooter variant="compact" />
       </main>
     );
   }
@@ -343,7 +347,7 @@ export default function ClientViewer({ view }: { view: PublicLinkView }) {
       </section>
 
       {/* ── Barra inferior: selector (solo si hay A/B/C) + acordeón + CTA ───── */}
-      <section className="max-h-[45vh] space-y-2.5 overflow-y-auto border-t border-white/10 bg-black/40 px-4 pb-4 pt-3 backdrop-blur">
+      <section className="max-h-[38vh] space-y-2.5 overflow-y-auto border-t border-white/10 bg-black/40 px-4 pb-4 pt-3 backdrop-blur">
         {/* Selector plano de opciones: los links nuevos publican UNA sola. */}
         {view.variants.length > 1 && (
           <div className="flex flex-wrap gap-1.5">
@@ -459,6 +463,9 @@ export default function ClientViewer({ view }: { view: PublicLinkView }) {
           </div>
         )}
       </section>
+
+      {/* Posición 12 (R13.2): footer legal visible también en el visor cliente. */}
+      <LegalFooter variant="compact" />
     </main>
   );
 }

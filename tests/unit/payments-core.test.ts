@@ -309,14 +309,15 @@ describe('máquina de estados (R7 compare-and-set en el caller)', () => {
   });
 });
 
-describe('R7 — whitelist del webhook', () => {
-  it('approved/rejected mutan; lo demás se ignora con log (nunca crash)', () => {
+describe('R7/R11 — whitelist del webhook', () => {
+  it('approved/rejected/refunded/charged_back mutan; pending se ignora (nunca crash)', () => {
     expect(normalizeMpPaymentStatus('approved')).toBe('approved');
     expect(normalizeMpPaymentStatus('rejected')).toBe('rejected');
+    expect(normalizeMpPaymentStatus('refunded')).toBe('refunded');
+    expect(normalizeMpPaymentStatus('partially_refunded')).toBe('partially_refunded');
+    expect(normalizeMpPaymentStatus('charged_back')).toBe('charged_back');
     expect(normalizeMpPaymentStatus('pending')).toBeNull();
     expect(normalizeMpPaymentStatus('in_process')).toBeNull();
-    expect(normalizeMpPaymentStatus('refunded')).toBeNull();
-    expect(normalizeMpPaymentStatus('charged_back')).toBeNull();
     expect(normalizeMpPaymentStatus('')).toBeNull();
   });
 });
