@@ -23,7 +23,7 @@ Todo lo que se construye acá proviene de un **paquete de especificaciones cerra
 | Documento | Rol |
 | :--- | :--- |
 | `README.md` | Índice del paquete + §6 **Contratos Transversales** (cada regla vive en UNA spec) |
-| specs `spec_*.md` | Reglas de negocio, cálculos, UI y criterios QA por módulo; las posiciones 11–13 son borradores v0.1 con 7 preguntas abiertas |
+| specs `spec_*.md` | Reglas de negocio, cálculos, UI y criterios QA por módulo; la 13 es borrador v0.1 con 7 preguntas abiertas (11 y 12 ya cerraron las suyas) |
 | `guia_de_tecnologias.md` | Stack decidido (Next.js App Router + R3F + Supabase + Mercado Pago) y riesgos |
 | `orden_de_implementacion.md` | Secuencia de construcción: **10 posiciones base + segunda ola (11–13)** |
 
@@ -36,7 +36,22 @@ estética y conceptual, **no** la implementación.
 
 ---
 
-## 2. Dónde estamos: posición 10B de 10 ✅ (QA en vivo corrido — 07-nov)
+## 2. Dónde estamos: posición 13 ✅ (segunda ola — 23-nov)
+
+La primera ola (posiciones 1–10B) está cerrada y con QA en vivo del sandbox de MP
+(07-nov). La **segunda ola** sumó la posición **11 — sync de pagos y
+"Verifico de nuevo" real** (22-nov), la posición **12 — páginas legales,
+aceptación en checkout y derechos del consumidor** (23-nov) y la posición
+**13 — reembolsos y contracargos del Plan PRO** (23-nov): el webhook y el sync
+reconocen `refunded`/`partially_refunded`/`charged_back` y el topic de
+contracargos, actualizan `payments` + `payment_adjustments` y revocan el ciclo
+vigente (`revocada`/`free`) o mantienen el plan si el reembolso es parcial.
+**La ola quedó completa.** `0008_legal.sql` y `0009_refunds_chargebacks.sql`
+quedaron **aplicadas** en Supabase (23-nov) y la posición 13 pasó un **QA de
+integración 12/12** contra Supabase TEST + MP TEST (`docs/qa-posicion-13.md`).
+Antes de abrir cobros reales faltan la identidad `LEGAL_ENTITY_*`, la revisión
+legal firmada y un end-to-end con un pago nuevo `live_mode:false` (los pagos
+semilla del QA son `live_mode:true`, así que no se reembolsaron).
 
 El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero — caja al final**:
 
@@ -51,10 +66,22 @@ El orden de construcción (`orden_de_implementacion.md`) manda **perchas primero
 8. ✅ Protección FREE: watermark cocida al render + bloqueo de rutas DOM + 402 en la API de export
 9. ✅ Ficha técnica: snapshot inmutable + grilla de 9 tarjetas + PNG HD + PDF A4 + Foto HD + registro QA
 10. ✅ 10A — Enlace Comercial compartible + Modo Cliente /v/[linkId]
-11. ✅ 10B — Mercado Pago: caja + webhook + dunning ← ESTAMOS ACÁ (07-nov: QA en vivo del
-    sandbox completo — evidencias y desviaciones del modo TEST de MP en §8; iteración visual
-    del titular pendiente: reload /perfil, inbox, panel MP y línea SQL del precio)
+11. ✅ 10B — Mercado Pago: caja + webhook + dunning (07-nov: QA en vivo del sandbox
+    completo — evidencias y desviaciones del modo TEST de MP en §8)
+12. ✅ 11 — Sync de pagos + "Verifico de nuevo" real (22–23-nov: migración
+    `0007` aplicada, sync on-read/manual, reparación idempotente y email único;
+    QA técnico en §8 y QA con MP real en curso)
+13. ✅ 12 — Páginas legales, aceptación en checkout y derechos del consumidor
+    (23-nov: migración `0008` **aplicada**, 25 tests nuevos, flujo de baja con
+    doble opt-in + cola manual perezosa y evidencia versionada; QA técnico en §8)
+14. ✅ 13 — Reembolsos y contracargos del Plan PRO ← ESTAMOS ACÁ
+    (23-nov: migración `0009` **aplicada**, 15 tests nuevos, `payment_adjustments`
+    append-only, revocación del ciclo vigente, parcial sin bajar el plan, carrera
+    refund/approved y UI del Centro; QA técnico + **integración 12/12** en §8 y
+    `docs/qa-posicion-13.md`)
 ```
+
+**Segunda ola completa:** 11 (sync) + 12 (legal) + 13 (reembolsos/contracargos).
 
 La posición 4 entregó la **edición milimétrica de virola**, la **anatomía formal en 3 mallas**
 (`virolaTopMesh` corona superior anular plana para grabado/guías, `virolaOuterWallMesh` faldón
@@ -212,7 +239,7 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: **209 tests** (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7 + ticket pos 8 + ficha snapshot/textos pos 9) |
+| Test unit | Vitest | 4.1.12 | hoy: **362 tests** (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7 + ticket pos 8 + ficha snapshot/textos pos 9 + links pos 10A + pagos/webhook pos 10B + sync pos 11 + legal pos 12 + reembolsos/contracargos pos 13 + origin/back_url pos 13) |
 | 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
 | PDF | pdf-lib | 1.17 (instalado en la posición 9) | envoltorio A4 de la ficha; carga diferida con `import()` |
 | Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
@@ -240,7 +267,7 @@ simulador-mates/
 ├── middleware.ts                  ← gating de rutas: crea el client de sesión (lib/supabase/middleware)
 ├── next.config.mjs                ← alias @/* (webpack + turbopack)
 ├── tsconfig.json / postcss.config.mjs / vitest.config.ts
-├── .env.local.example             ← plantilla de las 3 keys de Supabase (+ futuras MP)
+├── .env.local.example             ← plantilla Supabase + MP/Resend + soporte + identidad legal (pos 12)
 │
 ├── app/
 │   ├── layout.tsx · globals.css   ← shell + tokens de la paleta premium (oro/negro)
@@ -249,8 +276,9 @@ simulador-mates/
 │   ├── setup/page.tsx             ← página amable cuando faltan env vars (NUNCA un 500 pelado)
 │   ├── auth/page.tsx              ← Auth Overlay (con sesión ⇒ /editor; `?cuenta=…` ⇒ banner neutro R8)
 │   ├── auth/callback/route.ts     ← PKCE: intercambia ?code= por sesión (OAuth/email-verify)
-│   ├── perfil/page.tsx            ← PANEL DE PERFIL: 5 campos + completitud + logo + zona de peligro
-│   ├── (editor)/editor/page.tsx   ← shell del editor: sesión + plan + guard `deleted_at`, SIEMPRE server
+│   ├── perfil/page.tsx            ← PANEL DE PERFIL: 5 campos + completitud + logo + zona de peligro + Centro de Suscripción (pos 10B/11/13: badges REEMBOLSADO/CONTRACARGO, historial original+devuelto, Reactivar PRO) + derechos legales (pos 12)
+│   ├── (legal)/                   ← POS 12: layout público + /terminos · /privacidad · /arrepentimiento · /baja · /baja/confirmar (sin login ni paywall)
+│   ├── (editor)/editor/page.tsx   ← shell del editor: sesión + plan + guard `deleted_at`, SIEMPRE server; `?paywall=1` abre el checkout normal (pos 13)
 │   └── api/
 │       ├── config/pricing/route.ts ← GET precio del plan desde pricing_config (200; 404 si no hay fila)
 │       ├── exports/ticket/route.ts ← ★ POS 8: POST ticket de export — sesión 401 · plan desde users (service-role) ⇒ FREE 402 PAYWALL_REQUIRED / pro ⇒ HMAC 5 min
@@ -258,6 +286,13 @@ simulador-mates/
 │       ├── exports/route.ts        ← ★ POS 9: GET registro QA ?type=png|pdf — 401 sin sesión · plan autoritativo · console.log {user, plan, artifact, at}
 │       ├── profile/logo/route.ts   ← POST subida (server revalida por magia de bytes) / DELETE quita logo
 │       ├── profile/delete/route.ts ← POST eliminar cuenta: soft-delete + hard-delete proyectos + signOut
+│       ├── legal/arrepentimiento/route.ts ← POS 12: POST público ⇒ legal_requests + acuse (validación, rate limit, honeypot, Origin)
+│       ├── legal/baja/route.ts            ← POS 12: POST público ⇒ solicitud + link de confirmación 24 h (NO cancela)
+│       ├── legal/baja/confirm/route.ts    ← POS 12: POST token de un solo uso ⇒ cancela el preapproval propio vía R9
+│       ├── legal/privacidad/route.ts      ← POS 12: POST público de derechos de datos (5 días hábiles)
+│       ├── billing/checkout/route.ts      ← POS 10B/12/13: POST alta (gates sesión/email/precio/viva/legal ⇒ preapproval + seed; permite `revocada` y cancela el preapproval viejo)
+│       ├── billing/refresh/route.ts       ← POS 11: POST "Verifico de nuevo" real (401/429/502/503/200)
+│       ├── webhooks/mercadopago/route.ts  ← POS 10B/13: firma HMAC + pull autoritativo + dedupe/CAS + refunds/chargebacks (topic de pagos y de contracargos) + emails
 │       └── auth/exit/route.ts      ← GET signOut server + redirect /auth?cuenta=inhabilitada
 │
 ├── components/
@@ -270,6 +305,14 @@ simulador-mates/
 │   ├── links/variants-card.tsx    ← ★ POS 10A: tarjeta "Variantes del Enlace" — decisión nov-2026: A/B/C desactivadas, aviso "Solo se puede enviar un diseño por ahora" (el borrador legacy en projects.state se conserva)
 │   ├── links/client-viewer.tsx    ← ★ POS 10A: MODO CLIENTE UI — assets×URL única (fail⇒"no disponible"), crossfade ≤300 ms, chips A/B/C solo en links legacy, acordeón, CTA R6 (POST ANTES de wa.me · reintentos backoff · código APROBADA literal) + págs amables
 │   ├── links/viewer-scene.tsx     ← ★ POS 10A: ESCENA 3D PÚBLICA — mismas libs del editor (lathe+PBR+compositor) pero para el payload congelado; giro 0.5 RPM pausable, cámara fijada por silueta, SIN guías/medidas/watermark
+│   ├── legal/legal-footer.tsx     ← ★ POS 12: footer con los dos BOTONES (client-safe) + links a Términos/Privacidad/Defensa; variantes prominent/compact
+│   ├── legal/legal-identity.tsx   ← POS 12: bloque de identidad del proveedor (declara visiblemente lo que falta, no inventa)
+│   ├── legal/legal-meta.tsx       ← POS 12: versión + última actualización de cada documento
+│   ├── legal/legal-form-ui.tsx    ← POS 12: labels, errores inline, honeypot, éxito con código copiable y aria-live
+│   ├── legal/withdrawal-form.tsx  ← POS 12: formulario de arrepentimiento (checkbox desmarcado + ventana de 10 días)
+│   ├── legal/baja-form.tsx        ← POS 12: formulario de baja (doble opt-in + Portal MP como vía adicional)
+│   ├── legal/baja-confirm.tsx     ← POS 12: confirmación explícita con token (no cancela al cargar)
+│   ├── legal/privacy-form.tsx     ← POS 12: formulario de derechos de datos (5 días hábiles)
 │   ├── paywall/paywall-modal.tsx  ← laurel: precio dinámico + beneficios + CTA MP (desactivado hasta Checkout Pro: pos 10)
 │   ├── quote/quote-modal.tsx      ← ★ POS 9: MODAL #quoteModal — snapshot inmutable + grilla 9 tarjetas + observaciones (sesión) + confirmación de desborde + export PNG/PDF con ticket R7
 │   ├── quote/ficha-render.ts      ← ★ POS 9: ÚNICO MOTOR — renderMateView (3 luces de escena, sin guías/watermark) + makeQuoteCanvas (PNG 2× ≥2160 ≤5MB) FUERA del chunk inicial (import() dinámico)
@@ -304,6 +347,20 @@ simulador-mates/
 │   ├── links/states.ts             ← ★ POS 10A: vigencia/estados R5 (prioridad aprobado>vencido>por_vencer) + URL canónica + wa.me share/aprobación R6/R8 + código APROBADA + RPM del visor
 │   ├── links/asset-encode.ts       ← ★ POS 10A: re-encode client-only (PNG ≤300 KB escalera 1024/768/512 con alpha) + original ≤10 MB
 │   ├── links/view-shape.ts         ← ★ POS 10A: buildPublicView (jsonb ⇒ vista del visor: re-arbitra contratos, presets válidos, gating por asset, legado 1:1)
+│   ├── legal/config.ts            ← ★ POS 12: versiones, identidad `LEGAL_ENTITY_*`, metadata/canonical, leyenda de precio
+│   ├── legal/links.ts             ← ★ POS 12: rutas públicas client-safe (footer en componentes cliente)
+│   ├── legal/requests.ts          ← ★ POS 12: núcleo PURO — códigos ARR/BAJA/PRIV, validación, ventana 10 días, rate limit, token SHA-256 24 h, gate de checkout, escape/honeypot/Origin
+│   ├── legal/service.ts           ← ★ POS 12: service-role — DB de solicitudes/aceptaciones, baja con doble opt-in y cola manual perezosa, cancelación MP vía `applyPreapproval`, IP hasheada y emails
+│   ├── legal/mail.ts              ← ★ POS 12: acuses + baja efectivizada + alerta interna (HTML escapado, fail-soft)
+│   ├── legal/http.ts              ← ★ POS 12: respuestas públicas (validación, 429 con Retry-After, 503 honesto, no-store)
+│   ├── payments/core.ts           ← ★ POS 10B/13: máquina R1/R4/R8/R9 + `revocada` R11 + gracia 5 d + ancla tz AR + resolvePlan + formatos ARS
+│   ├── payments/refunds.ts        ← ★ POS 13: lógica PURA — clamp/acumulado, estado autoritativo, ciclo vigente, impacto (revoke/partial/audit), merge monótono y reverso
+│   ├── payments/mercadopago.ts    ← POS 10B/13: REST v1 preapproval/payments/chargebacks + search por external_reference + cancelPreapproval
+│   ├── payments/webhook.ts        ← POS 10B/13: firma HMAC `id;request-id;ts` timing-safe + ruteo payment/preapproval/chargeback
+│   ├── payments/mail.ts           ← POS 10B/13: Resend fail-soft + recibo/gracia/cierre + reembolso total/parcial + contracargo + alerta interna
+│   ├── payments/apply.ts          ← POS 10B/11/13: camino ÚNICO pago/preapproval/refund/chargeback (webhook⇄sync⇄legal) + CAS + claim de email
+│   ├── payments/sync.ts           ← POS 11/13: TTL/cooldown + ventana R12.4 + selección/orden/auditoría + refunds + preapproval + realineo
+│   ├── payments/reconcile.ts      ← POS 10B/11: dunning al-vuelo (ventanas + drift MP + realineo; `revocada` ⇒ free; modos local/sync)
 │   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color/diseño pos 5–6 + escala/espejo/inkEnvelope pos 7)
 │   ├── projects/persistence.ts    ← restore (last-write-wins) + upsert + borrador local con timestamp
 │   ├── projects/use-autosave.ts   ← debounce 2 s + banner offline + backoff de reconexión (§5/§6)
@@ -322,7 +379,12 @@ simulador-mates/
 │   │   ├── 0001_auth_skeleton.sql     ← users + trigger nombre derivado + projects + pricing_config + RLS + Realtime
 │   │   └── 0002_profile_fields.sql    ← columnas de branding + CHECKs + deleted_at (aplicada 04-nov)
 │   │   └── 0003_projects_owner_default.sql ← default auth.uid() en projects (aplicada 04-nov)
-│   │   └── 0004_shareable_links.sql     ← POS 10A: links (insert-only, RLS owner select) + link_approvals (INSERT público con link_open_for_approval) + buckets link-assets (público lectura) / designs (privado) (aplicada 06-nov)
+│   │   ├── 0004_shareable_links.sql     ← POS 10A: links (insert-only, RLS owner select) + link_approvals (INSERT público con link_open_for_approval) + buckets link-assets (público lectura) / designs (privado) (aplicada 06-nov)
+│   │   ├── 0005_subscriptions.sql       ← POS 10B: subscriptions + payments + checkout_intents (ciclo R1/R4/R8/R9, RLS owner select, grants inline) (aplicada 07-nov)
+│   │   ├── 0006_price_pro_36799.sql     ← POS 10B: precio vigente ARS 36.799/mes en pricing_config
+│   │   ├── 0007_payment_sync.sql        ← POS 11: last_checkout_at/last_synced_at + applied_at/email_*/source + backfill 10B + índices (aplicada 23-nov)
+│   │   ├── 0008_legal.sql               ← POS 12: legal_acceptances (evidencia versionada, RLS owner) + legal_requests (service-role) + índices + helper `legal_find_user_by_email` (aplicar a mano)
+│   │   └── 0009_refunds_chargebacks.sql ← POS 13: estados de pago + refunded_amount/status_detail/updated_at + `revocada`/closure_reason/closed_at + payment_adjustments append-only (RLS owner select) (aplicar a mano)
 │   └── ops/
 │       ├── 0901_backfill_user_rows.sql ← reparación: fila faltante en public.users (cuenta nacida pre-migración)
 │       ├── 0910_base_grants.sql        ← grants ampliados users/projects/pricing (aplicada 04-nov)
@@ -330,7 +392,7 @@ simulador-mates/
 │
 ├── tests/
 │   ├── unit/permissions.test.ts   ← 8 tests: invariantes de la matriz R2
-│   ├── unit/links-core.test.ts    ← 23 tests pos 10A: R2 (6 chars/canónico/colisiones), R4 (fracción/módulo/labels truncado), R5 (30 d + ≤5 d con prioridad), R6 texto, R8 wa.me EXACTO
+│   ├── unit/links-core.test.ts    ← 26 tests pos 10A: R2 (6 chars/canónico/colisiones), R4 (fracción/módulo/labels truncado), R5 (30 d + ≤5 d con prioridad), R6 texto, R8 wa.me EXACTO
 │   ├── unit/branding.test.ts      ← 23 tests: fallbacks, CTA R5, E.164, Instagram, completitud
 │   ├── unit/catalog.test.ts       ← 13 tests: QA1 matemático, labio anti-fuga R4, R8, corrupción §6
 │   ├── unit/color.test.ts         ← 32 tests: tabla PBR R1, exclusividad/recientes R3, quemado R4 (luminancia), descriptores R5
@@ -340,6 +402,13 @@ simulador-mates/
 │   ├── unit/quote-texts.test.ts     ← 16 tests pos 9: wrapObservations R5 (≤2 líneas, `…` preserva palabras, overlong word), MCU 280, slug/nomenclatura §5 EXACTA ficha/foto
 │   ├── unit/quote-snapshot.test.ts  ← 24 tests pos 9: formatos R2 EXACTOS, descriptores R3 (sin auto-nombres), margen canónico R5, R8 fallbacks + warns, hash estable excluyendo capturedAt, currentOverflowCheck
 │   ├── unit/links-view.test.ts    ← 10 tests pos 10A: buildPublicView re-arbitra contratos (v2 + basura polite + presets válidos + legado 1:1 + ids inválidos fuera), código APROBADA EXACTO + texto/href wa.me de aprobación
+│   ├── unit/payments-core.test.ts ← 32 tests pos 10B: máquina R1/R4/R8/R9, gracia 5 d corridos, ancla tz AR, resolvePlan, formatos ARS
+│   ├── unit/payments-webhook.test.ts ← 11 tests pos 10B: firma HMAC manifiesto `id;request-id;ts` timing-safe + ruteo de eventos
+│   ├── unit/payments-sync.test.ts ← 18 tests pos 11: TTL/cooldown R12.3, ventana R12.4, watermark, selección/orden/auditoría R12.5/R12.6, validación ARS/monto/fechas R12.12, decisión de filas existentes + URL de `/preapproval/search` (`sort=campo:orden`, body del 400)
+│   ├── unit/profile-account.test.ts ← 3 tests: objetivos de Storage al eliminar cuenta (link-assets/designs/branding, dedupe y links vacíos)
+│   ├── unit/compose-engraving.test.ts ← 1 test: pipeline compartido del grabado (escena ⇄ ficha)
+│   ├── unit/legal-core.test.ts    ← 25 tests pos 12: códigos limpios, validación (email/nombre/fecha/mensaje/declaraciones), ventana 10 días AR, rate limit email/IP, token 64 hex + SHA-256 + TTL, gate de checkout versionado, escape/mask, honeypot/Origin
+│   ├── unit/payments-refunds.test.ts ← 15 tests pos 13: clamp/acumulado, estado autoritativo (approved con devolución ⇒ parcial/total), merge monótono, ciclo vigente, impacto Q1–Q4, `revocada` ⇒ free, transiciones y carrera refund/approved
 │   └── unit/virola.test.ts        ← 31 tests: R1 clamps/rangos dinámicos, R2 métricas, R3 cascada <100ms, R4/R5 guías coplanares, R6 triada, R7 auto-giro
 ├── three/README.md                ← índice del motor 3D + contrato de costura UV (posiciones 3–7)
 ├── three/visual-skeleton.ts       ← constantes visuales pos 4 + LATHE_SEAM_PHI_START
@@ -550,6 +619,133 @@ en la página pública (la spec proponía "vista segura"; el server nunca expone
 publish de UNA sola variante desde nov-2026 (el visor conserva la lectura A/B/C legacy). Evidencia
 en la fila QA del §8.
 
+### Posición 11 — Sync de pagos + "Verifico de nuevo" real (según `spec_sync_de_pagos_y_reverificacion.md`)
+
+La posición 11 **no redefine** la máquina de estados de `spec_pagos.md` (R1–R10): agrega
+el camino de recuperación cuando el webhook no alcanza. El webhook sigue siendo el
+camino primario; el sync corre **al-vuelo en `/perfil`** y **a pedido** desde el botón.
+Sin `pg_cron` (decisión del titular).
+
+| Ref | Requisito | Implementación | Estado |
+| :-- | :-- | :-- | :-- |
+| R12.1 | Verdad desde MP: buscar por `external_reference = user_id` de la sesión y hacer `GET /v1/payments/{id}` por candidato; el `user_id` jamás sale del request | `lib/payments/sync.ts` + `searchPaymentsByExternalReference`; `POST /api/billing/refresh` ignora cualquier body y usa `auth.getUser()` | ✅ |
+| R12.2 | Disparadores: `/perfil?pago=success\|pending`, TTL on-read en `/perfil`, botón manual; el editor NO busca pagos | `app/perfil/page.tsx` (`mode:'sync'`, `force` con `?pago=`) · `app/(editor)/editor/page.tsx` (`mode:'local'`) · endpoint manual | ✅ |
+| R12.3 | TTL 60 s si el ciclo no está `activa`, 6 h si está `activa`; cooldown manual 20 s; lease contra `last_synced_at` | `syncWindowMs`/`retryAfterSeconds` + CAS de lease en `syncUserCycle`; UI con countdown y `429 SYNC_COOLDOWN` + `Retry-After` | ✅ |
+| R12.4 | Ventana anti-resurrección `last_checkout_at − 1 día`; fallbacks `subscriptions.created_at` y último `checkout_intents.created_at`; un pago viejo se audita y NO muta | `watermarkMsOf`/`isWithinSyncWindow`; `validatePaymentForApply` marca `old`; `selectPaymentsToAudit`; el checkout escribe `last_checkout_at` | ✅ |
+| R12.5 | Aplicar todos los pagos faltantes en orden cronológico ASC | `selectPaymentsToApply` ordena por `date_created` (desempate por id) y el sync pullea/aplica en ese orden | ✅ |
+| R12.6 | Reparación idempotente: `applied_at IS NULL` ⇒ re-aplicar; ya aplicado ⇒ no; dedupe `mp_payment_id UNIQUE` | `decideExistingPayment` + `applyPayment`; `applied_at` se marca recién con ciclo y `users.plan` consistentes | ✅ |
+| R12.7 | Un email por pago (recibo/gracia), claim atómico, hasta 3 intentos, idempotency key `receipt:{id}`; sin envs no se quema intento | `sendPaymentEmail` (`email_claimed_at` lease 5 min, `email_attempts`, `email_last_error`) + `retryPendingPaymentEmails` con deadline; Resend `Idempotency-Key` | ✅ |
+| R12.8 | `preapproval_id` local: leerlo y aplicar `cancelled`/`paused` como cierre programado; si falta, adoptar el más nuevo de MP solo con `external_reference` propio | `applyPreapproval` compartido + búsqueda/filtro/adopción en `syncUserCycle`; mismatch de pago ⇒ `preapproval_mismatch` sin mutar | ✅ |
+| R12.9 | No resucitar reembolsos/contracargos (R11) | POS 13: `refunded`/`partially_refunded`/`charged_back` se foldean por `applyRefundEvent` (nunca por el alta del ciclo); el sync los incluye solo para reflejar el dinero y `applyPayment` bloquea un `approved` posterior con `refund_wins` | ✅ |
+| R12.10 | Fallo suave: si MP no responde, el render sigue local y el botón muestra el estado honesto | presupuesto 8 s on-read / 30 s manual; `outcome:'mp_unavailable'` con `warning`; `try/catch` en reconcile y endpoint 502 | ✅ |
+| R12.11 | Observabilidad `[mp sync]` con user/trigger/since/scanned/missing/applied/preapproval/plan/ms/outcome; sin tokens ni tarjeta | `console.log('[mp sync]', JSON.stringify({...}))` + `[mp apply ...]`/`[mp email ...]` | ✅ |
+| R12.12 | Solo ARS; monto finito > 0; en alta/re-alta se congela el monto cobrado; en ciclo normal no se toca `price_frozen` | `validatePaymentForApply` + `transitionSubscription`/`freezePrice` (R4) | ✅ |
+| §5 | Migración `0007_payment_sync.sql`: columnas + índices + backfill de filas 10B | `supabase/migrations/0007_payment_sync.sql` (idempotente; el backfill corre solo la primera vez) | ✅ (aplicar en Supabase) |
+| §3.5 | `POST /api/billing/refresh`: 401 sin sesión, 503 sin MP, 429 cooldown, 502 MP caído sin estado local, 200 con el resultado | `app/api/billing/refresh/route.ts` + `syncUserCycle({trigger:'manual',force:true})` | ✅ |
+| §4 | UI: "Verifico de nuevo" SIEMPRE sin PRO (con o sin `?pago=`), estados `idle/checking/found/empty/mp_down/error`, `aria-live`, constancia, cooldown y soporte tras 2 intentos | `components/profile/subscription-card.tsx` (fetch real + countdown + `NEXT_PUBLIC_SUPPORT_EMAIL`/`WHATSAPP`, SLA 24 h) | ✅ |
+
+**Desviaciones declaradas (todas más estrictas):**
+
+- El email de un pago **auditado** (viejo, fuera de la ventana) no se envía: el
+  `retryPendingPaymentEmails` filtra `applied_at IS NOT NULL`.
+- La migración backfillea `applied_at`/`email_sent_at` de las filas de 10B: sin eso,
+  el primer sync podría re-aplicar pagos históricos y reenviar recibos viejos. Si un
+  email de 10B falló de verdad, soporte limpia `email_sent_at` para ese pago.
+- El sync de la posición 11 **no** emitía reembolsos/contracargos; desde la
+  posición 13 los incluye como candidatos para reflejar el dinero y comparte
+  `applyPayment`/`applyRefundEvent` con el webhook (nunca re-aplica un `approved`
+  sobre un pago refundido: gana `refund_wins`).
+- El editor conserva el pull de `preapproval` del dunning 10B (drift de
+  cancelaciones) pero **no** busca pagos; el presupuesto de red del sync es solo
+  `/perfil`/botón.
+
+### Posición 12 — Páginas legales, aceptación y derechos del consumidor (según `spec_paginas_legales.md`)
+
+La posición 12 agrega la capa pública que faltaba para cobrar: **no reimplementa**
+la máquina de pagos ni las reglas R2. Las páginas legales son públicas de verdad
+(fuera del middleware de auth), los formularios no piden login y la baja usa la
+misma máquina R9 que el resto del ciclo. La norma citada es la **Disposición
+954/2025** (derogó 424/2020 y 316/2018), complementada por Ley 24.240 y Ley
+25.326.
+
+| Ref | Requisito | Implementación | Estado |
+| :-- | :-- | :-- | :-- |
+| R13.1 | Norma vigente + identidad/versión/fecha | `lib/legal/config.ts` (`LEGAL_VERSIONS`, `LEGAL_ENTITY_*`, `LEGAL_LAST_UPDATED_*`) + `LegalIdentity`/`LegalMeta`; si falta un dato se declara visiblemente | ✅ |
+| R13.2 | Botones en primer acceso (`/auth`, `/editor`, `/perfil`, `/v/[linkId]`) | `components/legal/legal-footer.tsx` (client-safe, dos botones outlined, variantes `prominent`/`compact`) montado en las cuatro superficies | ✅ |
+| R13.3 | Sin registro, login, teléfono ni WhatsApp obligatorio | Formularios públicos; único paso extra: link de confirmación de la baja por email (Q7) | ✅ |
+| R13.4 | Código + acuse ≤ 24 h | `generateLegalCode` + `legal_requests`; código visible, email al consumidor y alerta a `LEGAL_EMAIL` | ✅ |
+| R13.5 | Arrepentimiento 10 días corridos | `isWithinWithdrawalWindow` con calendario AR; fuera de plazo se recibe igual y se explica; reembolso del ciclo completo (Q4) | ✅ |
+| R13.6 | Baja con doble opt-in | Token aleatorio 32 B hasheado SHA-256, TTL 24 h, un solo uso; verifica email de la cuenta y `external_reference` del preapproval; cancela con `cancelPreapproval` + `applyPreapproval` (`source:'legal'`, `suppressEmail:true`); vencido ⇒ `en_proceso` sin `confirmed_at` (cola manual) y reenvío con el mismo código | ✅ |
+| R13.7/R13.8 | Checkbox + evidencia versionada | Paywall con checkbox **desmarcado**; server compara `LEGAL_VERSIONS` y registra dos filas (`terms`/`privacy`) con usuario, email snapshot, contexto, IP y user-agent; fail-closed `503 EVIDENCIA_NO_DISPONIBLE` antes del preapproval | ✅ |
+| R13.9/R13.10 | Privacidad + derechos | Política completa (encargados, transferencias, retención, seguridad, cookies, menores, AAIP); `PrivacyForm` con código `PRIV-…` y plazo de 5 días hábiles | ✅ |
+| R13.11 | Precio claro | `readLegalPrice()` lee `pricing_config` server-side y `legalPriceLegend()` agrega “impuestos incluidos”; nunca se hardcodea | ✅ |
+| R13.12 | Sin dark patterns | Checkbox vacío, sin consentimiento premarcado, links visibles, baja sin llamadas ni justificación | ✅ |
+| R13.13 | Versionado / re-aceptación | Cambio de versión ⇒ `409 LEGAL_VERSION_CHANGED` en el próximo checkout; banner no bloqueante en `/perfil`; las filas viejas se conservan | ✅ |
+| R13.14 | Atención al consumidor | Email/teléfono/WhatsApp/horario por envs (default 9–18, ≥8 h/día hábil); área responsable publicada | ✅ |
+| R13.15 | Retención | Plazos publicados; la purga operativa (5 años/90 días) queda como tarea del titular | ✅ textos |
+| R13.16 | Accesibilidad/impresión | Español rioplatense, ancho ≤75 caracteres, print CSS, labels, foco visible y `aria-live` | ✅ |
+| §5 | Migración | `supabase/migrations/0008_legal.sql` (idempotente, sin DROP; helper `legal_find_user_by_email` porque `public.users` no guarda email) | ✅ (aplicar a mano) |
+| §6 | Seguridad | Rate limit email/IP, honeypot, Origin/Referer, escape HTML, IP hasheada con salt, service-role solo server-side y sin policies públicas en `legal_requests` | ✅ |
+
+**Decisiones Q1–Q7 aplicadas:** identidad por envs con fallback visible; jurisdicción
+del consumidor; precio final con impuestos incluidos y comisión absorbida; reembolso
+100 % dentro de los 10 días aunque el servicio se haya usado (también renovaciones);
+checkbox obligatorio en checkout con IP/user-agent; re-aceptación solo antes del
+próximo checkout + banner no bloqueante; baja con doble opt-in y SLA 24 h / 5 días
+hábiles. **Desviación declarada:** el rate limit responde `429` genérico (sin devolver
+el código) para no permitir enumeración de emails.
+
+**Cola manual sin cron:** si nadie confirma el link en 24 h, la solicitud se marca
+`en_proceso` cuando el link vencido se abre o se reenvía; no se marca `confirmed_at`
+porque la identidad no se verificó. Así el reenvío conserva el código y la fila, y
+un cron futuro puede sumarse sin cambiar el contrato.
+
+### Posición 13 — Reembolsos y contracargos del Plan PRO (según `spec_reembolsos_y_contracargos.md`)
+
+La posición 13 cierra la asimetría entre el dinero y el acceso: **no reimplementa**
+el ciclo de `spec_pagos.md` ni el sync de la 11; extiende el camino único
+(`applyPayment`/`applyRefundEvent`) para que un reembolso o contracargo del ciclo
+vigente revoque el PRO, y para que uno de un ciclo pasado solo quede auditado. El
+reembolso se sigue emitiendo desde el panel de MP: la app no tiene panel admin.
+
+| Ref | Requisito | Implementación | Estado |
+| :-- | :-- | :-- | :-- |
+| R11.1 | Verdad desde MP: pull de payment/chargeback; el body solo dispara | `getChargeback` + `transaction_amount_refunded`/`refunds` en `mercadopago.ts`; `handleChargeback` en el route hace `GET /v1/chargebacks/{id}` + `GET /v1/payments/{id}` antes de mutar | ✅ |
+| R11.2 | Estados de pago + `refunded_amount`/`status_detail` | `PAYMENT_STATUSES`, `resolveRefundStatus`, `effectiveRefundedAmount` (clamp a `amount`) y migración `0009` | ✅ |
+| R11.3 | Ciclo vigente = último pago que financió el ciclo; ciclo pasado ⇒ auditoría | `isCurrentCyclePayment` + consulta `approved`/`partially_refunded` por `occurred_at DESC`; sin pago aprobado ⇒ solo auditoría (§3.3.5) | ✅ |
+| R11.4 | Total ⇒ `revocada`, `free`, `closure_reason='refund'`, `closed_at`, gracia limpia | `transitionSubscription({kind:'reembolso_total'})` + CAS de `subscriptions` y `users`; `price_frozen`/`cycle_anchor` intactos | ✅ |
+| R11.5 | Parcial ⇒ `partially_refunded` + acumulado; plan sigue (Q2) | `decideRefundImpact` ⇒ `partial_keep`; email con fin de ciclo (de `period_end` o ancla) | ✅ |
+| R11.6 | Contracargo ⇒ suspensión inmediata, `closure_reason='chargeback'` | topic de pagos `charged_back` y topic de contracargos (`chargeback`/`topic_chargebacks_wh`) confluyen en `applyChargeback`/`applyRefundEvent` | ✅ |
+| R11.7 | Idempotencia + dedupe | CAS por `status` anterior; `payment_adjustments` append-only con únicos `(kind, mp_source_id)` y `(mp_payment_id, kind, occurred_at)`; reintento ⇒ `200` sin email | ✅ |
+| R11.8 | Preapproval | Al revocar se cancela el preapproval (Q6); si MP falla queda `revocada` + alerta interna sin loop. “Reactivar PRO” crea checkout nuevo y cancela el viejo si sigue vivo | ✅ |
+| R11.9 | Emails `reembolso_total`/`reembolso_parcial`/`contracargo` + alerta interna | `mail.ts` (sin datos de tarjeta, sin prometer plazos bancarios); barrera `newAdjustments > 0`; `sendMail` fail-soft | ✅ |
+| R11.10 | Historial y grandfathering | Fila original conservada con `refunded_amount` visible; `price_frozen`/`cycle_anchor` no se reescriben | ✅ |
+| §5 | Migración | `supabase/migrations/0009_refunds_chargebacks.sql` (idempotente, sin DROP; CHECK por definición en `pg_constraint`) | ✅ aplicada 23-nov-2026 |
+| §7 | QA | Tests puros + typecheck + build + **QA de integración 12/12** contra Supabase TEST + MP TEST (`docs/qa-posicion-13.md`) | ✅ técnico + integración |
+
+**Decisiones Q1–Q7 (v0.2) aplicadas:** Q1 total corta el acceso inmediatamente; Q2
+parcial mantiene el plan hasta el fin del ciclo; Q3 ciclo pasado solo auditoría; Q4
+contracargo suspende sin gracia; Q5 reverso/ganado registra `reversal` y deja el plan
+en FREE hasta reactivación manual; Q6 se cancela el preapproval al revocar; Q7 email al
+taller + alerta operativa a `LEGAL_EMAIL`/`EMAIL_FROM`, sin prometer plazos.
+
+**Extensiones/desviaciones declaradas:**
+
+- **Q6 extendida:** el preapproval también se cancela en un cierre por **contracargo**
+  (la spec solo lo exige para el reembolso total). Evita que el preapproval viejo siga
+  cobrando mientras la disputa se resuelve.
+- Un reembolso/contracargo de un **ciclo pasado** actualiza `payments` y registra la
+  novedad, pero **no** manda email al taller (solo alerta interna): el plan no cambia.
+- El email del taller se dispara con la primera fila **nueva** de
+  `payment_adjustments`; un reintento o una segunda notificación del mismo recurso no
+  reenvía. El reverso de un contracargo no reactiva el plan ni manda email de
+  suspensión (solo alerta interna).
+- `payments.occurred_at` conserva la fecha del **cobro**; la fecha del reembolso vive
+  en `payment_adjustments.occurred_at`. Así el ancla del ciclo no se mueve.
+- El sync incluye pagos refund-like **fuera de la ventana R12.4** para reflejar el
+  dinero, pero el impacto en el plan sigue la regla del ciclo vigente; el
+  anti-resurrección no bloquea la auditoría del reembolso.
+
 ---
 
 ## 6. Cómo fluye en runtime (recorrido de un usuario real)
@@ -624,6 +820,11 @@ persisten hasta corregir. El margen jamás viaja en el autosave (es derivable).
 | `.env` con `URL + ANON + SERVICE_ROLE_KEY` | ✅ el usuario optó por archivo `.env` y Next declara "Environments: .env" — `.env` y `.env.local` valen ambos |
 | Migración `0004_shareable_links.sql` | ✅ aplicada 06-nov (titular) — links + link_approvals + grants (ver incidentes 10A de abajo) |
 | Migración `0005_subscriptions.sql` | ✅ aplicada y verificada 07-nov por REST — `subscriptions` + `payments` + `grace_expires_at` (el fix `ab90418` corrigió el drift del schema del ciclo) |
+| Migración `0006_price_pro_36799.sql` | ✅ aplicada 21-nov — precio vigente **ARS 36.799/mes**; las suscripciones vivas conservan `price_frozen` (R4) |
+| Migración `0007_payment_sync.sql` | ✅ **aplicada 23-nov** en Supabase SQL Editor — sync de pagos (POS 11): `last_checkout_at`/`last_synced_at`, `applied_at`, claim de email, `source` y backfill de 10B. Verificada por el sync real de `/perfil` (lee/escribe `last_synced_at` y `source`) |
+| Migración `0008_legal.sql` | ✅ **aplicada 23-nov-2026** a mano — POS 12: `legal_acceptances`/`legal_requests`, RLS del dueño, grants y helper `legal_find_user_by_email` |
+| Migración `0009_refunds_chargebacks.sql` | ✅ **aplicada 23-nov-2026** a mano — POS 13: estados de pago, `refunded_amount`/`status_detail`/`updated_at`, `revocada`/`closure_reason`/`closed_at`, `payment_adjustments` append-only. Verificada por el QA de integración (constraints `23514`/`23502` + RLS/grants) |
+| Envs de soporte POS 11 | ⬜ opcionales — `NEXT_PUBLIC_SUPPORT_EMAIL` y `NEXT_PUBLIC_SUPPORT_WHATSAPP`; sin ellas la card muestra el aviso de configuración (no rompe) |
 | Cuentas de prueba MP del taller (07-nov) | ✅ vendedora-test del app: `TESTUSER2051836120` (id 2163208142 — el token de `.env` es SU `APP_USR`); compradora-test: `test_user_532412195559500595@testuser.com` / `rtPtaVCKO1` (creada vía API `POST /users/test_user`); plan de prueba ACTIVO: `336d29cd…` (20.000 ARS/mes, sirve para mintear `init_point` de demos); TODAS las preapproals de QA canceladas (`4a9bf222…`, `42f1f4b9…`, `93d6502a…`, `1bfa10ce…` — la última cancelada POR EL TITULAR desde el portal del comprador) |
 | Webhooks en modo TEST (07-nov) | ✅ MP NO llamó Jamás al `notification_url` (dropeó el campo en creaciones por plan y en la página hospedada) ⇒ protocolo QA: pull del recurso a MP + re-envío del evento firmado a mano con `MP_WEBHOOK_SECRET` (manifiesto `id;request-id;ts;` testado). En prod la entrega webhook con `x-signature` válida es el camino natural — ver spec de ida a producción |
 | Túnel dev (ngrok free) | ✅ `MP_PUBLIC_ORIGIN` activo; el interstitial "you are about to visit…" es una vez por browser de cada visitante (capa gratuita, sin impacto) |
@@ -646,7 +847,7 @@ persisten hasta corregir. El margen jamás viaja en el autosave (es derivable).
 ```sql
 select public.derive_base_name('kevin.firma@correo.com');  -- "Kevin Firma"
 select public.derive_base_name('12345@correo.com');        -- "MI TALLER"
-select * from pricing_config;                              -- pro_monthly_ars · 20000 · ARS
+select * from pricing_config;                              -- pro_monthly_ars · 36799 · ARS
 select tablename, rowsecurity from pg_tables
  where schemaname = 'public' and tablename in ('users','projects');  -- 2 filas rowsecurity=true
 ```
@@ -667,9 +868,10 @@ select column_name from information_schema.columns
 
 | Check | Resultado |
 | :--- | :--- |
-| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–10B adentro) |
-| `npm run test` (Vitest) | ✅ **285/285** — 8 de matriz R2 + 23 de branding + 13 de catálogo (+`linkDraft`) + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + 16 de textos ficha pos 9 + 24 de snapshot ficha pos 9 + 23 de links core + 10 de visor pos 10A + **32 de pagos core + 11 de webhook/firma pos 10B** |
-| `npm run build` (producción) | ✅ **19 rutas** — nuevas `/api/billing/checkout` + `/api/webhooks/mercadopago`; `/editor` 29.3 kB / 221 kB First Load y `/perfil` 10.3 kB / 196 kB (el Centro de Suscripción se lee server-side con la RLS del dueño); `/v/[linkId]` 5.41 kB / 125 kB (el Modo Cliente NO hincha el editor: escena R3F por `dynamic ssr:false`); el motor 3D y pdf-lib siguen en chunks propios y los módulos de pagos server-only no se infiltran en bundles cliente (`import()` dinámico del modal — nunca dentro del HTML inicial) |
+| `npm run typecheck` (tsc --noEmit, strict) | ✅ **0 errores** (con las posiciones 4–13 adentro) |
+| `npm run test` (Vitest) | ✅ **362/362** — 8 de matriz R2 + 23 de branding + 13 de catálogo (+`linkDraft`) + 31 de virola pos 4 + 32 de color pos 5 + 28 de diseño pos 6–7 + 27 de desborde/escala pos 7 + 7 de ticket export pos 8 + 16 de textos ficha pos 9 + 24 de snapshot ficha pos 9 + 26 de links core + 10 de visor pos 10A + **32 de pagos core + 11 de webhook/firma pos 10B + 18 de sync pos 11 + 25 de legal pos 12 + 15 de reembolsos/contracargos pos 13 + 6 de origin/back_url pos 13** + 3 de perfil/cuenta + 1 del compositor compartido |
+| `npm run test:qa` (integración) | ✅ **12/12** contra Supabase TEST + MP TEST + Next dev (`docs/qa-posicion-13.md`): constraints/RLS, parcial, total vigente, ciclo pasado, contracargo + reverso, carrera refund/approved, usuario ajeno, fallo de cancelación (Q6), “Reactivar PRO”, webhook HTTP y Resend real |
+| `npm run build` (producción) | ✅ **30 rutas** — la posición 13 no suma rutas: extiende `/perfil`, `/editor?paywall=1`, `/api/billing/checkout` y `/api/webhooks/mercadopago`; se mantienen las 5 páginas públicas de POS 12 y las 4 APIs legales; `/editor` 30.1 kB / 228 kB First Load y `/perfil` 14 kB / 204 kB (Centro de Suscripción server-side con RLS del dueño); `/v/[linkId]` 6.52 kB / 131 kB (Modo Cliente por `dynamic ssr:false`); el motor 3D, pdf-lib y los módulos server-only siguen fuera de los bundles cliente |
 | Smoke prod sin envs (pos 1) | `/` 307→`/setup` · `/auth` 307→`/setup` · `/setup` 200 |
 | Smoke runtime real con `.env` (04-nov, pos 1) | login PKCE → `/editor 200` · `/api/config/pricing` **200** · fila derivada en DB (`Kherrera`) · logout visible free |
 | **Smoke gating pos 2** (server efímero 7434, sin sesión) | `/perfil` 307→`/auth` · `POST /api/profile/logo` 401 · `POST /api/profile/delete` 401 · `/api/auth/exit` 307→`/auth?cuenta=inhabilitada` · `/auth?cuenta=eliminada` 200 |
@@ -688,6 +890,9 @@ select column_name from information_schema.columns
 | **QA Posición 10A** (06-nov, técnica) | Núcleo puro ✅ (R2: 6 chars/canónico/colisiones inyectadas · R4: fracción ×100 → % canónico, módulo 360, labels ≤40 truncado elegante · R5: 30 d + ≤5 d con prioridad aprobado>vencido>por_vencer · código `APROBADA-{VARIANTE}-{LINKID}` EXACTO de spec usuario · wa.me de aprobación nombra la opción y pelea los símbolos del E.164) ✅ · `buildPublicView` ✅ (re-arbitra contratos: presets VÁLIDOS `bronce`/`algarrobo`, diámetros saneados con hueco < corona, legacy 1:1 con `textureDataUrl` ⇒ variante A, jsonb basura ⇒ vista sin lanzar, ids inválidos/duplicados fuera) ✅ · 402 FREE server-side ✅ (plan desde `users` con service-role fail-closed en POST — decisión del cliente jamás paga) · aprobación pública ✅ (404 inexistente / 410 vencido / variante validada contra payload + INSERT con cliente anónimo ⇒ RLS `approvals_public_insert` + trigger `link_open_for_approval`; CTA registra ANTES de `wa.me` con backoff y wa.me garantizado con número válido) ✅ · Storage ✅ (textura PNG escalera ≤300 KB + original ≤10 MB + logo por versión, buckets `link-assets` público / `designs` privado) · visor ✅ (crossfade ≤300 ms por capas de la MISMA textura sin resetear cámara/giro/ritmo, 0.5 RPM pausable que reanuda al soltar, sin guías/medidas/marca de agua, descarga sin margen) · `/v` pública POR DISEÑO ✅ (fuera del redirect a `/auth`, con comentario deliberado). Smoke del 401 sin sesión en `POST /api/links` con curl + QA visual completa (publish PRO real, badge APROBADO, layout WhatsApp) ⇒ pendiente del titular con el diseño real. **Avance QA en vivo (06-nov):** tras `3782470`, `POST /api/links` ⇒ **200** (publish real, linkId `qo6khn`, registro QA con plan `pro`) y `GET /v/qo6khn` ⇒ **200** (visor público compila y sirve) — el circuito de publicación + visor quedó verificado end-to-end en dev |
 | **QA Posición 10B** (06-nov, técnica) | Núcleo puro ✅ (32 tests: máquina R1/R4/R8/R9 — gracia 5 días corridos NO re-abrible desde el PRIMER rechazo, `resolvePlan` activa⇒pro / gracia viva⇒pro_grace / programada pre-`period_end`⇒pro / vencidas⇒free, ciclo anclado a 00:00 AR `America/Argentina/Buenos_Aires` con clamp a meses cortos —ancla 31 ⇒ 28 feb—, `freezePrice` SOLO alta/re-activación R4, `formatArs` es-AR con NBSP U+00A0 documentado) ✅ · webhook/firma ✅ (11 tests: manifiesto HMAC `id;request-id;ts` timing-safe con cualquier v1 vigente, data-id/ts/request-id/secreto retocados ⇒ false, piezas faltantes ⇒ fail-close, query legada `?topic=&id=` para curl QA) ✅ · dedupe R7 (`mp_payment_id` UNIQUE: re-envío ⇒ 200 `dedupe` sin insertar ni mutar) + compare-and-set (`WHERE status = current`; CAS perdido logea y queda a la reconciliación) ✅ · mutación autoritativa: `price_frozen` = monto DEL PAGO aprobado y `cycle_anchor` re-anclado SOLO en alta/re-activación + autoheal de fila `subscriptions` si el seed del checkout falló ✅ · dunning al-vuelo SIN pg_cron (decisión del titular): editor y perfil reconcilian el ciclo ANTES de leer `users.plan` — ventanas vencidas ⇒ `gracia_vencida` ⇒ FREE preservando proyectos/assets/links, drift MP (cancelled/paused no notificado) ⇒ `programada_cierre`, realineo del gating con `resolvePlan`; fallo suave con try/catch ✅ · Centro de Suscripción leído con la RLS DEL DUEÑO (historial estrictamente privado, §5) ✅ · paywall con paso "Confirmá tu email" (409 `EMAIL_NOT_VERIFIED`; Confirm email sigue OFF ⇒ el QA fuerza seed `email_confirmed_at = NULL`) y `checkout_intents` cero emails de abandono (R10) ✅ · build 19 rutas sin leaks server-only en bundles cliente ✅. QA del titular de punta a punta (sandbox MP + túnel + 0005) ⇒ pendiente, checklist en §10 |
 | **QA 10B en vivo** (07-nov, sandbox MP) | Circuito de dinero COMPLETO con MP-truth (preapproals y pagos REALES del sandbox; MP nunca llamó `notification_url` ⇒ eventos reenviados a mano con la firma HMAC del manifiesto `id;request-id;ts;` — mismo circuito de los 11 tests de webhook). **QA1 alta protegida** ✅ (filas `023e7f86…`/`b344321a…` en `checkout_intents`, CERO emails de abandono R10; visual del modal queda al titular). **QA2 ida feliz** ✅ — preapproval `4a9bf222…` (plan `336d29cd…` 20.000 ARS/mes + card_token + payer comprador-test + `external_reference`=user del titular) ⇒ primer cobro approved `188361624478` (20.000) ⇒ evento ⇒ `payments` + `subscriptions{activa, price_frozen 20000, cycle_anchor 2026-11-07}` + `users.plan='pro'`; `receipt_url: null` — MP no lo trae en el GET (R6 permite null) · **QA3 dedupe** ✅ — re-envío del MISMO evento ⇒ 200 `{"dedupe":true}` sin mutar DB ni MP; **QA3.2** ✅ — pago approved `187300201985` dentro de `programada_cierre` ⇒ activa (R9) · **QA4 dunning** ✅ — rechazo REAL de MP `187299351371` (`cc_rejected_other_reason`; MP lo creó async tras el 401 del POST directo) ⇒ `gracia` + `grace_expires_at`=rechazo+5d exacto (2026-11-12T18:00Z) + plan `pro_grace` + fila payment; re-envío del mismo rejected ⇒ dedupe (la ventana NO re-abre — live); aprobado `188362068082` ⇒ restauración `activa` con grace null y `price_frozen` INTACTA (R4) · **QA5 salida limpia** ✅ — `PUT {status:cancelled}` + evento preapproval ⇒ `programada_cierre` con `period_end`=2026-12-07T03:00Z (= 12/07 00:00 AR, ancla día 7) y plan sigue `pro` SIN cobros (R9); `period_end` vencido sembrado como fixture ⇒ el reload de /perfil dispara el reconcile (FREE + paywall + proyectos/assets/links intactos). **Extra 403** ✅ live — webhook SIN firma ⇒ `403 FIRMA_INVALIDA`. **Desviaciones del modo TEST de MP** (documentado; 0 cambios de producto): suscripciones de test SOLO se crean como `plan + card_token_id + status:'authorized'` (planless-pending es prod-only ⇒ el route de la app NO cambió: correcto para prod); la tarjeta sandbox de la spec 5031…0604 falla Luhn al atarse (`CC_VAL_433`) ⇒ deck oficial APRO **5254 1336 7440 3564 / 123 / 11-30** (declinante: mismo número con cardholder `OTHE` / DNI 12345678); comprador-test creado vía API (`POST /users/test_user`); los pagos de MP no exponen `preapproval_id` ⇒ binding dinero→usuario SOLO via `external_reference` (el checkout de prod siembra `subscriptions.preapproval_id`; en QA se sembró a mano); el "2.º rechazo no re-abre" quedó en tests core (este sandbox entrega un único rejected); `pricing_config` UPDATE con service-role es RLS-bloqueado (`42501`) ⇒ el cambio de precio 25000 es línea SQL del titular. Preapproals extra de prueba canceladas via PUT (limpieza del panel) |
+| **QA Posición 11** (22–23-nov, técnica) | Núcleo puro ✅ (**18 tests** en `payments-sync.test.ts`: TTL 60 s/6 h/20 s manual, `retryAfterSeconds`, ventana `watermark − 1 día` con bordes exactos, watermark `last_checkout_at → created_at → checkout_intent`, selección de faltantes/reparables en orden ASC, exclusión de otro usuario/pending/viejos/ya aplicados/refunded, auditoría solo de viejos ausentes, `decideExistingPayment` (applied/repair/ignore), validación `user_mismatch`/`unsupported_status`/`currency_not_ars`/`amount_invalid`/`invalid_date`/`preapproval_mismatch` y `old=true`, gracia de rechazo desde `date_last_updated` + **regresión 23-nov** de la URL de `/preapproval/search`: MP devuelve 400 con `sort` + `criteria` separados y exige `sort=date_created:desc`; el body del error ahora se loguea) ✅ · `applyPayment`/`applyPreapproval` extraídos del webhook ⇒ **un solo camino** para webhook y sync (dedupe `mp_payment_id`, CAS por estado, `applied_at` recién con ciclo+plan consistentes, claim de email `email_claimed_at` 5 min / 3 intentos / idempotency key) ✅ · sync con lease CAS y presupuestos 8 s on-read / 30 s manual; `?pago=success\|pending` fuerza, el resto respeta TTL; el editor queda en modo local ✅ · preapproval: adopta el más nuevo **solo** si el local es NULL y filtra `external_reference` propio; cancelled/paused ⇒ cierre programado sin duplicar email (CAS) ✅ · anti-resurrección: pagos fuera de la ventana se insertan como auditoría (`source='sync'`) sin mutar plan; los emails de auditados no se reintentan ✅ · endpoint `POST /api/billing/refresh` con contrato 401/503/429/502/200 y `Retry-After`; UI con fetch real, spinner, countdown, `aria-live`, constancia, "Verifico de nuevo" siempre sin PRO y soporte tras 2 intentos (SLA 24 h) ✅ · migración `0007` con backfill de filas 10B para que el primer sync no re-aplique históricos ni reenvíe recibos viejos ✅ · build 21 rutas sin leaks server-only ✅. **Estado:** `0007` aplicada (23-nov) y fix del 400 de `/preapproval/search` en el working tree; QA con MP real en curso (checklist §10) |
+| **QA Posición 12** (23-nov, técnica) | Núcleo puro ✅ (**25 tests** en `legal-core.test.ts`: códigos `ARR/BAJA/PRIV-YYYYMMDD-XXXX` sin caracteres ambiguos, validación de email/nombre/fecha/mensaje/declaraciones, ventana de 10 días corridos con calendario AR, rate limit 1/email/5 min + 5/IP/hora, token de 64 hex + SHA-256 + TTL 24 h, gate de checkout versionado, escape/mask y honeypot/Origin) ✅ · páginas públicas fuera del middleware, con identidad por envs y fallback visible, metadata/versión/fecha, print CSS y `aria-live` ✅ · formularios públicos con honeypot y respuestas 400/429/503 honestas; acuse en pantalla + email y alerta interna ✅ · baja con doble opt-in: el POST no cancela, token de un solo uso, verificación del email de la cuenta y del `external_reference`, cancelación vía `applyPreapproval` (`source:'legal'`, `suppressEmail`) y cola manual perezosa al vencer (sin `confirmed_at`, reenvío con el mismo código) ✅ · checkout: checkbox desmarcado, evidencia `terms`+`privacy` con IP/user-agent **antes** del preapproval, `409 LEGAL_NOT_ACCEPTED`/`409 LEGAL_VERSION_CHANGED`/`503 EVIDENCIA_NO_DISPONIBLE` fail-closed ✅ · `/perfil`: banner no bloqueante, bloque “Tus derechos”, canales/horario y lectura de aceptaciones con RLS del dueño ✅ · migración `0008_legal.sql` idempotente + helper `legal_find_user_by_email` ✅ · **smoke de producción (23-nov)**: `/terminos`, `/privacidad`, `/arrepentimiento`, `/baja` y `/baja/confirmar` ⇒ 200 sin sesión; `POST /api/legal/arrepentimiento` vacío con Origin propio ⇒ 400 y con Origin ajeno ⇒ 403 ✅. **Estado 23-nov:** `0008` aplicada; pendientes identidad legal, QA end-to-end con Resend/MP reales y firma del abogado. |
+| **QA Posición 13** (23-nov, técnica) | Núcleo puro ✅ (**15 tests** en `payments-refunds.test.ts`: `clampRefundedAmount` 0…`amount`, `effectiveRefundedAmount` desde `transaction_amount_refunded`/`refunds`, `resolveRefundStatus` approved+devolución ⇒ parcial/total, merge monótono `charged_back > refunded > partially_refunded > approved/rejected`, `isCurrentCyclePayment` solo con el último pago que financia (`approved`/`partially_refunded`), impacto `revoke`/`partial_keep`/`audit` para total/parcial/ciclo pasado, `revocada` ⇒ `free` y transiciones R11) ✅ · webhook: topics `payment`/`chargeback`/`topic_chargebacks_wh`/`chargebacks`, firma HMAC fail-close y gates en orden (firma → `data.id` → pull → usuario → dedupe → transición → email) ✅ · `applyRefundEvent`: insert/update del pago con CAS y merge monótono, `payment_adjustments` append-only con dedupe `(kind, mp_source_id)`/`(mp_payment_id, kind, occurred_at)`, revocación solo si el pago es el ciclo vigente y la suscripción está viva, cancelación del preapproval + alerta si MP falla, email al taller solo con `newAdjustments > 0` e impacto ≠ audit, reintento ⇒ 200 sin duplicar ✅ · carrera refund/approved: el `approved` posterior cae en `refund_wins`/`already_applied` y no activa PRO ✅ · aislamiento: `external_reference` ajeno o `mp_payment_id` de otro usuario ⇒ `payment_owner_mismatch` con log y cero mutaciones ✅ · sync: incluye refund-like fuera de la ventana R12.4 y no adopta preapproval con `revocada` ✅ · UI: badges `REEMBOLSADO`/`CONTRACARGO`, banner parcial solo del pago que financia, historial original+devuelto y “Reactivar PRO” ⇒ `/editor?paywall=1` con checkout nuevo ✅ · checkout permite `revocada`, cancela el preapproval viejo si sigue vivo y limpia `closure_reason`/`closed_at`/`grace_expires_at`/`period_end` al sembrar ✅ · migración `0009` idempotente (CHECK por definición en `pg_constraint`, sin `DROP TABLE`) ✅ · **362/362 tests, typecheck 0, build 30 rutas** ✅ · **QA de integración 12/12** (23-nov, Supabase TEST + MP TEST): constraints `23514`/`23502`, parcial, total vigente, ciclo pasado, contracargo + reverso, carrera refund/approved, usuario ajeno, fallo de cancelación Q6, “Reactivar PRO”, webhook HTTP (403/502/200) y Resend real ✅. Los pagos semilla son `live_mode:true`: el fold se validó con eventos sintéticos y **no se movió dinero real**; queda un end-to-end con un pago nuevo `live_mode:false` (`docs/qa-posicion-13.md`). |
 | Git | ✅ `21054e0` docs 10B (demo visual del titular: alta hospedada + binding post-alta inmutable) · `9b13e7f` docs 10B (titular consume la salida limpia + CTA en vivo — 502 honesto en test) · `d476cb3` docs 10B (QA en vivo con sandbox MP: evidencias QA1–QA5 + desviaciones) · `4136e36` fix 10B (el 400 de MP imprime las `cause` exactas) · `ab90418` fix 10B (`grace_expires_at` en la 0005 — schema del ciclo faltante) · `43e27cd` **posición 10B** (dunning al-vuelo: reconcile en editor + perfil con corte de ventanas y realineo de plan) · `04273e3` 10B paso 4 (Centro de Suscripción: tarjeta + historial con constancia + Portal MP) · `e56ca32` 10B paso 3 (webhook blindado `/api/webhooks/mercadopago` + mailer Resend) · `9c31f79` 10B paso 2 (Checkout Pro: wrapper REST MP + `POST /api/billing/checkout` + paywall con CTA real) · `8bf0d25` 10B paso 1 (núcleo puro de pagos + migración 0005 + envs MP/Resend) · `4f35790` fix 10A (aprobación pública sin RETURNING — select de anon revocado por diseño) · `3782470` fix 10A (grants service-role projects/links/link_approvals + log `[links ownership]`) · `7d81e73` **posición 10A** (enlace comercial compartible + Modo Cliente: variantes A/B/C del mismo diseño, publish inmutable versionado + Storage re-encodado, aprobación R6 ANTES de wa.me, visor `/v/[linkId]` con crossfade ≤300 ms) · `b385c00` 10A paso 3 (rutas API links + service-role — titular) · `676fefa` 10A paso 2 (identity/payload/estados + migración 0004 — titular) · `094e73b` **posición 9** (ficha: modal #quoteModal + PNG HD 2160 + PDF A4 + Foto HD + ticket verificar + registro QA) · `7c21277` **posición 8** (protección: watermark cocida + bloqueo DOM + ticket export 402/HMAC) · `141f094` post-entrega pos 7 (Auto fuera + nitidez SVG) · `ecd375b` docs · `b8cb203` **posición 7** (escala + desborde + espejo/Auto) · `f31fa32` **posición 6** (rotación) · `d5f376b` docs pos 5 · `940e69c` **posición 5** (color) · `feca766` **posición 4** (3 mallas + guías; extendida) · `e6ac05d` docs QA 04-nov · `9156361` docs pos 3 · `56483ef` grants 0910 + ruta logo honesta · `8a4329d` fix 0003 RLS autosave · `f54e359` fix R3/QA2 pos 3 · `db31c08` **posición 3** (12 archivos, 1.928 insertiones) · `e6ead5a` docs pos 2 · `3cf09d0` **posición 2** · `673d2af` docs pos 1 · `c38c4ed` · `e279f45` · `c8edbcf` · `1fa49e0` |
 
 **QA de sesión real (04-nov, con el proyecto real de Supabase):** logo con pipeline completo ✅
@@ -719,10 +924,116 @@ cámara, unión metal-cuerpo y banner offline con la red cortada). El smoke rest
 
 ## 10. Próxima entrega (cuando se reinicie el trabajo)
 
+### Posición 13 — cerrada con QA de integración (23-nov-2026)
+
+La implementación está **verde** (362/362 tests unitarios, typecheck 0, build de producción
+con 30 rutas) y la migración `0009_refunds_chargebacks.sql` está **aplicada** en Supabase
+(23-nov). El **QA de integración 12/12** contra Supabase TEST + MP TEST está documentado en
+`docs/qa-posicion-13.md` y verificado de punta a punta sobre la base real:
+
+1. ✅ **Migración aplicada:** constraints de `payments`/`subscriptions` (`23514`),
+   `refunded_amount NOT NULL` (`23502`), dedupe de `payment_adjustments` (`23505`),
+   RLS del dueño y grants de `service_role`.
+2. ✅ **Reembolso total del ciclo vigente:** `refunded` + `revocada` + `free` +
+   `closure_reason='refund'` + `closed_at`, preapproval cancelado en MP, un email y
+   reintento idempotente sin duplicados.
+3. ✅ **Reembolso de ciclo pasado:** pago `refunded` y `payment_adjustments` como
+   auditoría; plan/suscripción intactos y sin email al cliente.
+4. ✅ **Reembolso parcial:** `partially_refunded` + acumulado clampeado; plan PRO hasta
+   el fin del ciclo, banner parcial y email con la política.
+5. ✅ **Contracargo + reverso:** `charged_back`, `revocada`/`chargeback` sin gracia,
+   preapproval cancelado, email de suspensión; el reverso `won` registra `reversal` y
+   **no** reactiva (Q5).
+6. ✅ **Carrera refund/approved:** el `approved` posterior no activa PRO; el reintento
+   del refund responde `already_applied` sin mutar ni reenviar.
+7. ✅ **Aislamiento:** `external_reference` ajeno ⇒ `user_mismatch`; fila de otro
+   usuario ⇒ `payment_owner_mismatch`, cero mutaciones.
+8. ✅ **Fallo de cancelación (Q6):** si MP no cancela el preapproval, igual revoca y
+   alerta (“revisar a mano”), sin loop.
+9. ✅ **“Reactivar PRO”:** checkout real `201`, preapproval viejo `cancelled`, nuevo
+   `pending`, suscripción `inactiva` y evidencia legal `terms`+`privacy`.
+10. ✅ **Webhook HTTP:** firma válida + dedupe `200`, firma inválida `403`, chargeback
+    inexistente `502`, topic ignorado `200`, sin `data.id` `403`.
+11. ✅ **Resend real:** `sent:true`/`note:"ok"` a `kherrera@pioix.edu.ar`.
+
+**Hallazgo:** los 4 pagos semilla son `live_mode: true` (cobros reales, aunque la cuenta
+tenga tag `test_user`). El QA **no** llamó al endpoint de refunds: el fold se validó con
+eventos sintéticos que replican el payload de MP; los pulls, el checkout y los
+preapprovals fueron reales. Queda un end-to-end 100 % real con un pago nuevo
+`live_mode:false` cuando haya credenciales TEST que permitan tokenizar tarjeta
+(`NEXT_PUBLIC_MP_PUBLIC_KEY` es live).
+
+### Posición 12 — cierre y QA pendiente (23-nov-2026)
+
+La implementación está **verde** (362/362 tests, typecheck 0, build de producción con 30
+rutas) y la migración `0008_legal.sql` está **aplicada** en Supabase (23-nov). Falta:
+
+1. ✅ **`0008_legal.sql` aplicada** a mano en el SQL Editor. Verificado por el checkout
+   real de la posición 13: evidencia `terms`+`privacy`, RLS del dueño y lectura con
+   `service_role`.
+2. **Páginas públicas:** `/terminos`, `/privacidad`, `/arrepentimiento`, `/baja` y
+   `/baja/confirmar` ⇒ 200 sin sesión y sin redirect a `/auth`; footer legal visible en
+   `/auth`, `/editor`, `/perfil` y `/v/[linkId]` (también en móvil, sin scroll horizontal).
+3. **Arrepentimiento E2E:** formulario sin cuenta ⇒ código `ARR-…` en pantalla, fila en
+   `legal_requests`, email al consumidor y alerta a `LEGAL_EMAIL`; el texto explica 10
+   días y 24 h. Probar fuera de plazo (se recibe igual).
+4. **Baja E2E:** el POST **no** cancela; llega el link de 24 h; al abrirlo con el email
+   correcto se cancela el `preapproval` propio y el acceso sigue hasta `period_end`. Un
+   email ajeno, un token vencido o un `preapproval` ajeno **no** cancelan nada.
+5. **Reenvío y cola manual:** reenviar el link conserva el código y regenera el token sin
+   crear otra fila; un token vencido se materializa como `en_proceso` sin `confirmed_at`
+   al abrirlo/reenviarlo (una sola alerta al titular).
+6. **Checkout:** sin checkbox el CTA está deshabilitado; forzando el POST ⇒ `409
+   LEGAL_NOT_ACCEPTED` sin `preapproval`; con aceptación ⇒ dos filas (`terms`/`privacy`)
+   con versión, fecha, contexto, IP y user-agent; cambiar la versión ⇒ `409
+   LEGAL_VERSION_CHANGED` en el próximo checkout y banner no bloqueante en `/perfil`.
+7. **Emails:** `RESEND_API_KEY`/`EMAIL_FROM` configurados; forzar fallo ⇒ la solicitud
+   se guarda, el código se muestra en pantalla y el error queda logueado (fail-soft).
+8. **Identidad y go-live:** completar `LEGAL_ENTITY_*`, `LEGAL_EMAIL`, `LEGAL_WHATSAPP`,
+   `LEGAL_HOURS`, `LEGAL_IP_SALT` y `NEXT_PUBLIC_SITE_URL`; revisar que no queden
+   placeholders visibles (`TODO`/`XXX`); revisión legal firmada y registro de la base
+   ante la AAIP.
+9. **Seguridad:** rate limit 1/email/5 min + 5/IP/hora, honeypot, `Origin`/`Referer`,
+   XSS en nombre/mensaje y no revelar si un email tiene cuenta.
+
+### Posición 11 — QA en curso (22–23-nov)
+
+La implementación técnica está **verde** (335/335 tests, typecheck 0, build 30 rutas) y
+la migración `0007` ya está aplicada. El primer `/perfil` real destapó y corrigió el
+**400 de `/preapproval/search`** (MP exige `sort=date_created:desc`; ver §8). Falta
+completar la pasada con MP real:
+
+1. ✅ **`0007_payment_sync.sql` aplicada** en el SQL Editor de Supabase (no hay
+   `DATABASE_URL`; la migración se corre a mano). El sync de `/perfil` ya lee y
+   escribe `last_synced_at`/`source` sin errores de schema.
+2. **Verificar el backfill:** las filas de `payments` de 10B deben quedar con
+   `applied_at` y `email_sent_at` no nulos; `subscriptions` con `last_checkout_at`
+   NULL hasta el próximo checkout y `last_synced_at` NULL.
+3. **Webhook perdido (QA1 POS 11):** crear un pago aprobado en MP, NO reenviar el
+   evento, abrir `/perfil?pago=success` ⇒ `payments` + `activa` + `users.plan='pro'` +
+   `price_frozen`/`cycle_anchor` del cobro + **un** recibo.
+4. **Botón real + cooldown:** sin PRO, click ⇒ spinner; si no hay pago, mensaje
+   honesto y countdown de 20 s; segundo click ⇒ 429 sin golpear MP. Si MP cae ⇒
+   "Mercado Pago no responde" y el render local sigue.
+5. **Reparación:** simular INSERT de `payments` + fallo del UPDATE de
+   `subscriptions` ⇒ `applied_at` NULL; el siguiente `/perfil` repara y activa.
+6. **Email:** forzar fallo de Resend ⇒ `email_attempts=1`; el siguiente sync
+   reintenta; al tercero queda para soporte. Sin `RESEND_API_KEY`/`EMAIL_FROM` no se
+   incrementa el contador.
+7. **Preapproval/mismatch:** cancelar/pausar en MP sin webhook ⇒ `programada_cierre`
+   con `period_end` correcto; un pago con `preapproval_id` distinto al local no muta.
+8. **Anti-resurrección:** un pago aprobado anterior a `last_checkout_at − 1 día` no
+   activa una suscripción cerrada; se audita con log.
+9. **Soporte:** configurar `NEXT_PUBLIC_SUPPORT_EMAIL`/`WHATSAPP`, fallar 2
+   verificaciones ⇒ "Contactar soporte" + SLA 24 h.
+
+**Después:** ✅ reembolsos/contracargos (13) implementados; queda su QA con MP real
+(§10, posición 13).
+
 **QA del titular de la posición 10B** — la caja está commiteada (tanda `8bf0d25` → `4136e36`:
 núcleo puro + 0005 → Checkout Pro → webhook + mailer → Centro de Suscripción → dunning
-al-vuelo → 2 fixes; hashes en la fila Git de §8). La verificación técnica pasó (285/285
-tests, typecheck 0 con strict, build de 19 rutas con exit 0) y el **circuito REAL del sandbox
+al-vuelo → 2 fixes; hashes en la fila Git de §8). La verificación técnica de ese corte pasó
+(285/285 tests, typecheck 0 con strict, build de 19 rutas con exit 0) y el **circuito REAL del sandbox
 de Mercado Pago ya corrió (07-nov: QA1–QA5 con MP-truth; evidencias + desviaciones del modo
 TEST en §8)**. Lo que queda es la pasada VISUAL del titular, con el estado DB preparado como
 fixture de salida limpia (`programada_cierre` + `period_end` vencido), en orden:
@@ -812,15 +1123,21 @@ con chequeo anti `test_user`, dominio canónico, webhook entregado por MP, migra
 final, cobro real de verificación, Resend, deploy, observabilidad y rollback) + checklist por
 fases A–F con criterio de cierre cada una y DOD de go-live en §6.
 
-**Segunda ola (21-nov, borradores v0.1):** se sumaron tres specs con 7 preguntas abiertas cada
+**Segunda ola (21-nov → 23-nov):** se sumaron tres specs con 7 preguntas abiertas cada
 una: `spec_sync_de_pagos_y_reverificacion.md` (sync de pagos por `external_reference` y
 "Verifico de nuevo" real), `spec_paginas_legales.md` (términos, privacidad, arrepentimiento y
 baja según la Disposición 954/2025) y `spec_reembolsos_y_contracargos.md` (refunds y
-chargebacks automáticos). Sync y legal entran antes del go-live; reembolsos puede esperar al
-post-lanzamiento. Orden en `orden_de_implementacion.md` posiciones 11–13.
+chargebacks automáticos). **La 11, la 12 y la 13 ya están implementadas** (migraciones
+`0007`, `0008` y `0009`, 18 + 25 + 15 tests nuevos, sync on-read/manual, páginas legales,
+baja con doble opt-in, evidencia versionada en checkout y revocación automática del PRO
+por reembolso/contracargo); sus 7+7+7 decisiones se cerraron con las propuestas por
+defecto. Antes de cobrar de verdad: aplicar `0008` y `0009`, completar
+`LEGAL_ENTITY_*`, revisión legal firmada, registro AAIP y QA de reembolsos/contracargos
+con MP real. Orden en `orden_de_implementacion.md` posiciones 11–13.
 
 Y después: la primera ola (10 posiciones) está commiteada (10B cierra el ciclo: `8bf0d25` →
-`4136e36`); queda cerrar las decisiones de la segunda ola e iterar con feedback del taller real.
+`4136e36`); la segunda ola quedó completa (11 sync + 12 legal + 13 reembolsos) y falta
+iterar con feedback del taller real.
 
 ---
 
