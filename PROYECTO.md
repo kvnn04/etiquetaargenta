@@ -692,7 +692,7 @@ misma máquina R9 que el resto del ciclo. La norma citada es la **Disposición
 | Ref | Requisito | Implementación | Estado |
 | :-- | :-- | :-- | :-- |
 | R13.1 | Norma vigente + identidad/versión/fecha | `lib/legal/config.ts` (`LEGAL_VERSIONS`, `LEGAL_ENTITY_*`, `LEGAL_LAST_UPDATED_*`) + `LegalIdentity`/`LegalMeta`; si falta un dato se declara visiblemente | ✅ |
-| R13.2 | Botones en primer acceso (`/auth`, `/editor`, `/perfil`, `/v/[linkId]`) | `components/legal/legal-footer.tsx` (client-safe, dos botones outlined, variantes `prominent`/`compact`) montado en las cuatro superficies | ✅ |
+| R13.2 | Botones en primer acceso (`/auth`, `/editor`, `/perfil`) | `components/legal/legal-footer.tsx` (client-safe, dos botones outlined, variantes `prominent`/`compact`) montado en las tres superficies; **retirado de `/v/[linkId]` el 23-nov-2026** | ✅ |
 | R13.3 | Sin registro, login, teléfono ni WhatsApp obligatorio | Formularios públicos; único paso extra: link de confirmación de la baja por email (Q7) | ✅ |
 | R13.4 | Código + acuse ≤ 24 h | `generateLegalCode` + `legal_requests`; código visible, email al consumidor y alerta a `LEGAL_EMAIL` | ✅ |
 | R13.5 | Arrepentimiento 10 días corridos | `isWithinWithdrawalWindow` con calendario AR; fuera de plazo se recibe igual y se explica; reembolso del ciclo completo (Q4) | ✅ |
@@ -1069,7 +1069,9 @@ rutas) y la migración `0008_legal.sql` está **aplicada** en Supabase (23-nov).
    `service_role`.
 2. **Páginas públicas:** `/terminos`, `/privacidad`, `/arrepentimiento`, `/baja` y
    `/baja/confirmar` ⇒ 200 sin sesión y sin redirect a `/auth`; footer legal visible en
-   `/auth`, `/editor`, `/perfil` y `/v/[linkId]` (también en móvil, sin scroll horizontal).
+   `/auth`, `/editor` y `/perfil` (también en móvil, sin scroll horizontal). **Retirado
+   de `/v/[linkId]` el 23-nov-2026** por decisión del titular: el cliente final del
+   taller no es consumidor del SaaS.
 3. **Arrepentimiento E2E:** formulario sin cuenta ⇒ código `ARR-…` en pantalla, fila en
    `legal_requests`, email al consumidor y alerta a `LEGAL_EMAIL`; el texto explica 10
    días y 24 h. Probar fuera de plazo (se recibe igual).

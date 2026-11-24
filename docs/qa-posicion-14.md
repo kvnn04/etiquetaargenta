@@ -42,7 +42,7 @@ npm run test:qa -- tests/qa/link-responses.qa.test.ts
 
 | # | Escenario | Resultado | Evidencia principal |
 | :-- | :--- | :--- | :--- |
-| 1 | **R14.1/R14.7** aprobación única, doble escritura legacy e inmutabilidad | ✅ | `POST decision` approved A ⇒ `200` + fila en `link_responses` + **1** fila en `link_approvals`; reintento ⇒ `200 already` sin duplicar; variante B o rechazo posterior ⇒ `409 DECISION_TAKEN`; `whatsappHref` con el número del taller |
+| 1 | **R14.1/R14.7** aprobación única, doble escritura legacy e inmutabilidad | ✅ | `POST decision` approved A ⇒ `200` + fila en `link_responses` + **1** fila en `link_approvals`; reintento ⇒ `200 already` sin duplicar; variante B o rechazo posterior ⇒ `409 DECISION_TAKEN`; `whatsappHref` con el número del taller; el visor **no muestra el footer legal** (decisión del titular, 23-nov-2026) |
 | 2 | **R14.3/R14.14** rechazo con motivo obligatorio y 280 code points | ✅ | Sin motivo ⇒ `400 {reason:'observation_required'}`; solo espacios ⇒ `observation`; 281 ⇒ `observation`; **280 emojis 🪵** aceptados (`char_length=280`); decisión y motivo en la misma fila; reintento igual ⇒ `200 already`; motivo distinto ⇒ `409 OBSERVATION_TAKEN`; aprobar después ⇒ `409 DECISION_TAKEN`; `/v/[linkId]` muestra `RECHAZADO` + el texto y oculta el CTA de aprobar |
 | 3 | **R14.4** observación sola, una vez y antes/después de aprobar | ✅ | Observación sin decisión ⇒ `200`; normalización `\r\n`/trim; reintento ⇒ `already`; aprobar después no la consume y queda en solo lectura |
 | 4 | **R14.3/R14.4** rechazo que reutiliza la observación + email real | ✅ | Observación enviada por WhatsApp y rechazo por email ⇒ **1** email al taller con “Aviso de rechazo por: Email” y “Observación enviada por: WhatsApp”; `decision_email_sent_at` seteado, `observation_email_sent_at` nulo (no se duplica el aviso); reintento ⇒ `already` y **0** emails nuevos |
@@ -55,7 +55,7 @@ npm run test:qa -- tests/qa/link-responses.qa.test.ts
 | 11 | **R14.11/R14.14** seguridad | ✅ | `anon` no lee ni inserta en `link_responses` (`42501`) y no puede ejecutar `link_register_decision` (`42501`); `service_role` sí lee y ejecuta |
 | 12 | **R14.11/R14.14** escape y PII | ✅ | Observación `<script>alert(1)</script>` ⇒ el HTML del email contiene `&lt;script&gt;` y no `<script>`; no aparecen `cliente@` ni `+54` (sin datos de contacto del cliente) |
 
-**Corrida final:** `Test Files 1 passed (1) · Tests 12 passed (12)` en **136,6 s**.
+**Corrida final:** `Test Files 1 passed (1) · Tests 12 passed (12)` en **196,5 s**.
 
 ---
 
@@ -110,3 +110,14 @@ npm run test:qa -- tests/qa/link-responses.qa.test.ts
   unitarios y el typecheck.
 - **Producción:** falta aplicar `0010_link_responses.sql` (con los grants y la RPC
   corregidos) en el proyecto productivo antes del deploy.
+
+---
+
+## 6. Ajuste posterior del titular (23-nov-2026)
+
+Por decisión del titular, el **footer legal se retiró de `/v/[linkId]`**: el cliente
+final del taller no contrata el SaaS, así que no debe ver Términos, Privacidad,
+Defensa del Consumidor ni los botones de arrepentimiento/baja. El footer sigue en
+`/auth`, `/editor` y `/perfil` (superficies del taller). El escenario 1 de este QA
+verifica que el HTML del visor no contiene ninguno de esos textos; la spec
+`spec_paginas_legales.md` (R13.2) quedó actualizada con el mismo criterio.

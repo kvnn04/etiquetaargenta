@@ -34,7 +34,6 @@ import {
   Repeat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import LegalFooter from '@/components/legal/legal-footer';
 import type { PublicLinkView, PublicVariantView } from '@/lib/links/view-shape';
 import { isLinkVariantId, type LinkVariantId } from '@/lib/links/payload';
 import { approvalCode, canonicalLinkUrl, whatsappApprovalHref } from '@/lib/links/states';
@@ -683,7 +682,6 @@ export default function ClientViewer({
             )}
           </div>
         </div>
-        <LegalFooter variant="compact" />
       </main>
     );
   }
@@ -1126,9 +1124,6 @@ export default function ClientViewer({
 
         {isRejected && observationError && <InlineError>{observationError}</InlineError>}
       </section>
-
-      {/* Posición 12 (R13.2): footer legal visible también en el visor cliente. */}
-      <LegalFooter variant="compact" />
     </main>
   );
 }

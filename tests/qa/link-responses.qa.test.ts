@@ -325,6 +325,14 @@ describe('R14.1/R14.7 — una decisión, doble escritura legacy e inmutabilidad'
     expect(html.html).toContain('Contactar al taller por WhatsApp');
     expect(html.html).not.toContain('¡Aprobar este diseño!');
     expect(html.html).not.toContain('Rechazar diseño');
+
+    // Decisión del titular (23-nov-2026): el enlace del cliente final no muestra
+    // el footer legal del SaaS (el taller es el consumidor, no su cliente).
+    expect(html.html).not.toContain('Botón de Arrepentimiento');
+    expect(html.html).not.toContain('Botón de Baja de Servicio');
+    expect(html.html).not.toContain('Términos y Condiciones');
+    expect(html.html).not.toContain('Política de Privacidad');
+    expect(html.html).not.toContain('Defensa del Consumidor');
   });
 });
 
