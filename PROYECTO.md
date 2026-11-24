@@ -248,7 +248,7 @@ sale el branding que la ficha imprima (R3/R5) y el `state` que la posición 3 en
 | Estilos | Tailwind CSS | 4.3.4 | CSS-first (`@theme inline`), sin `tailwind.config` |
 | Backend / Auth / DB | Supabase (`@supabase/supabase-js` + `@supabase/ssr`) | 2.119 / 0.12 | Postgres + RLS + Auth + Realtime |
 | Iconos | lucide-react | latest | |
-| Test unit | Vitest | 4.1.12 | hoy: **394 tests** (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7 + ticket pos 8 + ficha snapshot/textos pos 9 + links pos 10A + pagos/webhook pos 10B + sync pos 11 + legal pos 12 + reembolsos/contracargos pos 13 + origin/back_url pos 13 + respuestas/emails del cliente pos 14) |
+| Test unit | Vitest | 4.1.12 | hoy: **420 tests** (matriz R2 + branding + catálogo + virola/geometría pos 4 + color pos 5 + diseño/rotación pos 6 + desborde/escala pos 7 + ticket pos 8 + ficha snapshot/textos pos 9 + links pos 10A + pagos/webhook pos 10B + sync pos 11 + legal pos 12 + reembolsos/contracargos pos 13 + origin/back_url pos 13 + respuestas/emails del cliente pos 14 + checkout con plan MP) |
 | 3D | `three` 0.187 + `@react-three/fiber` 9.8 + drei 10.7 | instalados en la posición 3 | LatheGeometry desde el catálogo; escena via `dynamic` con `ssr: false` |
 | PDF | pdf-lib | 1.17 (instalado en la posición 9) | envoltorio A4 de la ficha; carga diferida con `import()` |
 | Estado cliente | zustand | 5.0 | store del editor = snapshot de `projects.state` |
