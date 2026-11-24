@@ -5,6 +5,7 @@ import { createServerClient } from '@supabase/ssr';
 import { mpSignatureHex } from '@/lib/payments/webhook';
 import {
   cancelPreapproval,
+  cancelPreapprovalPlan,
   createPreapproval,
   getPreapproval,
 } from '@/lib/payments/mercadopago';
@@ -98,6 +99,13 @@ export async function createTestPreapproval(label: string): Promise<string> {
 export async function cancelTestPreapproval(id: string): Promise<void> {
   const result = await cancelPreapproval(id);
   if (!result.ok) throw new Error(`cancelPreapproval ${id} falló (${result.status}): ${result.message}`);
+}
+
+export async function cancelTestPreapprovalPlan(id: string): Promise<void> {
+  const result = await cancelPreapprovalPlan(id);
+  if (!result.ok) {
+    throw new Error(`cancelPreapprovalPlan ${id} falló (${result.status}): ${result.message}`);
+  }
 }
 
 export async function preapprovalStatus(id: string): Promise<string> {

@@ -1031,10 +1031,13 @@ export async function confirmBajaByToken(
       id: preapprovalId,
       status: 'cancelled',
       externalReference: userId,
+      preapprovalPlanId: pre.data.preapprovalPlanId ?? null,
       payerEmail: row.email,
       nextPaymentDate: pre.data.nextPaymentDate,
       transactionAmount: pre.data.transactionAmount,
       currency: pre.data.currency,
+      dateCreated: pre.data.dateCreated ?? null,
+      lastModified: pre.data.lastModified ?? null,
     },
     { userId, source: 'legal', suppressEmail: true },
   );

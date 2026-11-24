@@ -4,7 +4,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { publicRequestOrigin } from '@/lib/http/origin';
 import {
   cancelPreapproval,
-  createPreapproval,
+  cancelPreapprovalPlan,
+  createPreapprovalPlan,
   hasMercadoPagoCredentials,
 } from '@/lib/payments/mercadopago';
 import { isPositiveAmount } from '@/lib/payments/core';
@@ -13,8 +14,9 @@ import { checkCheckoutAcceptance } from '@/lib/legal/requests';
 import { legalRequestContext, recordCheckoutAcceptances } from '@/lib/legal/service';
 
 /* ============================================================================
- * /api/billing/checkout — ALTA DE SUSCRIPCIÓN (posición 10B)
- * ÚNICA FUENTE: spec_pagos.md §2 Happy Path + §3-R2/R3/R4/R7/R10 + §6.
+ * /api/billing/checkout — ALTA DE SUSCRIPCIÓN (10B + plan MP)
+ * ÚNICA FUENTE: spec_pagos.md §2 Happy Path + §3-R2/R3/R4/R7/R10 + §6
+ *               spec_pagos_plan_mp.md (checkout con plan).
  * ----------------------------------------------------------------------------
  * TODO server-side (el cliente jamás recalcula plan/precio/fechas). Orden de
  * gates — cada corte responde con código honesto que el modal traduce:
@@ -33,17 +35,20 @@ import { legalRequestContext, recordCheckoutAcceptances } from '@/lib/legal/serv
  *   6. ACEPTACIÓN LEGAL VERSIONADA (R13.7/R13.8): sin checkbox o con versiones
  *      viejas ⇒ 409 LEGAL_NOT_ACCEPTED / LEGAL_VERSION_CHANGED. Si pasa, se
  *      registran DOS filas de evidencia (terms + privacy) ANTES de crear el
- *      preapproval; si la evidencia no se puede guardar ⇒ 503 y NO se cobra.
+ *      plan; si la evidencia no se puede guardar ⇒ 503 y NO se cobra.
  *   7. `checkout_intents`: UNA fila de auditoría del intento (R10 — cero
  *      emails de recuperación; cf. QA1). fallo= no frena el checkout: es
  *      métrica, no cobro (log).
- *   8. preapproval MP (Checkout Pro, R2): frequency_type months + ARS +
- *      external_reference = user_id + notification_url (túnel/dominio) +
- *      back_url string al origin de navegación del taller.
- *   9. Seed de `subscriptions` { status: 'inactiva', price_frozen vigente }:
+ *   8. PLAN MP (spec_pagos_plan_mp.md): `POST /preapproval_plan` con
+ *      external_reference = user_id, ARS/meses y back_url. Su `init_point`
+ *      hospedado pide la cuenta del pagador: el email de Supabase ya no tiene
+ *      que coincidir con la cuenta que paga.
+ *   9. Mapping `mp_preapproval_plans` ANTES de redirigir; si falla ⇒ cancelar
+ *      el plan y 503. Los planes activos anteriores se cancelan (best-effort).
+ *  10. Seed de `subscriptions` { status: 'inactiva', preapproval_plan_id }:
  *      el CONGELAMIENTO real lo hace el webhook al aprobarse el cobro con
  *      `freezePrice` de la máquina (R4) usando el monto DEL PAGO.
- * 201 { ok, initPoint, preapprovalId } → el modal redirige (Checkout Pro).
+ * 201 { ok, initPoint, planId } → el modal redirige al checkout del plan.
  * ============================================================================
  */
 
@@ -93,11 +98,12 @@ export async function POST(request: NextRequest) {
    * viejo (R11.8/QA7). */
   const { data: sub, error: subErr } = await service
     .from('subscriptions')
-    .select('status, preapproval_id')
+    .select('status, preapproval_id, preapproval_plan_id')
     .eq('user_id', user.id)
     .maybeSingle<{
       status: 'inactiva' | 'activa' | 'gracia' | 'programada_cierre' | 'revocada';
       preapproval_id: string | null;
+      preapproval_plan_id: string | null;
     }>();
   if (subErr) console.error('[billing sub read]:', subErr.message);
   if (sub && sub.status !== 'inactiva' && sub.status !== 'revocada') {
@@ -135,9 +141,9 @@ export async function POST(request: NextRequest) {
     console.error('[billing checkout intent]:', intent.error.message); // log: la métrica no frena el cobro
   }
 
-  /* 8 — preapproval (Checkout Pro, R2). Orígenes SEPARADOS: el taller abre
-   * el Checkout desde SU origin (cookie de sesión en localhost), mientras MP
-   * necesita un endpoint ALCANZABLE para el webhook (túnel QA → MP_PUBLIC_ORIGIN). */
+  /* 8 — PLAN de suscripción (spec_pagos_plan_mp.md). El checkout hospedado
+   * del plan es el único que pide la cuenta de Mercado Pago del pagador: el
+   * email de Supabase ya no tiene que coincidir con la cuenta que paga. */
   // Next dev reporta `nextUrl.origin = http://localhost:...` aunque el server
   // escuche en 127.0.0.1; MP rechaza localhost como back_url. El helper usa el
   // Host real y normaliza loopback (QA 23-nov-2026).
@@ -147,32 +153,71 @@ export async function POST(request: NextRequest) {
     host: request.headers.get('host'),
     forwardedProto: request.headers.get('x-forwarded-proto'),
   });
-  const override = process.env.MP_PUBLIC_ORIGIN?.trim();
-  const callbackOrigin = override ? override.replace(/\/+$/, '') : webOrigin;
 
-  const drafted = await createPreapproval({
+  const drafted = await createPreapprovalPlan({
     reason: CHECKOUT_REASON,
-    payerEmail: user.email,
     externalReference: user.id,
     amount,
-    backUrls: {
-      success: `${webOrigin}/perfil?pago=success`,
-      failure: `${webOrigin}/perfil?pago=failure`,
-      pending: `${webOrigin}/perfil?pago=pending`,
-    },
-    notificationUrl: `${callbackOrigin}/api/webhooks/mercadopago`,
-    // createPreapproval normaliza el arranque a +5 min: MP rechaza el pasado.
-    startDateIso: new Date().toISOString(),
+    backUrl: `${webOrigin}/perfil?pago=success`,
   });
   if (!drafted.ok) {
-    console.error('[billing preapproval]:', drafted.status, drafted.message);
+    console.error('[billing preapproval_plan]:', drafted.status, drafted.message);
     return NextResponse.json({ error: 'MP_UNAVAILABLE' }, { status: 502 });
+  }
+
+  /* 9 — mapping local ANTES de redirigir. Sin esta fila el webhook no podría
+   * atribuir el preapproval (MP no garantiza heredar external_reference).
+   * Si falla, se cancela el plan recién creado: no se manda al pagador a un
+   * checkout que no vamos a poder mapear. */
+  const mapping = await service.from('mp_preapproval_plans').insert({
+    id: drafted.data.id,
+    user_id: user.id,
+    amount,
+    currency: 'ARS',
+    status: 'active',
+  });
+  if (mapping.error) {
+    console.error('[billing plan mapping]:', mapping.error.message);
+    const cancelled = await cancelPreapprovalPlan(drafted.data.id);
+    if (!cancelled.ok) {
+      console.error(
+        '[billing plan mapping rollback]:',
+        drafted.data.id,
+        cancelled.status,
+        cancelled.message,
+      );
+    }
+    return NextResponse.json({ error: 'PERSIST_UNAVAILABLE' }, { status: 503 });
+  }
+
+  /* 10 — como máximo un plan activo por usuario: el anterior se cancela
+   * best-effort. Su mapping se conserva para resolver webhooks tardíos. */
+  const previousPlans = await service
+    .from('mp_preapproval_plans')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .neq('id', drafted.data.id);
+  if (previousPlans.error) {
+    console.error('[billing plans previos]:', previousPlans.error.message);
+  }
+  for (const row of previousPlans.data ?? []) {
+    const cancelled = await cancelPreapprovalPlan(row.id);
+    if (!cancelled.ok) {
+      console.error('[billing plan viejo]:', row.id, cancelled.status, cancelled.message);
+      continue;
+    }
+    const marked = await service
+      .from('mp_preapproval_plans')
+      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+      .eq('id', row.id);
+    if (marked.error) console.error('[billing plan viejo mapping]:', marked.error.message);
   }
 
   /* Reactivación tras revocación: el preapproval viejo NO se reutiliza y, si
    * MP todavía lo tiene vivo, se cancela para que no vuelva a cobrar (Q6).
    * Un fallo de cancelación no frena el alta nueva: se logea. */
-  if (oldPreapprovalId && oldPreapprovalId !== drafted.data.id) {
+  if (oldPreapprovalId) {
     const cancelled = await cancelPreapproval(oldPreapprovalId);
     if (!cancelled.ok) {
       console.error(
@@ -184,19 +229,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  /* 9 — seed del ciclo: 'inactiva' hasta que el webhook apruebe el cobro.
-   * price_frozen TENTATIVO (obliga a la columna NOT NULL); la verdad la fija
-   * el cobro aprobado con el patch freezePrice (monto del pago, R4).
-   * `last_checkout_at` es el watermark anti-resurrección (R12.4): cada alta o
-   * re-alta corre la ventana. `last_synced_at = null` invalida el TTL para que
-   * el primer retorno del checkout verifique contra MP sin esperar 60 s/6 h.
-   * Posición 13: se limpian closure_reason/closed_at/gracia/period_end de la
-   * revocación anterior — el alta nueva arranca sin deuda visual. */
+  /* 11 — seed del ciclo: 'inactiva' hasta que el webhook apruebe el cobro.
+   * El preapproval real todavía no existe (lo crea MP en su checkout), así
+   * que se guarda NULL; el webhook lo vincula por `preapproval_plan_id`.
+   * price_frozen TENTATIVO: la verdad la fija el cobro aprobado (R4).
+   * `last_checkout_at` es el watermark anti-resurrección (R12.4). */
   const checkoutAt = new Date().toISOString();
   const seed = await service.from('subscriptions').upsert(
     {
       user_id: user.id,
-      preapproval_id: drafted.data.id,
+      preapproval_id: null,
+      preapproval_plan_id: drafted.data.id,
       status: 'inactiva',
       price_frozen: amount,
       currency: 'ARS',
@@ -211,16 +254,17 @@ export async function POST(request: NextRequest) {
   );
   if (seed.error) {
     console.error('[billing sub seed]:', seed.error.message);
-    // log simple: la fila se reconstruye con la primera aprobación, pero logea.
+    // El mapping ya permite resolver el webhook; la fila se reconstruye con
+    // el primer pago aprobado. Se logea pero no se bloquea el checkout.
   }
 
   console.log(
     '[billing QA registro]',
-    JSON.stringify({ user: user.id, artifact: 'checkout', preapprovalId: drafted.data.id }),
+    JSON.stringify({ user: user.id, artifact: 'checkout', planId: drafted.data.id }),
   );
 
   return NextResponse.json(
-    { ok: true as const, initPoint: drafted.data.initPoint, preapprovalId: drafted.data.id },
+    { ok: true as const, initPoint: drafted.data.initPoint, planId: drafted.data.id },
     { status: 201 },
   );
 }

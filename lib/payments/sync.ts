@@ -27,8 +27,11 @@ import { DAY_MS, resolvePlan, type SubscriptionStatus } from '@/lib/payments/cor
 import {
   getPayment,
   getPreapproval,
+  searchAuthorizedPaymentsByPreapproval,
   searchPaymentsByExternalReference,
   searchPreapprovalsByExternalReference,
+  searchPreapprovalsByPlanId,
+  type MpPreapprovalSearchItem,
 } from '@/lib/payments/mercadopago';
 import {
   applyPayment,
@@ -371,6 +374,7 @@ interface SubSyncRow {
   status: SubscriptionStatus;
   price_frozen: number;
   preapproval_id: string | null;
+  preapproval_plan_id: string | null;
   cycle_anchor: string | null;
   grace_expires_at: string | null;
   period_end: string | null;
@@ -427,7 +431,7 @@ export async function syncUserCycle(
       service
         .from('subscriptions')
         .select(
-          'status, price_frozen, preapproval_id, cycle_anchor, grace_expires_at, period_end, last_checkout_at, last_synced_at, created_at',
+          'status, price_frozen, preapproval_id, preapproval_plan_id, cycle_anchor, grace_expires_at, period_end, last_checkout_at, last_synced_at, created_at',
         )
         .eq('user_id', userId)
         .maybeSingle<SubSyncRow>(),
@@ -597,11 +601,14 @@ export async function syncUserCycle(
       );
     }
 
-    /* 5) Preapproval: adoptar si falta (R12.8); leer al final.
+    /* 5) Preapproval: adoptar si falta (R12.8 + spec_pagos_plan_mp.md §5.7).
      * Sin fila de ciclo, `users.mp_preapproval_id` es la única memoria del
      * último preapproval adoptado: evita re-buscarlo en cada verificación
      * manual. Con fila, manda `subscriptions.preapproval_id` (una re-alta
-     * puede haber creado uno nuevo y el hint de users quedar viejo). */
+     * puede haber creado uno nuevo y el hint de users quedar viejo).
+     * Checkout con plan: si hay `preapproval_plan_id` y todavía no hay
+     * preapproval, se busca por plan (MP no garantiza heredar
+     * external_reference); si no aparece, se cae a la búsqueda histórica. */
     let preapprovalId =
       sub?.preapproval_id ?? (sub ? null : userRes.data.mp_preapproval_id) ?? null;
     let preapproval: NonNullable<SyncOutcome['preapproval']> = 'unchanged';
@@ -609,16 +616,38 @@ export async function syncUserCycle(
     if (!preapprovalId && sub?.status !== 'revocada') {
       const remaining = deadline - Date.now();
       if (remaining > 0) {
-        const searchPre = await searchPreapprovalsByExternalReference(userId, {
-          limit: 50,
-          timeoutMs: preapprovalSearchTimeoutMs({
-            trigger: opts.trigger,
-            remainingMs: remaining,
-          }),
+        const timeoutMs = preapprovalSearchTimeoutMs({
+          trigger: opts.trigger,
+          remainingMs: remaining,
         });
-        const ownPreapprovals = searchPre.ok
-          ? searchPre.data.filter((p) => p.externalReference === userId)
-          : [];
+        let ownPreapprovals: MpPreapprovalSearchItem[] = [];
+
+        if (sub?.preapproval_plan_id) {
+          const byPlan = await searchPreapprovalsByPlanId(sub.preapproval_plan_id, {
+            limit: 10,
+            timeoutMs,
+          });
+          if (byPlan.ok) ownPreapprovals = byPlan.data;
+          else preapproval = 'unavailable';
+        }
+
+        /* Sin plan (fila legacy) se busca por external_reference. Con plan NO:
+         * un preapproval planless viejo (checkout anterior abandonado) también
+         * lleva external_reference = user_id y, si se adoptara, el intento
+         * nuevo quedaría marcado como "viejo" por `isCurrentPreapprovalAttempt`
+         * y su pago se descartaría. El plan es la única fuente válida. */
+        if (ownPreapprovals.length === 0 && !sub?.preapproval_plan_id) {
+          const searchPre = await searchPreapprovalsByExternalReference(userId, {
+            limit: 50,
+            timeoutMs,
+          });
+          if (searchPre.ok) {
+            ownPreapprovals = searchPre.data.filter((p) => p.externalReference === userId);
+          } else {
+            preapproval = 'unavailable';
+          }
+        }
+
         if (ownPreapprovals.length > 0) {
           const newest = [...ownPreapprovals].sort(
             (a, b) => (parseMs(b.dateCreated) ?? 0) - (parseMs(a.dateCreated) ?? 0),
@@ -638,8 +667,6 @@ export async function syncUserCycle(
             .eq('id', userId);
           if (updUser.error) console.error('[mp sync preapproval adopt user]:', updUser.error.message);
           preapproval = 'adopted';
-        } else if (!searchPre.ok) {
-          preapproval = 'unavailable';
         }
       }
     }
@@ -696,6 +723,39 @@ export async function syncUserCycle(
         offset + SYNC_PAGE_SIZE >= SYNC_MAX_PAYMENTS
       ) {
         console.warn('[mp sync] truncated:', page.data.total);
+      }
+    }
+
+    /* 6b) Cobros recurrentes del plan: el invoice trae `payment.id` aunque el
+     * pago no exponga external_reference. Se agregan como candidatos del
+     * usuario; el pull autoritativo y el dedupe hacen el resto. */
+    if (preapprovalId) {
+      const remaining = deadline - Date.now();
+      if (remaining > 0) {
+        const invoices = await searchAuthorizedPaymentsByPreapproval(preapprovalId, {
+          limit: 50,
+          timeoutMs: remaining,
+        });
+        if (invoices.ok) {
+          for (const invoice of invoices.data) {
+            if (invoice.paymentId == null) continue;
+            if (candidates.some((candidate) => candidate.id === invoice.paymentId)) continue;
+            const dateMs =
+              parseMs(invoice.dateCreated) ?? parseMs(invoice.lastModified) ?? started;
+            candidates.push({
+              id: invoice.paymentId,
+              dateCreatedMs: dateMs,
+              // El invoice pertenece al preapproval del usuario: identidad ya
+              // resuelta localmente (MP puede omitir external_reference).
+              externalReference: userId,
+              // `unknown` no entra al selector; el invoice con payment.id se
+              // pullea igual y el estado autoritativo lo decide applyPayment.
+              status: invoice.paymentStatus ?? 'approved',
+            });
+          }
+        } else {
+          console.error('[mp sync invoices]:', invoices.status, invoices.message);
+        }
       }
     }
 
@@ -760,6 +820,9 @@ export async function syncUserCycle(
         source: 'sync',
         watermarkMs,
         deadlineMs: deadline,
+        // Los candidatos ya están atados al usuario (search por external_ref o
+        // invoice de su preapproval); el pago puede no traer external_reference.
+        allowMissingExternalReference: true,
       });
       if (result.action === 'inserted') applied++;
       else if (result.action === 'repaired') repaired++;
@@ -787,6 +850,7 @@ export async function syncUserCycle(
         source: 'sync',
         watermarkMs,
         deadlineMs: deadline,
+        allowMissingExternalReference: true,
       });
       if (result.action === 'audited') audited++;
       else if (result.action === 'error') errors++;
@@ -800,14 +864,30 @@ export async function syncUserCycle(
         if (!pre.ok) {
           preapproval = 'unavailable';
           console.error('[mp sync preapproval]:', pre.status, pre.message);
-        } else if (pre.data.status === 'cancelled' || pre.data.status === 'paused') {
-          const closed = await applyPreapproval(pre.data, {
-            userId,
-            source: 'sync',
-            deadlineMs: deadline,
-          });
-          if (closed.action === 'closed') preapproval = 'closed';
-          else if (closed.action === 'error') errors++;
+        } else {
+          // El preapproval es la fuente del plan cuando la fila local no lo
+          // tenía (p.ej. pago aplicado antes del webhook de preapproval).
+          if (
+            pre.data.preapprovalPlanId &&
+            sub &&
+            sub.preapproval_plan_id !== pre.data.preapprovalPlanId
+          ) {
+            const updPlan = await service
+              .from('subscriptions')
+              .update({ preapproval_plan_id: pre.data.preapprovalPlanId })
+              .eq('user_id', userId);
+            if (updPlan.error)
+              console.error('[mp sync preapproval plan]:', updPlan.error.message);
+          }
+          if (pre.data.status === 'cancelled' || pre.data.status === 'paused') {
+            const closed = await applyPreapproval(pre.data, {
+              userId,
+              source: 'sync',
+              deadlineMs: deadline,
+            });
+            if (closed.action === 'closed') preapproval = 'closed';
+            else if (closed.action === 'error') errors++;
+          }
         }
       }
     }

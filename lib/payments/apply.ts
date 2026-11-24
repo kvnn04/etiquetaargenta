@@ -78,6 +78,10 @@ import {
   type MpPaymentFull,
   type MpPreapprovalFull,
 } from '@/lib/payments/mercadopago';
+import {
+  isCurrentPreapprovalAttempt,
+  preapprovalEventDecision,
+} from '@/lib/payments/identity';
 
 export type ApplySource = 'webhook' | 'sync' | 'legal';
 
@@ -93,6 +97,14 @@ export interface ApplyContext {
   nowMs?: number;
   /** Deadline del sync on-read: recorta el envío de email al presupuesto. */
   deadlineMs?: number;
+  /**
+   * Checkout con plan: el pago puede no traer `external_reference` porque MP
+   * lo exige solo para suscripciones sin plan. El caller SOLO activa este flag
+   * cuando resolvió la identidad por `preapproval_plan_id`/`preapproval_id`
+   * contra la DB local. Si el pago SÍ trae external_reference, se sigue
+   * validando que coincida con el usuario.
+   */
+  allowMissingExternalReference?: boolean;
 }
 
 export type PaymentSkipReason =
@@ -161,8 +173,10 @@ export interface ApplyResult {
 }
 
 export interface PreapprovalApplyResult {
-  action: 'closed' | 'ignored' | 'error';
+  /** `linked` = solo se guardaron IDs (authorized/pending): NO activa PRO. */
+  action: 'closed' | 'linked' | 'ignored' | 'error';
   periodEndMs?: number;
+  reason?: string;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -200,12 +214,23 @@ export function validatePaymentForApply(
      * auditoría del dinero (sí bloquea un approved nuevo, que sí activa).
      */
     ignorePreapprovalMismatch?: boolean;
+    /**
+     * Checkout con plan (spec_pagos_plan_mp.md): MP no garantiza
+     * `external_reference` en el pago de una suscripción creada desde un
+     * preapproval_plan. El caller solo habilita esto cuando resolvió la
+     * identidad contra la DB local (plan/preapproval). Si el pago SÍ trae
+     * external_reference, se valida igual contra `userId`.
+     */
+    allowMissingExternalReference?: boolean;
   },
 ): PaymentValidation {
+  const externalReferenceMissing =
+    pay.externalReference == null || pay.externalReference === '';
   if (
-    !pay.externalReference ||
-    !UUID_RE.test(pay.externalReference) ||
-    pay.externalReference !== input.userId
+    externalReferenceMissing
+      ? !input.allowMissingExternalReference
+      : !UUID_RE.test(pay.externalReference as string) ||
+        pay.externalReference !== input.userId
   ) {
     return { ok: false, reason: 'user_mismatch' };
   }
@@ -296,6 +321,7 @@ interface SubRow {
   status: SubscriptionStatus;
   price_frozen: number;
   preapproval_id: string | null;
+  preapproval_plan_id: string | null;
   cycle_anchor: string | null;
   grace_expires_at: string | null;
   period_end: string | null;
@@ -306,7 +332,9 @@ type Service = ReturnType<typeof createSupabaseServiceClient>;
 async function readSubRow(service: Service, userId: string): Promise<SubRow | null> {
   const { data, error } = await service
     .from('subscriptions')
-    .select('status, price_frozen, preapproval_id, cycle_anchor, grace_expires_at, period_end')
+    .select(
+      'status, price_frozen, preapproval_id, preapproval_plan_id, cycle_anchor, grace_expires_at, period_end',
+    )
     .eq('user_id', userId)
     .maybeSingle<SubRow>();
   if (error) console.error('[mp apply sub read]:', error.message);
@@ -647,6 +675,7 @@ async function applyRefundEvent(
       watermarkMs: ctx.watermarkMs,
       localPreapprovalId: subBefore?.preapproval_id ?? null,
       ignorePreapprovalMismatch: true, // el dinero viejo también se audita
+      allowMissingExternalReference: ctx.allowMissingExternalReference,
     });
 
   if (!validation.ok) {
@@ -1167,6 +1196,7 @@ export async function applyPayment(
     userId: ctx.userId,
     watermarkMs: ctx.watermarkMs,
     localPreapprovalId: subBefore?.preapproval_id ?? null,
+    allowMissingExternalReference: ctx.allowMissingExternalReference,
   });
 
   if (!validation.ok) {
@@ -1461,20 +1491,81 @@ export async function applyPayment(
 /* -------------------------------------------------------------------------- */
 
 /**
- * cancelled/paused ⇒ cierre programado con el period_end de la máquina R9.
- * El email de cierre se envía SOLO si el CAS gana (webhook y sync no duplican).
+ * Fold de un preapproval (R9/R12.8 + spec_pagos_plan_mp.md §5.4):
+ *   · SIEMPRE vincula `subscriptions.preapproval_id` / `preapproval_plan_id`
+ *     y `users.mp_preapproval_id` cuando el evento es del intento vigente;
+ *   · `authorized`/`pending` SOLO vinculan: PRO se activa con el pago, jamás
+ *     con la autorización de la suscripción;
+ *   · `cancelled`/`paused` aplican la máquina R9 (cierre programado + email);
+ *   · eventos tardíos de un intento viejo se ignoran (no pueden cerrar ni
+ *     pausar la suscripción nueva).
  */
 export async function applyPreapproval(
   pre: MpPreapprovalFull,
   ctx: { userId: string; source: ApplySource; deadlineMs?: number; suppressEmail?: boolean },
 ): Promise<PreapprovalApplyResult> {
-  if (pre.status !== 'cancelled' && pre.status !== 'paused') {
-    return { action: 'ignored' };
-  }
-
   const service = createSupabaseServiceClient();
   const sub = await readSubRow(service, ctx.userId);
   const current: SubscriptionStatus = sub?.status ?? 'inactiva';
+  const isCurrentAttempt = isCurrentPreapprovalAttempt({
+    preapprovalId: pre.id,
+    preapprovalPlanId: pre.preapprovalPlanId ?? null,
+    subPreapprovalId: sub?.preapproval_id ?? null,
+    subPreapprovalPlanId: sub?.preapproval_plan_id ?? null,
+  });
+  const decision = preapprovalEventDecision({
+    preapprovalStatus: pre.status,
+    isCurrentAttempt,
+    isSubscriptionLive: isLiveSubscriptionStatus(current),
+  });
+  if (decision !== 'apply') {
+    console.log(
+      '[mp preapproval ignored]',
+      JSON.stringify({
+        user: ctx.userId,
+        preapproval: pre.id,
+        plan: pre.preapprovalPlanId ?? null,
+        status: pre.status,
+        reason: decision,
+      }),
+    );
+    return { action: 'ignored', reason: decision };
+  }
+
+  /* 1) Vinculación de IDs — vale para cualquier estado. */
+  if (sub) {
+    const linkPatch: Record<string, unknown> = { preapproval_id: pre.id };
+    if (pre.preapprovalPlanId) linkPatch.preapproval_plan_id = pre.preapprovalPlanId;
+    const link = await service
+      .from('subscriptions')
+      .update(linkPatch)
+      .eq('user_id', ctx.userId);
+    if (link.error) {
+      console.error('[mp apply preapproval link]:', link.error.message);
+      return { action: 'error' };
+    }
+  }
+  const userLink = await service
+    .from('users')
+    .update({ mp_preapproval_id: pre.id })
+    .eq('id', ctx.userId);
+  if (userLink.error) console.error('[mp apply preapproval link user]:', userLink.error.message);
+
+  if (pre.status !== 'cancelled' && pre.status !== 'paused') {
+    console.log(
+      '[mp preapproval linked]',
+      JSON.stringify({
+        user: ctx.userId,
+        source: ctx.source,
+        preapproval: pre.id,
+        plan: pre.preapprovalPlanId ?? null,
+        mpStatus: pre.status,
+      }),
+    );
+    return { action: 'linked' };
+  }
+
+  /* 2) Cierre programado (máquina R9). */
   const grMs = isoToMs(sub?.grace_expires_at ?? null);
   const anchorDay = sub?.cycle_anchor ? cycleAnchorDayOfStr(sub.cycle_anchor) : null;
   const periodEndMs =
@@ -1488,7 +1579,7 @@ export async function applyPreapproval(
     kind: 'cancelacion_programada',
     periodEndMs,
   });
-  if (!patch) return { action: 'ignored' };
+  if (!patch) return { action: 'ignored', reason: 'transition_not_applicable' };
 
   if (sub) {
     const cas = await service
@@ -1497,6 +1588,8 @@ export async function applyPreapproval(
         status: patch.status,
         period_end: new Date(periodEndMs).toISOString(),
         grace_expires_at: null,
+        preapproval_id: pre.id,
+        ...(pre.preapprovalPlanId ? { preapproval_plan_id: pre.preapprovalPlanId } : {}),
       })
       .eq('user_id', ctx.userId)
       .eq('status', current)
@@ -1507,12 +1600,13 @@ export async function applyPreapproval(
     }
     if (!cas.data || cas.data.length === 0) {
       // Otro proceso ya programó el cierre: no se duplica el email.
-      return { action: 'ignored' };
+      return { action: 'ignored', reason: 'cas_lost' };
     }
   } else {
     const created = await service.from('subscriptions').insert({
       user_id: ctx.userId,
       preapproval_id: pre.id,
+      preapproval_plan_id: pre.preapprovalPlanId ?? null,
       status: patch.status,
       price_frozen: 0,
       currency: 'ARS',
@@ -1520,7 +1614,7 @@ export async function applyPreapproval(
     });
     if (created.error) {
       const code = (created.error as { code?: string }).code;
-      if (code === '23505') return { action: 'ignored' };
+      if (code === '23505') return { action: 'ignored', reason: 'already_exists' };
       console.error('[mp apply preapproval insert]:', created.error.message);
       return { action: 'error' };
     }

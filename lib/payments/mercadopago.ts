@@ -219,6 +219,150 @@ export async function createPreapproval(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Preapproval PLAN — checkout hospedado que pide la cuenta del pagador        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Plan de suscripción por intento de checkout (spec_pagos_plan_mp.md).
+ * El `external_reference` del plan es el user_id: si MP lo hereda al
+ * preapproval, la resolución es directa; si no, el mapping local por
+ * `preapproval_plan_id` sigue siendo la fuente de verdad.
+ */
+export interface PreapprovalPlanDraft {
+  reason: string;
+  externalReference: string;
+  amount: number;
+  /** Retorno del checkout hospedado (string único, igual que preapproval). */
+  backUrl: string;
+}
+
+export interface MpPreapprovalPlan {
+  id: string;
+  initPoint: string;
+  status: string;
+  externalReference: string | null;
+}
+
+export async function createPreapprovalPlan(
+  draft: PreapprovalPlanDraft,
+): Promise<MpResult<MpPreapprovalPlan>> {
+  const env = mpEnv();
+  if (!env) {
+    return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+  }
+
+  try {
+    const res = await fetch(`${MP_API}/preapproval_plan`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.accessToken}`,
+        'Content-Type': 'application/json',
+        // Retry de red no duplica el plan.
+        'X-Idempotency-Key': crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        reason: draft.reason,
+        external_reference: draft.externalReference,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: 'months',
+          transaction_amount: draft.amount,
+          currency_id: 'ARS',
+        },
+        back_url: draft.backUrl,
+      }),
+      signal: timeoutSignal(),
+    });
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as
+        | { message?: string; error?: string; cause?: Array<{ code?: string; description?: string }> }
+        | null;
+      const message = body?.message ?? body?.error ?? `HTTP ${res.status}`;
+      console.error(
+        '[mp preapproval_plan create]:', res.status, message,
+        'back_url =', draft.backUrl,
+        'cause =', JSON.stringify(body?.cause ?? null),
+      );
+      return { ok: false, status: res.status, message };
+    }
+
+    const raw = (await res.json()) as {
+      id?: string | number;
+      init_point?: string;
+      status?: string;
+      external_reference?: string | null;
+    };
+    if (raw.id == null || !raw.init_point) {
+      console.error('[mp preapproval_plan create]: respuesta sin id/init_point');
+      return { ok: false, status: res.status, message: 'Respuesta incompleta de MP' };
+    }
+    return {
+      ok: true,
+      data: {
+        id: String(raw.id),
+        initPoint: raw.init_point,
+        status: raw.status ?? 'active',
+        externalReference: raw.external_reference ?? null,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp preapproval_plan create]:', message);
+    return { ok: false, status: 0, message };
+  }
+}
+
+/**
+ * PUT /preapproval_plan/{id} con `status: cancelled` (verificado en vivo el
+ * 24-nov-2026). El checkout cancela el plan anterior al crear uno nuevo para
+ * dejar como máximo un plan activo por usuario.
+ */
+export async function cancelPreapprovalPlan(
+  planId: string,
+  opts?: { timeoutMs?: number },
+): Promise<MpResult<{ id: string; status: string }>> {
+  const env = mpEnv();
+  if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+
+  try {
+    const res = await fetch(`${MP_API}/preapproval_plan/${encodeURIComponent(planId)}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${env.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ status: 'cancelled' }),
+      signal: timeoutSignal(opts?.timeoutMs),
+    });
+    if (!res.ok) {
+      const detail = await mpErrorDetail(res);
+      console.error(
+        '[mp preapproval_plan cancel]:',
+        planId,
+        `HTTP ${res.status}`,
+        detail ? `— ${detail}` : '',
+      );
+      return { ok: false, status: res.status, message: detail ?? `HTTP ${res.status}` };
+    }
+    const raw = (await res.json().catch(() => null)) as
+      | { id?: string | number; status?: string }
+      | null;
+    return {
+      ok: true,
+      data: {
+        id: raw?.id != null ? String(raw.id) : planId,
+        status: raw?.status ?? 'cancelled',
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp preapproval_plan cancel]:', planId, message);
+    return { ok: false, status: 0, message };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Cancelación del preapproval (R9 + R13.6)                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -281,11 +425,16 @@ export interface MpPreapprovalFull {
   id: string;
   status: string; // pending | authorized | paused | cancelled
   externalReference: string | null; // user_id (mapeo resiliente)
+  /** Plan del checkout hospedado; clave de identidad si falta external_ref. */
+  preapprovalPlanId?: string | null;
   payerEmail: string | null;
   /** Fecha del próximo vencimiento que MP anuncia (reagendar): null si no vino. */
   nextPaymentDate: string | null;
   transactionAmount: number | null;
   currency: string | null;
+  /** Ordena adopciones y detecta eventos tardíos de planes viejos. */
+  dateCreated?: string | null;
+  lastModified?: string | null;
 }
 
 export async function getPreapproval(
@@ -309,8 +458,11 @@ export async function getPreapproval(
       id?: string | number;
       status?: string;
       external_reference?: string | null;
+      preapproval_plan_id?: string | null;
       payer_email?: string | null;
       next_payment_date?: string | null;
+      date_created?: string | null;
+      last_modified?: string | null;
       auto_recurring?: { transaction_amount?: number; currency_id?: string };
     };
     if (!raw.id) {
@@ -322,10 +474,13 @@ export async function getPreapproval(
         id: String(raw.id),
         status: raw.status ?? 'unknown',
         externalReference: raw.external_reference ?? null,
+        preapprovalPlanId: raw.preapproval_plan_id ?? null,
         payerEmail: raw.payer_email ?? null,
         nextPaymentDate: raw.next_payment_date ?? null,
         transactionAmount: raw.auto_recurring?.transaction_amount ?? null,
         currency: raw.auto_recurring?.currency_id ?? null,
+        dateCreated: raw.date_created ?? null,
+        lastModified: raw.last_modified ?? null,
       },
     };
   } catch (err) {
@@ -364,6 +519,8 @@ export interface MpPaymentFull {
   currencyId: string | null;
   /** El preapproval que generó el cobro (p/recuperar la fila del ciclo). */
   preapprovalId: string | null;
+  /** Plan asociado si MP lo expone en metadata (fallback de identidad). */
+  preapprovalPlanId?: string | null;
   payerEmail: string | null;
 }
 
@@ -402,6 +559,10 @@ export async function getPayment(
       date_approved?: string | null;
       date_last_updated?: string | null;
       preapproval_id?: string | null;
+      metadata?: {
+        preapproval_id?: string | null;
+        preapproval_plan_id?: string | null;
+      } | null;
       payer?: { email?: string | null };
     };
     if (typeof raw.id !== 'number') {
@@ -428,13 +589,114 @@ export async function getPayment(
         dateLastUpdated: raw.date_last_updated ?? null,
         dateCreated: raw.date_created ?? null,
         currencyId: raw.currency_id ?? null,
-        preapprovalId: raw.preapproval_id ?? null,
+        preapprovalId: raw.preapproval_id ?? raw.metadata?.preapproval_id ?? null,
+        preapprovalPlanId: raw.metadata?.preapproval_plan_id ?? null,
         payerEmail: raw.payer?.email ?? null,
       },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'fallo de red';
     console.error('[mp payment read]:', paymentId, message);
+    return { ok: false, status: 0, message };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Invoice de suscripción (topic subscription_authorized_payment)              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Subconjunto de `GET /authorized_payments/{id}` (spec_pagos_plan_mp.md §3.4).
+ * El invoice es la red de seguridad de los cobros recurrentes: trae el
+ * `preapproval_id` y el `payment.id` aunque el pago no exponga
+ * `external_reference`. El estado del invoice NO decide PRO; el pago sí.
+ */
+export interface MpAuthorizedPaymentFull {
+  id: string;
+  status: string;
+  preapprovalId: string | null;
+  externalReference: string | null;
+  transactionAmount: number | null;
+  currencyId: string | null;
+  paymentId: number | null;
+  paymentStatus: string | null;
+  paymentStatusDetail: string | null;
+  dateCreated: string | null;
+  lastModified: string | null;
+}
+
+export async function getAuthorizedPayment(
+  invoiceId: string,
+  opts?: { timeoutMs?: number },
+): Promise<MpResult<MpAuthorizedPaymentFull>> {
+  const env = mpEnv();
+  if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+
+  try {
+    const res = await fetch(`${MP_API}/authorized_payments/${encodeURIComponent(invoiceId)}`, {
+      headers: { Authorization: `Bearer ${env.accessToken}` },
+      signal: timeoutSignal(opts?.timeoutMs),
+    });
+    if (!res.ok) {
+      const detail = await mpErrorDetail(res);
+      console.error(
+        '[mp authorized_payment read]:',
+        invoiceId,
+        `HTTP ${res.status}`,
+        detail ? `— ${detail}` : '',
+      );
+      return { ok: false, status: res.status, message: detail ?? `HTTP ${res.status}` };
+    }
+    const raw = (await res.json()) as {
+      id?: string | number;
+      status?: string;
+      preapproval_id?: string | null;
+      external_reference?: string | null;
+      transaction_amount?: number | string | null;
+      currency_id?: string | null;
+      date_created?: string | null;
+      last_modified?: string | null;
+      payment?: {
+        id?: string | number | null;
+        status?: string | null;
+        status_detail?: string | null;
+      } | null;
+    };
+    if (raw.id == null) {
+      return { ok: false, status: res.status, message: 'Respuesta sin id' };
+    }
+    const paymentIdRaw = raw.payment?.id;
+    const paymentId =
+      typeof paymentIdRaw === 'number'
+        ? paymentIdRaw
+        : typeof paymentIdRaw === 'string' && /^\d+$/.test(paymentIdRaw)
+          ? Number(paymentIdRaw)
+          : null;
+    const amount =
+      typeof raw.transaction_amount === 'number'
+        ? raw.transaction_amount
+        : typeof raw.transaction_amount === 'string' && raw.transaction_amount.trim() !== ''
+          ? Number(raw.transaction_amount)
+          : null;
+    return {
+      ok: true,
+      data: {
+        id: String(raw.id),
+        status: raw.status ?? 'unknown',
+        preapprovalId: raw.preapproval_id ?? null,
+        externalReference: raw.external_reference ?? null,
+        transactionAmount: amount != null && Number.isFinite(amount) ? amount : null,
+        currencyId: raw.currency_id ?? null,
+        paymentId,
+        paymentStatus: raw.payment?.status ?? null,
+        paymentStatusDetail: raw.payment?.status_detail ?? null,
+        dateCreated: raw.date_created ?? null,
+        lastModified: raw.last_modified ?? null,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp authorized_payment read]:', invoiceId, message);
     return { ok: false, status: 0, message };
   }
 }
@@ -597,6 +859,164 @@ export async function searchPreapprovalsByExternalReference(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'fallo de red';
     console.error('[mp preapproval search]:', message);
+    return { ok: false, status: 0, message };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Búsquedas del checkout con plan (spec_pagos_plan_mp.md)                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `GET /preapproval/search?preapproval_plan_id=...`. Se usa SOLO cuando la
+ * suscripción tiene plan pero todavía no tiene `preapproval_id` (webhook
+ * perdido): adopta el preapproval más nuevo del plan.
+ */
+export async function searchPreapprovalsByPlanId(
+  planId: string,
+  opts?: { limit?: number; timeoutMs?: number },
+): Promise<MpResult<MpPreapprovalSearchItem[]>> {
+  const env = mpEnv();
+  if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+
+  const limit = Math.max(1, Math.min(50, opts?.limit ?? 10));
+  const url =
+    `${MP_API}/preapproval/search?preapproval_plan_id=${encodeURIComponent(planId)}` +
+    `&limit=${limit}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${env.accessToken}` },
+      signal: timeoutSignal(opts?.timeoutMs),
+    });
+    if (!res.ok) {
+      const message = `HTTP ${res.status}`;
+      const detail = await mpErrorDetail(res);
+      console.error('[mp preapproval search plan]:', message, detail ? `— ${detail}` : '');
+      return { ok: false, status: res.status, message };
+    }
+    const raw = (await res.json()) as
+      | {
+          results?: Array<{
+            id?: string | number;
+            status?: string;
+            external_reference?: string | null;
+            date_created?: string | null;
+            auto_recurring?: { transaction_amount?: number; currency_id?: string };
+          }>;
+        }
+      | Array<{
+          id?: string | number;
+          status?: string;
+          external_reference?: string | null;
+          date_created?: string | null;
+          auto_recurring?: { transaction_amount?: number; currency_id?: string };
+        }>;
+    const rows = Array.isArray(raw) ? raw : (raw.results ?? []);
+    const items: MpPreapprovalSearchItem[] = [];
+    for (const row of rows) {
+      if (row.id == null) continue;
+      items.push({
+        id: String(row.id),
+        status: row.status ?? 'unknown',
+        externalReference: row.external_reference ?? null,
+        dateCreated: asIso(row.date_created),
+        transactionAmount: asNumberOrNull(row.auto_recurring?.transaction_amount),
+        currency: row.auto_recurring?.currency_id ?? null,
+      });
+    }
+    return { ok: true, data: items };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp preapproval search plan]:', message);
+    return { ok: false, status: 0, message };
+  }
+}
+
+export interface MpAuthorizedPaymentSearchItem {
+  id: string;
+  preapprovalId: string | null;
+  externalReference: string | null;
+  transactionAmount: number | null;
+  currencyId: string | null;
+  dateCreated: string | null;
+  lastModified: string | null;
+  paymentId: number | null;
+  paymentStatus: string | null;
+}
+
+/**
+ * `GET /authorized_payments/search?preapproval_id=...`. Red de recuperación
+ * de cobros recurrentes cuando el pago no trae `external_reference`: el
+ * invoice sí trae `preapproval_id` + `payment.id`.
+ */
+export async function searchAuthorizedPaymentsByPreapproval(
+  preapprovalId: string,
+  opts?: { limit?: number; timeoutMs?: number },
+): Promise<MpResult<MpAuthorizedPaymentSearchItem[]>> {
+  const env = mpEnv();
+  if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+
+  const limit = Math.max(1, Math.min(50, opts?.limit ?? 50));
+  const url =
+    `${MP_API}/authorized_payments/search?preapproval_id=${encodeURIComponent(preapprovalId)}` +
+    `&limit=${limit}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${env.accessToken}` },
+      signal: timeoutSignal(opts?.timeoutMs),
+    });
+    if (!res.ok) {
+      const message = `HTTP ${res.status}`;
+      const detail = await mpErrorDetail(res);
+      console.error('[mp authorized_payment search]:', message, detail ? `— ${detail}` : '');
+      return { ok: false, status: res.status, message };
+    }
+    const raw = (await res.json()) as {
+      results?: Array<{
+        id?: string | number;
+        preapproval_id?: string | null;
+        external_reference?: string | null;
+        transaction_amount?: number | string | null;
+        currency_id?: string | null;
+        date_created?: string | null;
+        last_modified?: string | null;
+        payment?: { id?: string | number | null; status?: string | null } | null;
+      }>;
+    };
+    const items: MpAuthorizedPaymentSearchItem[] = [];
+    for (const row of raw.results ?? []) {
+      if (row.id == null) continue;
+      const paymentIdRaw = row.payment?.id;
+      const paymentId =
+        typeof paymentIdRaw === 'number'
+          ? paymentIdRaw
+          : typeof paymentIdRaw === 'string' && /^\d+$/.test(paymentIdRaw)
+            ? Number(paymentIdRaw)
+            : null;
+      const amount =
+        typeof row.transaction_amount === 'number'
+          ? row.transaction_amount
+          : typeof row.transaction_amount === 'string' && row.transaction_amount.trim() !== ''
+            ? Number(row.transaction_amount)
+            : null;
+      items.push({
+        id: String(row.id),
+        preapprovalId: row.preapproval_id ?? null,
+        externalReference: row.external_reference ?? null,
+        transactionAmount: amount != null && Number.isFinite(amount) ? amount : null,
+        currencyId: row.currency_id ?? null,
+        dateCreated: asIso(row.date_created),
+        lastModified: asIso(row.last_modified),
+        paymentId,
+        paymentStatus: row.payment?.status ?? null,
+      });
+    }
+    return { ok: true, data: items };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp authorized_payment search]:', message);
     return { ok: false, status: 0, message };
   }
 }

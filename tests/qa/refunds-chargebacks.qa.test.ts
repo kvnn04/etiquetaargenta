@@ -15,6 +15,7 @@ import {
   TEST_PAYER_EMAIL,
   TEST_PAYER_PASSWORD,
   cancelTestPreapproval,
+  cancelTestPreapprovalPlan,
   captureResend,
   createTestPreapproval,
   loginCookie,
@@ -72,6 +73,7 @@ let partialRefundSourceId = '';
 /** Evento total del escenario 3, reutilizado por el reintento del 5. */
 let totalRefundEvent: MpPaymentFull | null = null;
 const createdPreapprovals: string[] = [];
+const createdPlans: string[] = [];
 const extraPaymentIds = new Set<number>();
 
 function ok<T>(value: T | null | undefined, message: string): T {
@@ -295,6 +297,15 @@ afterAll(async () => {
       if ((await preapprovalStatus(id)) !== 'cancelled') await cancelTestPreapproval(id);
     } catch (error) {
       console.warn('[QA cleanup preapproval]', id, error instanceof Error ? error.message : error);
+    }
+  }
+
+  // Planes del checkout con plan: cancelar (idempotente) best-effort.
+  for (const id of createdPlans) {
+    try {
+      await cancelTestPreapprovalPlan(id);
+    } catch (error) {
+      console.warn('[QA cleanup plan]', id, error instanceof Error ? error.message : error);
     }
   }
 
@@ -1028,7 +1039,7 @@ describe.sequential('QA posición 13 — DB, MP TEST, webhook, UI y checkout', (
     const body = (await res.json().catch(() => null)) as {
       ok?: boolean;
       initPoint?: string;
-      preapprovalId?: string;
+      planId?: string;
       error?: string;
     } | null;
     if (res.status !== 201) {
@@ -1036,29 +1047,46 @@ describe.sequential('QA posición 13 — DB, MP TEST, webhook, UI y checkout', (
     }
     expect(res.status, JSON.stringify(body)).toBe(201);
     expect(body?.ok).toBe(true);
-    expect(body?.preapprovalId).toBeTruthy();
-    expect(body?.initPoint).toContain('mercadopago');
-    const newPreapproval = body?.preapprovalId as string;
-    createdPreapprovals.push(newPreapproval);
-    expect(newPreapproval).not.toBe(oldPreapproval);
+    expect(body?.planId).toBeTruthy();
+    expect(body?.initPoint).toContain('preapproval_plan_id=');
+    const newPlan = body?.planId as string;
+    createdPlans.push(newPlan);
     expect(await preapprovalStatus(oldPreapproval)).toBe('cancelled');
-    expect(await preapprovalStatus(newPreapproval)).toBe('pending');
 
     const qaSub = await service
       .from('subscriptions')
-      .select('status, preapproval_id, closure_reason, closed_at, period_end')
+      .select('status, preapproval_id, preapproval_plan_id, closure_reason, closed_at, period_end')
       .eq('user_id', qaUserId)
       .maybeSingle<{
         status: string;
-        preapproval_id: string;
+        preapproval_id: string | null;
+        preapproval_plan_id: string | null;
         closure_reason: string | null;
         closed_at: string | null;
         period_end: string | null;
       }>();
     expect(qaSub.data?.status).toBe('inactiva');
-    expect(qaSub.data?.preapproval_id).toBe(newPreapproval);
+    // El preapproval real lo crea MP en su checkout: todavía no existe.
+    expect(qaSub.data?.preapproval_id).toBeNull();
+    expect(qaSub.data?.preapproval_plan_id).toBe(newPlan);
     expect(qaSub.data?.closure_reason).toBeNull();
     expect(qaSub.data?.closed_at).toBeNull();
+
+    const planMapping = await service
+      .from('mp_preapproval_plans')
+      .select('user_id, amount, currency, status')
+      .eq('id', newPlan)
+      .maybeSingle<{
+        user_id: string;
+        amount: number;
+        currency: string;
+        status: string;
+      }>();
+    expect(planMapping.error).toBeNull();
+    expect(planMapping.data?.user_id).toBe(qaUserId);
+    expect(Number(planMapping.data?.amount)).toBeGreaterThan(0);
+    expect(planMapping.data?.currency).toBe('ARS');
+    expect(planMapping.data?.status).toBe('active');
 
     const legal = await service
       .from('legal_acceptances')
@@ -1076,8 +1104,7 @@ describe.sequential('QA posición 13 — DB, MP TEST, webhook, UI y checkout', (
     expect(intent.error).toBeNull();
     expect(intent.data?.length).toBe(1);
 
-    await cancelTestPreapproval(newPreapproval);
-    expect(await preapprovalStatus(newPreapproval)).toBe('cancelled');
+    await cancelTestPreapprovalPlan(newPlan);
   });
 
   it('9. webhook HTTP: firma, dedupe, topic de contracargo sin recurso y topic ignorado', async () => {
@@ -1117,7 +1144,7 @@ describe.sequential('QA posición 13 — DB, MP TEST, webhook, UI y checkout', (
       method: 'POST',
       headers: signedWebhookHeaders('qa-ignored'),
       body: JSON.stringify({
-        type: 'subscription_authorized_payment',
+        type: 'subscription_preapproval_plan',
         data: { id: 'qa-ignored' },
       }),
     });

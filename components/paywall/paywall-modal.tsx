@@ -22,9 +22,11 @@ import { LEGAL_LINKS } from '@/lib/legal/links';
 /**
  * Modal Paywall (spec_autenticacion_y_modelo_freemium §4 + spec_pagos §4):
  * precio dinámico leído del backend, beneficios concretos y CTA único hacia
- * Mercado Pago. La pos 10B conecta el Checkout Pro REAL:
+ * Mercado Pago. El checkout usa un PLAN de suscripción (spec_pagos_plan_mp.md):
  *   · CTA → POST /api/billing/checkout (gates server-side: sesión, email,
- *     precio, suscripción viva) → redirección al `init_point` de MP.
+ *     precio, suscripción viva) → redirección al `init_point` del plan.
+ *   · MP pide la cuenta de Mercado Pago del pagador en su checkout: no hace
+ *     falta que coincida con el email de la cuenta del taller.
  *   · 409 EMAIL_NOT_VERIFIED ⇒ PASO INTERMEDIO inline (spec_pagos §4:
  *     "Confirmá tu email para continuar", token 24 h) con reenvío y
  *     re-verificación sin perder el flujo.
@@ -330,6 +332,10 @@ export default function PaywallModal({
                 Botón de Baja
               </Link>
               , sin login.
+            </p>
+            <p className="mt-1.5 text-center text-[10px] leading-relaxed text-stone-500">
+              Podés pagar con cualquier cuenta de Mercado Pago, aunque su email sea distinto al
+              de tu taller.
             </p>
 
             <Button

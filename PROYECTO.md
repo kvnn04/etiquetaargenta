@@ -1221,6 +1221,18 @@ con chequeo anti `test_user`, dominio canónico, webhook entregado por MP, migra
 final, cobro real de verificación, Resend, deploy, observabilidad y rollback) + checklist por
 fases A–F con criterio de cierre cada una y DOD de go-live en §6.
 
+**Checkout con plan de MP (24-nov):** el alta PRO ya no crea un `preapproval` planless con
+`payer_email` (MP rechazaba cuando la cuenta que pagaba no coincidía con el email de Supabase).
+Ahora `POST /api/billing/checkout` crea un **`preapproval_plan`** por intento con
+`external_reference = user_id` y redirige a su checkout hospedado; MP pide la cuenta del
+pagador. El mapping `mp_preapproval_plans` (migración **`0011_preapproval_plans.sql`**, a
+aplicar a mano) es la clave de identidad del webhook; el pago sigue siendo la ÚNICA fuente que
+activa PRO (`applyPreapproval` solo vincula IDs). Se sumó el topic
+`subscription_authorized_payment` para recuperar cobros recurrentes por
+`GET /authorized_payments/{id}`. Spec: `../simulador_Mates/spec_pagos_plan_mp.md`.
+**Pendiente:** aplicar `0011`, configurar el topic nuevo en el panel de MP, deployar y hacer
+un alta real con una cuenta de MP cuyo email NO coincida con el de Supabase.
+
 **Segunda ola (21-nov → 23-nov):** se sumaron tres specs con 7 preguntas abiertas cada
 una: `spec_sync_de_pagos_y_reverificacion.md` (sync de pagos por `external_reference` y
 "Verifico de nuevo" real), `spec_paginas_legales.md` (términos, privacidad, arrepentimiento y
