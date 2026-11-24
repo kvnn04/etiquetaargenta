@@ -41,6 +41,13 @@ export const TOP_VIEW_OFFSET_MM: readonly [number, number, number] = [0, 300, 80
  */
 export const TOP_VIEW_FIT_MARGIN = 1.12;
 
+/**
+ * Aire de la VISTA DE GRABADO del editor: encuadra el anillo de la corona
+ * (no el producto completo) con la misma inclinación cenital de la ficha, para
+ * leer el trazado de canto sin perder la referencia del cuerpo.
+ */
+export const ENGRAVING_VIEW_FIT_MARGIN = 1.18;
+
 export interface ProductFramingMm {
   /** Radio máximo real del conjunto cuerpo + virola. */
   maxRadiusMm: number;
@@ -84,4 +91,34 @@ export function fitCameraDistanceMm(
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(aspect, 0.05));
   const halfFov = Math.min(vFov, hFov) / 2;
   return (sphereRadiusMm * margin) / Math.sin(halfFov);
+}
+
+/**
+ * Pose de la VISTA DE GRABADO del editor: cámara cenital (misma dirección que
+ * la ficha) apuntando a la corona y encuadrando el anillo R_int → R_ext. El
+ * cuerpo queda como referencia inferior; el trazado deja de verse de canto.
+ *
+ * Devuelve el punto de mira y la posición ABSOLUTA de cámara en mm (mundo:
+ * base en Y=0), lista para animar desde/hacia la vista de producto.
+ */
+export function engravingViewPoseMm(
+  product: MateProduct,
+  extDiameterMm: number,
+  aspect: number,
+  fovDeg = CAMERA_FOV_DEG,
+): { target: [number, number, number]; position: [number, number, number]; distance: number } {
+  const targetY = product.shape.totalHeightMm + product.shape.sealOverlapMm;
+  const distance = fitCameraDistanceMm(
+    extDiameterMm / 2,
+    aspect,
+    fovDeg,
+    ENGRAVING_VIEW_FIT_MARGIN,
+  );
+  const [ox, oy, oz] = TOP_VIEW_OFFSET_MM;
+  const len = Math.hypot(ox, oy, oz) || 1;
+  return {
+    target: [0, targetY, 0],
+    position: [(ox / len) * distance, targetY + (oy / len) * distance, (oz / len) * distance],
+    distance,
+  };
 }

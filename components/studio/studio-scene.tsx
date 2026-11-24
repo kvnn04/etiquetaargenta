@@ -39,7 +39,7 @@ import { useEditorStore } from '@/lib/store/editor';
 import { adaptiveLaserBurn, resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
 import { EDITOR_AUTO_SPIN_RPM, rpmToRadPerSec } from '@/lib/virola';
 import { evaluateOverflow } from '@/lib/overflow';
-import { composeEngravingCanvas } from '@/lib/compose-engraving';
+import { composeEngravingCanvas, composeEngravingHeightCanvas } from '@/lib/compose-engraving';
 import {
   BORDES_DASH_MM,
   CENTRO_DASH_MM,
@@ -67,11 +67,13 @@ import {
   CAMERA_FOV_DEG,
   CAMERA_OFFSET_MM,
   CAMERA_TARGET_Y_MM,
+  engravingViewPoseMm,
   fitCameraDistanceMm,
   productFramingMm,
 } from '@/three/framing';
 import { StudioEnvironment } from '@/three/studio-environment';
 import { woodGrainTexture } from '@/three/wood-grain';
+import { createEngravingMaterial, ENGRAVING_LIFT_MM } from '@/three/engraving-material';
 
 /** R5: patrones de punteado de los tres tipos de guía, tipados para drei Line. */
 const DASH_BORDES = BORDES_DASH_MM as { dashSize: number; gapSize: number };
@@ -367,8 +369,8 @@ function GuidesLayer() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Grabado del diseño (posiciones 6–7) — CanvasTexture viva 1024² sobre la    */
-/* corona.                                                                    */
+/* Grabado del diseño (posiciones 6–7) — CanvasTexture viva 2048² sobre la    */
+/* corona + mapa de relieve para la lectura de marca láser.                   */
 /* R1/R4 (marco canónico): el canvas de la corona proyecta UV polar centrada  */
 /* x/(2R)+0.5 (lathe-builder) ⇒ px = C+x·s / py = C−z·s con flipY del texture: */
 /* el +Z (Frente con la cámara por defecto) es el borde SUPERIOR del canvas y */
@@ -382,25 +384,24 @@ function GuidesLayer() {
 /* pos 6 = envolvente tocando el anillo); el asset congela su base en mm      */
 /* (baseSideMm = D_ext vigente al cargar) y el % multiplica SOLO esa base —   */
 /* editar D_ext/D_int después NO re-escala el diseño, solo re-chequea.        */
-/* R8: trabajo en vivo 1024² con smoothing 'high' (PNG bicúbico; el SVG llegó */
-/* pre-rasterizado a la resolución FINAL vía envoltorio de 1024², design-card)*/
-/* ; Ficha HD re-proyecta ≥2048² (pos 9). La CanvasTexture del grabado usa    */
-/* anisotropía MÁXIMA (DesignEngravingLayer): la virola vista de perfil no    */
-/* se desenfoca por el mipmap en ángulos rasantes.                            */
+/* R8: trabajo en vivo 2048² con smoothing 'high' (el SVG se rasteriza a esa  */
+/* resolución FINAL en design-card); la Ficha HD re-proyecta a 2048². La      */
+/* CanvasTexture del grabado usa anisotropía MÁXIMA: la virola vista de       */
+/* perfil no se desenfoca por el mipmap en ángulos rasantes.                  */
 /* Clipping anular con máscara destination-in SOLO entre R_int y R_ext, y     */
 /* tinte ÚNICO con el tono del quemado adaptativo R4 (pos 5 → pos 7: el modo  */
-/* de quemado no altera la escala). El motor de desborde (R4 de               */
-/* spec_escala...) vive en lib/overflow + OverflowMonitor: supervisores al    */
-/* composite de la ESCENA (guías pulsan rojo vía el overlay de GuidesLayer).  */
+/* de quemado no altera la escala). El bumpMap se DERIVA del mismo canvas     */
+/* compuesto (composeEngravingHeightCanvas): trazo mate y rebajado, no una    */
+/* calcomanía plana. El motor de desborde (R4 de spec_escala...) vive en      */
+/* lib/overflow + OverflowMonitor: supervisores al composite de la ESCENA     */
+/* (guías pulsan rojo vía el overlay de GuidesLayer).                         */
 /* -------------------------------------------------------------------------- */
 
-const ENGRAVING_CANVAS_PX = 1024; // R8: canvas de trabajo en vivo
-/** ε sobre la corona para no pelear Z con el metal (guías: +0.2). */
-const ENGRAVING_LIFT_MM = 0.02;
+const ENGRAVING_CANVAS_PX = 2048; // R8: canvas de trabajo en vivo (SVG nítido)
 
 /* El compositor del grabado (pipeline ESCALA→ESPEJO→ROTACIÓN al mismo pivote)
  * vive en `lib/compose-engraving.ts` — ÚNICA FUENTE compartida con la Ficha HD
- * (pos 9 llama con ≥2048²; acá R8 sigue en 1024²). */
+ * (pos 9 llama con 2048²; acá el trabajo en vivo también es 2048²). */
 
 function DesignEngravingLayer() {
   const int = useEditorStore((s) => s.intDiameter);
@@ -425,13 +426,19 @@ function DesignEngravingLayer() {
   // Tono/selector de quemado adaptativo (R4 pos 5): preset metálico ⇒ oscuro.
   const burn = useMemo(() => adaptiveLaserBurn(virolaColor), [virolaColor]);
 
-  const { canvas, texture } = useMemo(() => {
+  const { canvas, heightCanvas, texture, heightTexture } = useMemo(() => {
     const c = document.createElement('canvas');
     c.width = ENGRAVING_CANVAS_PX;
     c.height = ENGRAVING_CANVAS_PX;
+    const h = document.createElement('canvas');
+    h.width = ENGRAVING_CANVAS_PX;
+    h.height = ENGRAVING_CANVAS_PX;
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    return { canvas: c, texture: tex };
+    const heightTex = new THREE.CanvasTexture(h);
+    // Mapa de datos (altura), NO color: sin conversión sRGB.
+    heightTex.colorSpace = THREE.NoColorSpace;
+    return { canvas: c, heightCanvas: h, texture: tex, heightTexture: heightTex };
   }, []);
 
   // Nitidez de la virola vista de PERFIL (ángulo rasante): sin anisotropía el
@@ -439,31 +446,38 @@ function DesignEngravingLayer() {
   // que hacía la textura del prototipo Mate Studio (máximo que dé la GPU).
   const gl = useThree((s) => s.gl);
   useEffect(() => {
-    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
+    const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
+    texture.anisotropy = maxAnisotropy;
+    heightTexture.anisotropy = maxAnisotropy;
     texture.needsUpdate = true;
-  }, [texture, gl]);
+    heightTexture.needsUpdate = true;
+  }, [texture, heightTexture, gl]);
 
   // (a)+(c) del flujo §3: cada cambio de ángulo/escala/espejo/diametros
   // NORMALIZADO re-composita y emite la textura — sin reconstruir virola ni
-  // re-inicializar luces.
+  // re-inicializar luces. El relieve se deriva del canvas recién compuesto.
   useEffect(() => {
     composeEngravingCanvas(canvas, asset?.canvas ?? null, rotation, mirror, scale, burn, int / 2, ext / 2);
+    composeEngravingHeightCanvas(heightCanvas, canvas);
     texture.needsUpdate = true;
-  }, [canvas, texture, asset, rotation, mirror, scale, burn, int, ext]);
+    heightTexture.needsUpdate = true;
+  }, [
+    canvas,
+    heightCanvas,
+    texture,
+    heightTexture,
+    asset,
+    rotation,
+    mirror,
+    scale,
+    burn,
+    int,
+    ext,
+  ]);
 
   const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: texture,
-        transparent: true,
-        opacity: burn.opacity,
-        metalness: 0.05,
-        roughness: 0.9,
-        polygonOffset: true,
-        polygonOffsetFactor: -2, // ε contra el metal (las guías viven con Line)
-        polygonOffsetUnits: -2,
-      }),
-    [texture],
+    () => createEngravingMaterial(texture, heightTexture, burn.opacity),
+    [texture, heightTexture],
   );
 
   useEffect(() => {
@@ -506,43 +520,126 @@ function AutoSpin({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Cámara: refit SOLO si la nueva silueta excede el encuadre (R8 viewport).   */
+/* Cámara: encuadre de producto (R8 viewport) + VISTA DE GRABADO de la corona */
+/* -------------------------------------------------------------------------- */
+/* La vista de producto es 3/4 y lee la silueta completa, pero deja el anillo  */
+/* de la corona casi de canto. "Ver grabado" inclina la cámara a la misma      */
+/* dirección cenital de la ficha (≈15°) y encuadra SOLO el anillo: el trazado  */
+/* se lee en el 3D, no apenas en la tarjeta de vista previa. La transición es  */
+/* una animación de posición + punto de mira (sin cortes ni saltos de órbita). */
 /* -------------------------------------------------------------------------- */
 
-function CameraRefit() {
+/** Lo mínimo que usamos del OrbitControls (makeDefault) para animar el target. */
+interface OrbitLikeControls {
+  target: THREE.Vector3;
+  update: () => void;
+}
+
+interface CameraAnim {
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
+  start: number;
+  durationMs: number;
+}
+
+function CameraDirector({ engravingView }: { engravingView: boolean }) {
   const mateModel = useEditorStore((s) => s.mateModel);
   const intDiameter = useEditorStore((s) => s.intDiameter);
   const extDiameter = useEditorStore((s) => s.extDiameter);
-  const { camera, size } = useThree();
-  const animRef = useRef<{ from: number; to: number; start: number } | null>(null);
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as unknown as OrbitLikeControls | null;
+  const size = useThree((s) => s.size);
+  const animRef = useRef<CameraAnim | null>(null);
+  const modeRef = useRef(engravingView);
+  modeRef.current = engravingView;
 
-  /* Punto de mira: centro visual común del catálogo (mm sobre la base). */
-  const target = useMemo(() => new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0), []);
+  const product = useMemo(() => resolveMateModel(mateModel), [mateModel]);
+  const aspect = size.height > 0 ? size.width / size.height : 1;
 
-  const requiredDistance = useMemo(() => {
-    const product = resolveMateModel(mateModel);
+  /* Distancia de producto: centro visual común del catálogo (mm sobre la base). */
+  const productDistance = useMemo(() => {
     const { sphereRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
-    const aspect = size.height > 0 ? size.width / size.height : 1;
     return fitCameraDistanceMm(sphereRadiusMm, aspect);
-  }, [mateModel, intDiameter, extDiameter, size.width, size.height]);
+  }, [product, intDiameter, extDiameter, aspect]);
 
-  // Cambio de producto / diámetros / tamaño del panel: encuadra siempre el
-  // producto completo (solo anima si la corrección supera el 2 %).
+  /* Pose cenital sobre la corona: encuadra el anillo, no el producto entero. */
+  const crownPose = useMemo(
+    () => engravingViewPoseMm(product, extDiameter, aspect),
+    [product, extDiameter, aspect],
+  );
+
+  /* Los efectos de transición leen la pose vigente sin re-dispararse por
+   * cambios de tamaño/producto (esos los cubre el segundo efecto). */
+  const poseRef = useRef({ productDistance, crownPose });
+  poseRef.current = { productDistance, crownPose };
+
+  // Cambio de vista (producto ⇄ grabado): posición + punto de mira juntos.
   useEffect(() => {
-    const current = camera.position.distanceTo(target);
-    if (Math.abs(requiredDistance - current) > current * 0.02) {
-      animRef.current = { from: current, to: requiredDistance, start: performance.now() };
+    if (!controls) return;
+    const { productDistance: fitDist, crownPose: crown } = poseRef.current;
+    const toTarget = engravingView
+      ? new THREE.Vector3(...crown.target)
+      : new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
+    const dir = engravingView
+      ? new THREE.Vector3(...crown.position).sub(toTarget).normalize()
+      : new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
+    const distance = engravingView ? crown.distance : fitDist;
+    animRef.current = {
+      fromPos: camera.position.clone(),
+      toPos: toTarget.clone().addScaledVector(dir, distance),
+      fromTarget: controls.target.clone(),
+      toTarget,
+      start: performance.now(),
+      durationMs: 520,
+    };
+  }, [engravingView, controls, camera]);
+
+  // Cambio de producto / diámetros / tamaño del panel: en la vista de grabado
+  // re-encuadra la corona; en la de producto conserva la órbita del usuario y
+  // solo corrige la distancia (misma regla del refit: anima si supera el 2 %).
+  useEffect(() => {
+    if (!controls) return;
+    const { productDistance: fitDist, crownPose: crown } = poseRef.current;
+    if (modeRef.current) {
+      const toTarget = new THREE.Vector3(...crown.target);
+      const dir = new THREE.Vector3(...crown.position).sub(toTarget).normalize();
+      animRef.current = {
+        fromPos: camera.position.clone(),
+        toPos: toTarget.clone().addScaledVector(dir, crown.distance),
+        fromTarget: controls.target.clone(),
+        toTarget,
+        start: performance.now(),
+        durationMs: 320,
+      };
+      return;
     }
-  }, [requiredDistance, camera, target]);
+    const current = camera.position.distanceTo(controls.target);
+    if (Math.abs(fitDist - current) > current * 0.02) {
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      const target = controls.target.clone();
+      animRef.current = {
+        fromPos: camera.position.clone(),
+        toPos: target.clone().addScaledVector(dir, fitDist),
+        fromTarget: target.clone(),
+        toTarget: target,
+        start: performance.now(),
+        durationMs: 320,
+      };
+    }
+  }, [productDistance, crownPose, controls, camera]);
 
   useFrame(() => {
     const anim = animRef.current;
     if (!anim) return;
-    const t = Math.min(1, (performance.now() - anim.start) / 300);
-    const eased = 1 - (1 - t) * (1 - t); // easeOutQuad
-    const dist = anim.from + (anim.to - anim.from) * eased;
-    const dir = camera.position.clone().sub(target).normalize();
-    camera.position.copy(target).addScaledVector(dir, dist);
+    const t = Math.min(1, (performance.now() - anim.start) / anim.durationMs);
+    const eased = 1 - (1 - t) ** 3; // easeOutCubic
+    camera.position.lerpVectors(anim.fromPos, anim.toPos, eased);
+    if (controls) {
+      controls.target.lerpVectors(anim.fromTarget, anim.toTarget, eased);
+      controls.update();
+    }
     if (t >= 1) animRef.current = null;
   });
 
@@ -680,14 +777,23 @@ export interface StudioSceneProps {
   onUserInteracted?: () => void;
   /** R4 (pos 8): marca de agua MODO DEMO cocida al render — SOLO plan free. */
   watermark?: boolean;
+  /** Vista cenital del anillo de grabado (botón "Ver grabado" del editor). */
+  engravingView?: boolean;
 }
 
 export default function StudioScene({
   spinning = false,
   onUserInteracted,
   watermark = false,
+  engravingView = false,
 }: StudioSceneProps) {
   const groupRef = useRef<THREE.Group | null>(null);
+  /* Identidad ESTABLE: el OrbitControls no debe re-aplicar el target en cada
+   * render (pisaría el punto de mira animado por CameraDirector). */
+  const defaultOrbitTarget = useMemo(
+    () => [0, CAMERA_TARGET_Y_MM, 0] as [number, number, number],
+    [],
+  );
 
   return (
     <Canvas
@@ -729,7 +835,7 @@ export default function StudioScene({
       </mesh>
 
       <AutoSpin enabled={spinning} groupRef={groupRef} />
-      <CameraRefit />
+      <CameraDirector engravingView={engravingView} />
       {/* Pos 8 R4: el sello MODO DEMO SOLO para plan free (prop de la shell:
           gate('render.no-watermark') es falso ⇒ prop false ⇒ sin overlay). */}
       {watermark && <WatermarkLayer />}
@@ -737,7 +843,7 @@ export default function StudioScene({
         makeDefault
         enablePan
         enableDamping
-        target={[0, CAMERA_TARGET_Y_MM, 0]}
+        target={defaultOrbitTarget}
         onStart={onUserInteracted}
       />
     </Canvas>

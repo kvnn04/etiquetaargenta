@@ -3,15 +3,16 @@
  * ÚNICA FUENTE: spec_ficha_comercial_interactiva_shareable_link.md §3-R3/§6
  * ----------------------------------------------------------------------------
  * R3: al publicar, las texturas se re-encodan (máx 1024², formato optimizado,
- * ≤300 KB por variante). El canvas del asset de sesión ya es 1024² contain-fit
- * (pos 6), así que el trabajo acá es: PNG (preserva el alpha para la máscara
- * anular) → si excede los 300 KB, re-escalo a 768² → 512² (la escalera baja
- * el peso SIN atajar por formatos con pérdida: el alpha del resize directo
- * PNG es el resultado más predecible para el mocap del visor).
+ * ≤300 KB por variante). El canvas del asset de sesión es 2048² contain-fit
+ * (pos 6, para la vista en vivo nítida); acá se baja a la escalera del enlace:
+ * PNG (preserva el alpha para la máscara anular) → si excede los 300 KB,
+ * re-escalo a 768² → 512² (la escalera baja el peso SIN atajar por formatos
+ * con pérdida: el alpha del resize directo PNG es el resultado más predecible
+ * para el mocap del visor).
  * El ORIGINAL persistido (decisión 10A: regenerar en sesiones futuras) es un
- * PNG SIN pérdida a resolución final del canvas — el snapshot de pos 6 ya
- * rasteriza SVG/PNG a su resolución FINAL, y una re-creación fiel de un SVG
- * original (vectores) excede el MVP (queda abierto para iter).
+ * PNG SIN pérdida a 1024² — el snapshot de pos 6 ya rasteriza SVG/PNG a su
+ * resolución FINAL y una re-creación fiel de un SVG original (vectores)
+ * excede el MVP (queda abierto para iter).
  * ============================================================================ */
 
 /** Cota R3 EXACTA del enlace (igual al chequeo del route en POST /api/links). */
@@ -76,15 +77,17 @@ export async function encodeLinkTexture(
 }
 
 /**
- * ORIGINAL persistido: PNG sin pérdida a resolución final
- * (≤10 MB del bucket `designs`). Un PNG 1024² queda MUY por debajo: la
- * cota sirve de defensa contra diseños futuros más grandes.
+ * ORIGINAL persistido: PNG sin pérdida a 1024² (≤10 MB del bucket `designs`).
+ * El asset de sesión es 2048² para la vista en vivo; el original del enlace
+ * conserva la cota histórica de 1024² (un PNG 2048² denso podría superar los
+ * 10 MB). La escalera del enlace y el original quedan así alineados.
  */
 export async function encodeOriginalFromCanvas(
   canvas: HTMLCanvasElement,
   maxBytes: number = LINK_ORIGINAL_MAX_BYTES,
 ): Promise<EncodedLinkAsset | null> {
-  const encoded = dataUrlToEncoded(canvas.toDataURL('image/png'), canvas.width, canvas.height);
+  const source = canvas.width > 1024 ? scaledCanvas(canvas, 1024) : canvas;
+  const encoded = dataUrlToEncoded(source.toDataURL('image/png'), source.width, source.height);
   if (!encoded || encoded.bytes > maxBytes) return null;
   return encoded;
 }

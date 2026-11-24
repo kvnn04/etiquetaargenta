@@ -63,7 +63,7 @@ import { normalizeScale } from '@/lib/overflow';
 import type { InkEnvelope } from '@/lib/overflow';
 import type { StoredVariantRow } from '@/lib/links/payload';
 
-/** Recurso del diseño cargado en sesión (canvas rasterizado 1024², R8). */
+/** Recurso del diseño cargado en sesión (canvas rasterizado 2048², R8). */
 export type { DesignAsset };
 
 export interface EditorStateSnapshot {

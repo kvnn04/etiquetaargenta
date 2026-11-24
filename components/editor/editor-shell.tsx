@@ -153,6 +153,9 @@ export default function EditorShell({
    * en pausa hasta que el tallerista lo reactive con el botón. */
   const [spinning, setSpinning] = useState(false);
   const pauseSpin = useCallback(() => setSpinning(false), []);
+  /* Atajo de cámara "Ver grabado": estado de DISPOSITIVO (como el giro), no
+   * viaja al proyecto. Encuadra la corona para leer el trazado de canto. */
+  const [engravingView, setEngravingView] = useState(false);
 
   /* ── Pos 9: Ficha Técnica (modal #quoteModal) + Foto HD ───────────────────
    * obsText: R5/§5 — el texto libre es de SESIÓN (memoria de la shell): si el
@@ -415,12 +418,23 @@ export default function EditorShell({
           onContextMenu={freeDemo ? blockFreeDownload : undefined}
           onDragStart={freeDemo ? blockFreeDownload : undefined}
         >
-          <StudioScene spinning={spinning} onUserInteracted={pauseSpin} watermark={freeDemo} />
+          <StudioScene
+            spinning={spinning}
+            onUserInteracted={pauseSpin}
+            watermark={freeDemo}
+            engravingView={engravingView}
+          />
           <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 backdrop-blur">
             Estudio 3D
           </div>
-          {/* R7: barra flotante de la pestaña Estudio 3D — "Girar 360°"/"Pausar" */}
-          <AutoGiroBar spinning={spinning} onToggle={() => setSpinning((v) => !v)} />
+          {/* R7: barra flotante de la pestaña Estudio 3D — "Girar 360°"/"Pausar"
+              + atajo de cámara "Ver grabado"/"Vista general". */}
+          <AutoGiroBar
+            spinning={spinning}
+            onToggle={() => setSpinning((v) => !v)}
+            engravingView={engravingView}
+            onToggleEngravingView={() => setEngravingView((v) => !v)}
+          />
         </section>
 
         {/* Panel derecho */}

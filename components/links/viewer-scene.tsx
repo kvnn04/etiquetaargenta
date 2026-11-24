@@ -26,7 +26,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { resolveMateModel } from '@/lib/catalog';
 import { adaptiveLaserBurn, resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
-import { composeEngravingCanvas } from '@/lib/compose-engraving';
+import { composeEngravingCanvas, composeEngravingHeightCanvas } from '@/lib/compose-engraving';
 import { rpmToRadPerSec } from '@/lib/virola';
 import {
   buildBodyGeometry,
@@ -50,11 +50,13 @@ import {
 } from '@/three/framing';
 import { StudioEnvironment } from '@/three/studio-environment';
 import { woodGrainTexture } from '@/three/wood-grain';
+import { createEngravingMaterial, ENGRAVING_LIFT_MM } from '@/three/engraving-material';
 
 /** Mismo encuadre del editor (QA: la variante se presenta igual que en el estudio). */
 const FIELD_OF_VIEW_DEG = CAMERA_FOV_DEG;
-const ENGRAVING_CANVAS_PX = 1024; // R8: mismo canvas de trabajo que la escena del editor
-const ENGRAVING_LIFT_MM = 0.02;
+/* El asset publicado se re-encoda a ≤1024² (R3 de links): el canvas del visor
+ * conserva esa resolución y el relieve se deriva de la misma máscara. */
+const ENGRAVING_CANVAS_PX = 1024;
 
 type GeometryCache = Map<string, THREE.BufferGeometry>;
 const bodyCache: GeometryCache = new Map();
@@ -181,23 +183,31 @@ function ViewerEngraving({ view, layers }: { view: PublicLinkView; layers: Viewe
 
   const burn = useMemo(() => adaptiveLaserBurn(virolaColor), [virolaColor]);
 
-  const { canvas, texture, offscreen } = useMemo(() => {
+  const { canvas, heightCanvas, texture, heightTexture, offscreen } = useMemo(() => {
     const c = document.createElement('canvas');
     c.width = ENGRAVING_CANVAS_PX;
     c.height = ENGRAVING_CANVAS_PX;
+    const h = document.createElement('canvas');
+    h.width = ENGRAVING_CANVAS_PX;
+    h.height = ENGRAVING_CANVAS_PX;
     const o = document.createElement('canvas');
     o.width = ENGRAVING_CANVAS_PX;
     o.height = ENGRAVING_CANVAS_PX;
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    return { canvas: c, texture: tex, offscreen: o };
+    const heightTex = new THREE.CanvasTexture(h);
+    heightTex.colorSpace = THREE.NoColorSpace;
+    return { canvas: c, heightCanvas: h, texture: tex, heightTexture: heightTex, offscreen: o };
   }, []);
 
   const gl = useThree((s) => s.gl);
   useEffect(() => {
-    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
+    const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
+    texture.anisotropy = maxAnisotropy;
+    heightTexture.anisotropy = maxAnisotropy;
     texture.needsUpdate = true;
-  }, [texture, gl]);
+    heightTexture.needsUpdate = true;
+  }, [texture, heightTexture, gl]);
 
   /* Capa 1 (nueva) abajo; capas que SALDEN encima con su alpha — crossfade
    * de textura sin tocar malla, materiales ni cámara (QA3). */
@@ -237,22 +247,25 @@ function ViewerEngraving({ view, layers }: { view: PublicLinkView; layers: Viewe
         }
       }
     }
+    // El relieve se deriva del canvas final (incluye el crossfade).
+    composeEngravingHeightCanvas(heightCanvas, canvas);
     texture.needsUpdate = true;
-  }, [canvas, texture, offscreen, layers, burn, intDiameter, extDiameter]);
+    heightTexture.needsUpdate = true;
+  }, [
+    canvas,
+    heightCanvas,
+    texture,
+    heightTexture,
+    offscreen,
+    layers,
+    burn,
+    intDiameter,
+    extDiameter,
+  ]);
 
   const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: texture,
-        transparent: true,
-        opacity: burn.opacity,
-        metalness: 0.05,
-        roughness: 0.9,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      }),
-    [texture, burn.opacity],
+    () => createEngravingMaterial(texture, heightTexture, burn.opacity),
+    [texture, heightTexture],
   );
 
   if (!layers[0]?.asset || !layers[0]?.variant) return null; // sin asset: corona lisa

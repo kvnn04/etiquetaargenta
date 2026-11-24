@@ -5,15 +5,17 @@
  * ÚNICA FUENTE: spec_rotacion_archivo_svg_png.md + spec_escala_y_alerta_de_desborde.md
  * (+ tono de quemado de spec_seleccion_de_color.md R4, pos 5).
  * ----------------------------------------------------------------------------
- * · Archivo: SVG/PNG rasterizado EN CLIENTE al canvas de trabajo 1024² (R8,
+ * · Archivo: SVG/PNG rasterizado EN CLIENTE al canvas de trabajo 2048² (R8,
  *   contain + centrado) y guardado SOLO en el asset de sesión (el archivo NO
  *   viaja al jsonb todavía: la rotación/escala/espejo persisten; el ciclo de
  *   vida del archivo llega con variantes A/B/C y links pos 10).
  *   — SVG (calidad máxima): el vector se rasteriza SIEMPRE a la resolución
- *     FINAL vía envoltorio de 1024² (data-URI + preserveAspectRatio contain);
+ *     FINAL vía envoltorio de 2048² (data-URI + preserveAspectRatio contain);
  *     sin él, un SVG con width/height chicos (o sin ellos — el estándar cae a
  *     300×150) nace rasterizado en su tamaño intrínseco y el agrandado del
  *     bitmap borroso es la pérdida de calidad clásica al subirlo a la virola.
+ *     El grabado en vivo usa ese ráster a 2048² (antes 1024²): trazos finos
+ *     y textos chicos dejan de verse escalonados al acercar la cámara.
  *     SIN refuerzo de alfa: el vector trae su anti-aliasing correcto.
  *   — PNG: contain + REFUERZO de trazos finos (técnica del prototipo Mate
  *     Studio, alfa ×1.8) para que los hairline no desaparezcan sobre el metal.
@@ -58,6 +60,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2 } from 'lucide-react';
+import EngravingPreview from '@/components/studio/engraving-preview';
 import { useEditorStore } from '@/lib/store/editor';
 import {
   applyMagnet,
@@ -94,7 +97,7 @@ function fmtAngle(deg: number): string {
   return String(normalizeRotation(deg));
 }
 
-const WORK_SIZE = 1024; // R8: canvas de trabajo en vivo (Ficha HD: pos 9 ≥2048²)
+const WORK_SIZE = 2048; // R8: canvas de trabajo en vivo (Ficha HD: pos 9 2048²)
 
 /** Carga un origen (data-URI / blob) en un <img> y resuelve al estar listo. */
 function loadImageElement(src: string): Promise<HTMLImageElement> {
@@ -106,7 +109,7 @@ function loadImageElement(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Canvas de trabajo vacío (R8, 1024²) con contexto listo para getImageData. */
+/** Canvas de trabajo vacío (R8, 2048²) con contexto listo para getImageData. */
 function makeWorkCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const canvas = document.createElement('canvas');
   canvas.width = WORK_SIZE;
@@ -124,7 +127,7 @@ function svgDataUri(svgText: string): string {
 
 /**
  * Envoltorio que OBLIGA al navegador a rasterizar el vector a la resolución
- * FINAL (1024², contain): sin él, un SVG con width/height chicos — o sin
+ * FINAL (2048², contain): sin él, un SVG con width/height chicos — o sin
  * ellos (el estándar cae a 300×150) — nace rasterizado en su tamaño
  * intrínseco y el estirado posterior del bitmap es la pérdida de nitidez
  * clásica al subirlo a la virola. La URI interior va codificada, así que el
@@ -141,10 +144,10 @@ function svgWrapperForRaster(svgText: string, size: number): string {
 }
 
 /**
- * R8: rasteriza el archivo EN CLIENTE al canvas de trabajo 1024² (contain,
+ * R8: rasteriza el archivo EN CLIENTE al canvas de trabajo 2048² (contain,
  * centrado). El resultado vive SOLO en el asset de sesión — jamás se envía
  * al backend.
- * · SVG: rasteriza SIEMPRE a la resolución final vía el envoltorio de 1024²
+ * · SVG: rasteriza SIEMPRE a la resolución final vía el envoltorio de 2048²
  *   y SIN refuerzo de alfa — el vector ya trae su anti-aliasing correcto y
  *   el ×1.8 lo aterrona (bordes dentados).
  * · PNG: contain + REFUERZO de trazos finos (prototipo: alpha ×1.8 ⇒ los
@@ -205,7 +208,7 @@ async function rasterizeBitmapFile(file: File): Promise<HTMLCanvasElement> {
  * Retorna null si no hay trazo (α≥128) o si el kit de canvas no está.
  */
 function measureInkEnvelopeMm(asset: HTMLCanvasElement, baseSideMm: number) {
-  // El cached de work 1024² ⇒ downsample bilinear a la máscara 512² (R4).
+  // El cached de work 2048² ⇒ downsample bilinear a la máscara 512² (R4).
   const scan = document.createElement('canvas');
   scan.width = 512;
   scan.height = 512;
@@ -213,7 +216,8 @@ function measureInkEnvelopeMm(asset: HTMLCanvasElement, baseSideMm: number) {
   if (!ctx) return null;
   ctx.drawImage(asset, 0, 0, 512, 512);
   const data = ctx.getImageData(0, 0, 512, 512).data;
-  // mm/px de la máscara: el ráster 1024² equivale a baseSideMm de mm ⇒ 512 px ⇔ baseSideMm/2.
+  // mm/px de la máscara: el cuadrado completo (2048²) mide baseSideMm de lado
+  // ⇒ al reducirlo a 512², 512 px siguen cubriendo baseSideMm (no se recorta).
   const mmPerPx = baseSideMm / 512;
   return scanInkEnvelope({ size: 512, alphaAt: (x, y) => data[(y * 512 + x) * 4 + 3] }, mmPerPx);
 }
@@ -437,10 +441,13 @@ export default function DesignCard() {
           </p>
         )}
 
+        {/* Vista cenital del anillo: la corona en el 3D queda casi de canto. */}
+        <EngravingPreview />
+
         {!designAsset && !fileError && (
           <p className="text-[10px] leading-relaxed text-stone-600">
             Sin diseño: la corona sale lisa. SVG o PNG con trazado tocando el anillo; al cargar se
-            congela el 100 % (R1) y la vista previa es en vivo en el 3D.
+            congela el 100 % (R1) y la vista previa es en vivo en el 3D y en el anillo de arriba.
           </p>
         )}
       </section>

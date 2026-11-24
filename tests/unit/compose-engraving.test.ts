@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { composeEngravingCanvas } from '@/lib/compose-engraving';
+import { composeEngravingCanvas, composeEngravingHeightCanvas } from '@/lib/compose-engraving';
 
 interface FakeContext {
   setTransform: ReturnType<typeof vi.fn>;
@@ -57,5 +57,21 @@ describe('composeEngravingCanvas — re-proyección HD (R8)', () => {
     /* Regresión: `drawImage(asset, 0, 0)` dejaba el grabado en un cuadrante;
      * la máscara anular lo recortaba a una astilla y el diseño no se veía. */
     expect(ctx.drawImage).toHaveBeenCalledWith(asset, 0, 0, 2048, 2048);
+  });
+});
+
+describe('composeEngravingHeightCanvas — relieve de marca láser', () => {
+  it('deriva el bumpMap del canvas de color y deja una base plana detrás', () => {
+    const { canvas, ctx } = fakeCanvas(2048);
+    const color = { width: 2048, height: 2048 } as HTMLCanvasElement;
+
+    composeEngravingHeightCanvas(canvas, color);
+
+    /* El alfa del grabado se copia tal cual (misma transformación ya aplicada
+     * por composeEngravingCanvas); después se pinta la altura del trazo y,
+     * por destination-over, la superficie metálica continua. */
+    expect(ctx.drawImage).toHaveBeenCalledWith(color, 0, 0, 2048, 2048);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(2);
+    expect(ctx.globalCompositeOperation).toBe('source-over');
   });
 });

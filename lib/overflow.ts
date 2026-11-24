@@ -13,7 +13,7 @@
  *      CARGA/CAMBIO DE DISEÑO — cambiar ángulo/espejo NO re-escanea
  *      (optimización explícita, sin estado inválido).
  * R1 — Anclaje del 100 %: el ráster de trabajo (R8 pos 6: contain-fit
- *      centrado en 1024²) YA dimensiona el trazado para que su envolvente
+ *      centrado en 2048²) YA dimensiona el trazado para que su envolvente
  *      toque el anillo de la chapa (bbox ⇒ toca R_ext del producto vigente al
  *      cargar). Ese tamaño queda CONGELADO (el asset es un ráster fijo de
  *      sesión) y el 70 %–110 % paso 0.5 % opera como multiplicador sobre esa

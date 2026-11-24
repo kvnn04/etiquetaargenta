@@ -17,17 +17,17 @@
  *   pos 6 = envolvente tocando el anillo); el asset congela su base en mm
  *   (baseSideMm) y el % multiplica SOLO esa base — editar D_ext/D_int después
  *   NO re-escala el diseño, solo re-chequea.
- * · R8: la escena llama con su canvas de trabajo 1024²; la Ficha HD llama con
- *   ≥2048² para la re-proyección de export — MISMA función (un solo motor).
+ * · R8: la escena llama con su canvas de trabajo 2048²; la Ficha HD llama con
+ *   2048² para la re-proyección de export — MISMA función (un solo motor).
  * · Clipping anular con máscara destination-in SOLO entre R_int y R_ext, y
  *   tinte ÚNICO con el tono del quemado adaptativo R4 (pos 5).
  * ============================================================================ */
 
 /**
  * Compone el grabado en `canvas` a tamaño arbitrario (R8: trabajo vivo
- * 1024² en la escena; Ficha HD re-proyecta a ≥2048²).
+ * 2048² en la escena; Ficha HD re-proyecta a 2048²).
  *
- * @param asset ráster de trabajo del diseño (1024²) o null ⇒ canvas limpio
+ * @param asset ráster de trabajo del diseño (2048²) o null ⇒ canvas limpio
  * @param rotationDeg ángulo canónico [0°, 360°) paso 0.5° (R3)
  * @param mirror espejo horizontal (R2 pos 7)
  * @param scalePct escala en % [70, 110] (R8 pos 7) — multiplicador de la base
@@ -70,9 +70,9 @@ export function composeEngravingCanvas(
   ctx.scale(scalePct / 100, scalePct / 100);
   // Dibujo FULL-canvas del ráster de trabajo (R1: base congelada = el 100 %
   // deja la envolvente tocando el anillo — jamás inscrito en el hueco).
-  // La Ficha HD compone sobre 2048² y el asset de sesión es 1024²: se escala
-  // al canvas; sin esto el grabado quedaba en un cuadrante y la máscara
-  // anular lo recortaba casi por completo.
+  // El canvas de destino puede diferir del asset (visor 1024², ficha/editor
+  // 2048²): se dibuja SIEMPRE al tamaño del canvas. Sin esto el grabado
+  // quedaba en un cuadrante y la máscara anular lo recortaba casi por completo.
   ctx.translate(-C, -C);
   ctx.drawImage(asset, 0, 0, canvas.width, canvas.height);
   ctx.restore();
@@ -92,5 +92,59 @@ export function composeEngravingCanvas(
   ctx.arc(C, C, (rInMm / rOutMm) * C, 0, Math.PI * 2, true); // agujero interior
   ctx.fillStyle = '#000';
   ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mapa de RELIEVE del grabado (bumpMap)                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Altura de la superficie metálica (gris medio) en el mapa de relieve. */
+const ENGRAVING_HEIGHT_BASE = '#8C8C8C';
+/** Altura del trazo grabado (rebajado) en el mapa de relieve. */
+const ENGRAVING_HEIGHT_INK = '#2E2E2E';
+
+/**
+ * Deriva el mapa de RELIEVE (bumpMap) del canvas de color YA compuesto:
+ * la máscara alfa del grabado se convierte en un trazo rebajado sobre una
+ * base plana gris. Se llama SIEMPRE después de `composeEngravingCanvas`
+ * (mismo tamaño de canvas), y da la lectura de "marca láser" — el trazo
+ * deja de ser una calcomanía plana y responde a la luz como una incisión.
+ *
+ * El gris base cubre TODO el canvas (incluido el hueco y el exterior): la
+ * malla del grabado solo existe en el anillo, pero el bumpMap necesita una
+ * superficie plana alrededor del trazo para que el borde no genere un
+ * escalón artificial contra el vacío.
+ */
+export function composeEngravingHeightCanvas(
+  canvas: HTMLCanvasElement,
+  colorCanvas: HTMLCanvasElement,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const { width, height } = canvas;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // 1) Copia el grabado (su alfa ES el trazo). Un blur mínimo convierte el
+  //    escalón del borde en una pendiente: el bisel se lee, no corta.
+  ctx.save();
+  ctx.filter = `blur(${Math.max(0.75, width / 2048).toFixed(2)}px)`;
+  ctx.drawImage(colorCanvas, 0, 0, width, height);
+  ctx.restore();
+
+  // 2) Altura uniforme del trazo (conserva el alfa original).
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = ENGRAVING_HEIGHT_INK;
+  ctx.fillRect(0, 0, width, height);
+
+  // 3) La superficie metálica queda DETRÁS: base plana y continua.
+  ctx.globalCompositeOperation = 'destination-over';
+  ctx.fillStyle = ENGRAVING_HEIGHT_BASE;
+  ctx.fillRect(0, 0, width, height);
+
   ctx.globalCompositeOperation = 'source-over';
 }

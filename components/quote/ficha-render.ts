@@ -40,7 +40,7 @@ import {
   type BodyPresetId,
   type MetalPresetId,
 } from '@/lib/color';
-import { composeEngravingCanvas } from '@/lib/compose-engraving';
+import { composeEngravingCanvas, composeEngravingHeightCanvas } from '@/lib/compose-engraving';
 import {
   buildBodyGeometry,
   buildVirolaTopGeometry,
@@ -61,6 +61,7 @@ import {
 } from '@/three/framing';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { woodGrainTexture } from '@/three/wood-grain';
+import { createEngravingMaterial, ENGRAVING_LIFT_MM } from '@/three/engraving-material';
 import { wrapObservations } from '@/lib/quote/texts';
 import type { FichaSnapshot } from '@/lib/quote/snapshot';
 
@@ -236,12 +237,16 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
   group.add(new THREE.Mesh(geoInner, virolaMat));
   disposables.push(geoTop, geoOuter, geoInner, virolaMat);
 
-  // Grabado HD (compositor ÚNICO a 2048² — re-proyección R8) sobre la corona
+  // Grabado HD (compositor ÚNICO a 2048² — re-proyección R8) sobre la corona,
+  // con mapa de relieve derivado del mismo canvas (marca láser mate).
   if (input.designAsset) {
     const burn = adaptiveLaserBurn(input.virolaColor);
     const texCanvas = document.createElement('canvas');
     texCanvas.width = ENGRAVING_HD_PX;
     texCanvas.height = ENGRAVING_HD_PX;
+    const heightCanvas = document.createElement('canvas');
+    heightCanvas.width = ENGRAVING_HD_PX;
+    heightCanvas.height = ENGRAVING_HD_PX;
     composeEngravingCanvas(
       texCanvas,
       input.designAsset,
@@ -252,25 +257,22 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
       intDiameter / 2,
       extDiameter / 2,
     );
+    composeEngravingHeightCanvas(heightCanvas, texCanvas);
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
     const tex = new THREE.CanvasTexture(texCanvas);
     tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    tex.anisotropy = maxAnisotropy;
     tex.needsUpdate = true;
-    const engraveMat = new THREE.MeshStandardMaterial({
-      map: tex,
-      transparent: true,
-      opacity: burn.opacity,
-      metalness: 0.05,
-      roughness: 0.9,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
+    const heightTex = new THREE.CanvasTexture(heightCanvas);
+    heightTex.colorSpace = THREE.NoColorSpace;
+    heightTex.anisotropy = maxAnisotropy;
+    heightTex.needsUpdate = true;
+    const engraveMat = createEngravingMaterial(tex, heightTex, burn.opacity);
     const engraveMesh = new THREE.Mesh(geoTop, engraveMat);
-    engraveMesh.position.set(0, topY + 0.02, 0);
+    engraveMesh.position.set(0, topY + ENGRAVING_LIFT_MM, 0);
     engraveMesh.renderOrder = 1; // virola 0 < grabado 1 (sin guías: nada en 2)
     group.add(engraveMesh);
-    disposables.push(engraveMat, tex);
+    disposables.push(engraveMat, tex, heightTex);
   }
 
   // Suelo sutil (coherencia visual con la escena; NO gira)

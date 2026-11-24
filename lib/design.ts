@@ -29,9 +29,10 @@
  *      0.5) y el ESPEJO (bool) también persisten con pos 7 (spec
  *      spec_escala_y_alerta_de_desborde.md R8) y los payloads comerciales los
  *      publican como `variants[n].scale`/`mirror`.
- * R8 — Re-muestreo: vivo en canvas de trabajo 1024×1024; la exportación
- *      HD/Ficha (pos 9) re-proyecta a ≥2048². Proyecto/link antiguo sin
- *      rotation ⇒ 0°.
+ * R8 — Re-muestreo: vivo en canvas de trabajo 2048×2048 (el SVG se rasteriza
+ *      a esa resolución final); la exportación HD/Ficha (pos 9) re-proyecta a
+ *      2048². El enlace comercial re-encoda a ≤1024² (R3 de links). Proyecto/
+ *      link antiguo sin rotation ⇒ 0°.
  * ============================================================================ */
 
 import { normalizeScale } from './overflow';
@@ -134,7 +135,7 @@ export function formatRotationLabel(angle: number): string {
 
 /* La regla provisional de pos 6 (inscribir el diseño en el círculo del carril,
  * `inscribedFitSizePx`) fue SUSTITUIDA por el anclaje real de
- * spec_escala_y_alerta_de_desborde.md R1: el ráster contain-fit 1024² DE pos 6
+ * spec_escala_y_alerta_de_desborde.md R1: el ráster contain-fit 2048² DE pos 6
  * ya dimensiona el trazado para que su envolvente toque el anillo de la chapa
  * — ese tamaño queda congelado y el 70–110 % multiplica SOBRE esa base (ver
  * lib/overflow.ts). Si se inscribía en el círculo W/√2 centrado en el EJE, la
@@ -177,12 +178,12 @@ export function normalizeDesignState(raw: unknown): DesignState {
 
 /**
  * Recurso de diseño de SESIÓN (pos 6 + pos 7): raster del archivo ya en el
- * canvas de trabajo 1024² (R8) + metadatos para la UI y el motor de desborde.
+ * canvas de trabajo 2048² (R8) + metadatos para la UI y el motor de desborde.
  * SOLO vive en memoria del navegador: NO se persiste (el ciclo de vida del
  * archivo por variantes llega con pos 7 A/B/C y con los links pos 10).
  */
 export interface DesignAsset {
-  /** Raster de trabajo: contain-fit centrado en 1024², listo para componer. */
+  /** Raster de trabajo: contain-fit centrado en 2048², listo para componer. */
   canvas: HTMLCanvasElement;
   /** Nombre original del archivo (solo UI, nunca se envía al backend). */
   name: string;
