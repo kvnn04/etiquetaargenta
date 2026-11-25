@@ -209,8 +209,13 @@ export function cycleAnchorDayOfStr(dateStr: string): number | null {
   return m ? Number(m[3]) : null;
 }
 
-/** URL oficial del Portal de MP (R9: cancelar/actualizar tarjeta SU, no botón in-app). */
-export const MERCADOPAGO_PORTAL_URL = 'https://www.mercadopago.com.ar/subscriptions/portal';
+/**
+ * URL oficial de "Mis suscripciones" de MP (R9: cancelar/actualizar tarjeta
+ * SOLO ahí, nunca botón in-app). `/subscriptions/portal` devolvía error; la
+ * sección real es `/subscriptions` (el hash abre el menú lateral).
+ */
+export const MERCADOPAGO_PORTAL_URL =
+  'https://www.mercadopago.com.ar/subscriptions#from-section=menu';
 
 /**
  * Próxima fecha del ciclo (00:00 AR de ese día): fin del cierre programado
