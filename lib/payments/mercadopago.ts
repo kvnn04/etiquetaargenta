@@ -946,6 +946,14 @@ export interface MpAuthorizedPaymentSearchItem {
 }
 
 /**
+ * Tope REAL de `/authorized_payments/search`: `limit=16` o más responde
+ * 400 "Invalid value for limit" (verificado contra la API el 25-nov-2026;
+ * el paging devuelve hasta 15 facturas). No confundir con los buscadores de
+ * pagos/preapprovals, que sí aceptan 50.
+ */
+const AUTHORIZED_PAYMENTS_MAX_LIMIT = 15;
+
+/**
  * `GET /authorized_payments/search?preapproval_id=...`. Red de recuperación
  * de cobros recurrentes cuando el pago no trae `external_reference`: el
  * invoice sí trae `preapproval_id` + `payment.id`.
@@ -957,7 +965,10 @@ export async function searchAuthorizedPaymentsByPreapproval(
   const env = mpEnv();
   if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
 
-  const limit = Math.max(1, Math.min(50, opts?.limit ?? 50));
+  const limit = Math.max(
+    1,
+    Math.min(AUTHORIZED_PAYMENTS_MAX_LIMIT, opts?.limit ?? AUTHORIZED_PAYMENTS_MAX_LIMIT),
+  );
   const url =
     `${MP_API}/authorized_payments/search?preapproval_id=${encodeURIComponent(preapprovalId)}` +
     `&limit=${limit}`;

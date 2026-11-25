@@ -24,6 +24,7 @@ import {
 } from '@/lib/payments/sync';
 import { decideExistingPayment, validatePaymentForApply } from '@/lib/payments/apply';
 import {
+  searchAuthorizedPaymentsByPreapproval,
   searchPreapprovalsByExternalReference,
   type MpPaymentFull,
 } from '@/lib/payments/mercadopago';
@@ -418,6 +419,127 @@ describe('MP /preapproval/search — formato de sort', () => {
       '[mp preapproval search]:',
       'HTTP 400',
       '— Invalid sorting value format.',
+    );
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Transporte MP — regresión del 400 de /authorized_payments/search            */
+/* (25-nov-2026: limit>15 ⇒ "Invalid value for limit")                         */
+/* -------------------------------------------------------------------------- */
+
+describe('MP /authorized_payments/search — tope de limit', () => {
+  const originalToken = process.env.MP_ACCESS_TOKEN;
+
+  beforeEach(() => {
+    process.env.MP_ACCESS_TOKEN = 'test-token';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    if (originalToken === undefined) delete process.env.MP_ACCESS_TOKEN;
+    else process.env.MP_ACCESS_TOKEN = originalToken;
+  });
+
+  it('nunca envía limit > 15 aunque el caller pida 50', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const limit = Number(new URL(String(input)).searchParams.get('limit'));
+      const accepted = Number.isInteger(limit) && limit >= 1 && limit <= 15;
+      return new Response(
+        JSON.stringify(
+          accepted
+            ? { paging: { offset: 0, limit, total: 0 }, results: [] }
+            : { message: 'Invalid value for limit', status: 400 },
+        ),
+        { status: accepted ? 200 : 400, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await searchAuthorizedPaymentsByPreapproval('pre-1', { limit: 50 });
+
+    expect(result).toEqual({ ok: true, data: [] });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toContain('preapproval_id=pre-1');
+    expect(url).toMatch(/[?&]limit=15(?:&|$)/);
+  });
+
+  it('respeta un límite menor y recorta valores fuera de rango', async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL) =>
+        new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await searchAuthorizedPaymentsByPreapproval('pre-1', { limit: 0 });
+    await searchAuthorizedPaymentsByPreapproval('pre-1', { limit: 5 });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/[?&]limit=1(?:&|$)/);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toMatch(/[?&]limit=5(?:&|$)/);
+  });
+
+  it('parsea la factura con payment.id y expone el 400 detallado si MP lo rechaza', async () => {
+    const okMock = vi.fn(
+      async (_input: RequestInfo | URL) =>
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: 7034283985,
+                preapproval_id: 'pre-1',
+                external_reference: USER,
+                transaction_amount: '50.00',
+                currency_id: 'ARS',
+                date_created: iso(T0),
+                payment: { id: 191504865734, status: 'approved' },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', okMock);
+
+    const ok = await searchAuthorizedPaymentsByPreapproval('pre-1');
+    expect(ok.ok).toBe(true);
+    if (ok.ok) {
+      expect(ok.data).toEqual([
+        {
+          id: '7034283985',
+          preapprovalId: 'pre-1',
+          externalReference: USER,
+          transactionAmount: 50,
+          currencyId: 'ARS',
+          dateCreated: iso(T0),
+          lastModified: null,
+          paymentId: 191504865734,
+          paymentStatus: 'approved',
+        },
+      ]);
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_input: RequestInfo | URL) =>
+          new Response(JSON.stringify({ message: 'Invalid value for limit', status: 400 }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failed = await searchAuthorizedPaymentsByPreapproval('pre-1');
+    expect(failed).toEqual({ ok: false, status: 400, message: 'HTTP 400' });
+    expect(errorLog).toHaveBeenCalledWith(
+      '[mp authorized_payment search]:',
+      'HTTP 400',
+      '— Invalid value for limit',
     );
   });
 });
