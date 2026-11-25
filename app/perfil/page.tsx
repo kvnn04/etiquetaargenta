@@ -8,6 +8,7 @@ import type {
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { signedBrandingUrl } from '@/lib/supabase/service';
 import ProfilePanel from '@/components/profile/profile-panel';
+import PlanWatcher from '@/components/session/plan-watcher';
 import { reconcileUserCycle } from '@/lib/payments/reconcile';
 import { LEGAL_ENTITY, LEGAL_VERSIONS } from '@/lib/legal/config';
 import type {
@@ -188,39 +189,44 @@ export default async function ProfilePage({
       latestAcceptance.privacy !== LEGAL_VERSIONS.privacy);
 
   return (
-    <ProfilePanel
-      userId={user.id}
-      displayName={row.base_name ?? ''}
-      emailVerified={Boolean(emailConfirmedAt)}
-      legal={{
-        current: LEGAL_VERSIONS,
-        accepted: latestAcceptance,
-        stale: legalStale,
-        hours: LEGAL_ENTITY.hours,
-      }}
-      billing={{
-        sub,
-        payments,
-        pago: pagoValido,
-        nowMs: Date.now(), // del server: el banner y los días corren con el PlanWatcher/refresh
-        lastSyncedAtMs: isoToMs(subResult.data?.last_synced_at ?? null),
-        accountEmail: user.email ?? null,
-        support: {
-          email: process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || null,
-          whatsapp: process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP?.trim() || null,
-        },
-      }}
-      initial={{
-        brandName: row.brand_name ?? '',
-        whatsappE164: row.whatsapp_e164 ?? '',
-        instagramHandle: row.instagram_handle ?? '',
-        location: row.location ?? '',
-      }}
-      logo={{
-        stored: Boolean(row.logo_url),
-        thumbViewUrl: logoThumbSummary,
-        fullViewUrl: logoViewUrl,
-      }}
-    />
+    <>
+      {/* El webhook puede llegar DESPUÉS del redirect a ?pago=success: el
+          watcher refresca el árbol cuando users.plan cambia (Realtime). */}
+      <PlanWatcher userId={user.id} />
+      <ProfilePanel
+        userId={user.id}
+        displayName={row.base_name ?? ''}
+        emailVerified={Boolean(emailConfirmedAt)}
+        legal={{
+          current: LEGAL_VERSIONS,
+          accepted: latestAcceptance,
+          stale: legalStale,
+          hours: LEGAL_ENTITY.hours,
+        }}
+        billing={{
+          sub,
+          payments,
+          pago: pagoValido,
+          nowMs: Date.now(), // del server: el banner y los días corren con el PlanWatcher/refresh
+          lastSyncedAtMs: isoToMs(subResult.data?.last_synced_at ?? null),
+          accountEmail: user.email ?? null,
+          support: {
+            email: process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || null,
+            whatsapp: process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP?.trim() || null,
+          },
+        }}
+        initial={{
+          brandName: row.brand_name ?? '',
+          whatsappE164: row.whatsapp_e164 ?? '',
+          instagramHandle: row.instagram_handle ?? '',
+          location: row.location ?? '',
+        }}
+        logo={{
+          stored: Boolean(row.logo_url),
+          thumbViewUrl: logoThumbSummary,
+          fullViewUrl: logoViewUrl,
+        }}
+      />
+    </>
   );
 }
