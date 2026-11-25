@@ -1,12 +1,19 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { signedBrandingUrl } from '@/lib/supabase/service';
+import { createSupabaseServiceClient, signedBrandingUrl } from '@/lib/supabase/service';
 import EditorShell, { type ShellProfile } from '@/components/editor/editor-shell';
 import type { Plan } from '@/lib/permissions';
 import type { UserRecord } from '@/lib/types/db';
 import { reconcileUserCycle } from '@/lib/payments/reconcile';
 import { LEGAL_VERSIONS } from '@/lib/legal/config';
 import { isAuthBypassEnabled } from '@/lib/dev-auth';
+import {
+  isProjectId,
+  normalizeState,
+  type InitialProject,
+} from '@/lib/projects/persistence';
+import { loadProjectDesignSource } from '@/lib/projects/design-source';
+import type { DesignSourceRef } from '@/lib/design';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,10 +26,21 @@ export const dynamic = 'force-dynamic';
 export default async function EditorPage({
   searchParams,
 }: {
-  /** Posición 13: “Reactivar PRO” del Centro abre el paywall normal. */
-  searchParams: Promise<{ paywall?: string }>;
+  /**
+   * Posición 13: “Reactivar PRO” del Centro abre el paywall normal.
+   * `project`: proyecto a abrir desde «Mis enlaces» (se valida ownership).
+   * `proyecto=no-disponible`: aviso tras un id inválido/ajeno/inexistente.
+   */
+  searchParams: Promise<{
+    paywall?: string | string[];
+    project?: string | string[];
+    proyecto?: string | string[];
+  }>;
 }) {
-  const initialPaywallOpen = (await searchParams).paywall === '1';
+  const params = await searchParams;
+  const initialPaywallOpen = params.paywall === '1';
+  const projectParam = typeof params.project === 'string' ? params.project.trim() : '';
+  const projectUnavailable = params.proyecto === 'no-disponible';
 
   /* DEV ONLY (DEV_AUTH_BYPASS=1): editor sin login. Perfil de prueba PRO para
    * trabajar las formas del mate sin marca de agua ni gates. */
@@ -33,6 +51,8 @@ export default async function EditorPage({
         devBypass
         initialPaywallOpen={initialPaywallOpen}
         legalVersions={LEGAL_VERSIONS}
+        projectUnavailable={false}
+        initialProject={null}
         profile={{
           exists: true,
           baseName: 'Taller Dev',
@@ -99,12 +119,85 @@ export default async function EditorPage({
     instagramHandle: data?.instagram_handle ?? null,
   };
 
+  /* ── Proyecto inicial (server-side) ────────────────────────────────────────
+   * `?project=` (desde «Mis enlaces») abre ESE proyecto, no el último. La
+   * consulta usa la sesión + RLS y ADEMÁS filtra user_id: un id ajeno,
+   * inexistente o malformado jamás se renderiza — se redirige al editor con
+   * un aviso neutro (misma respuesta para todos los casos, sin enumerar).
+   * El estado se normaliza acá y el diseño original se firma con service-role
+   * SOLO después de confirmar que el proyecto es del usuario. */
+  if (projectParam && !isProjectId(projectParam)) {
+    redirect(
+      initialPaywallOpen
+        ? '/editor?proyecto=no-disponible&paywall=1'
+        : '/editor?proyecto=no-disponible',
+    );
+  }
+
+  let projectRow: { id: string; state: unknown; updated_at: string } | null = null;
+  if (projectParam) {
+    const requested = await supabase
+      .from('projects')
+      .select('id, state, updated_at')
+      .eq('id', projectParam)
+      .eq('user_id', user.id)
+      .maybeSingle<{ id: string; state: unknown; updated_at: string }>();
+    if (requested.error) {
+      console.error('[editor project]:', requested.error.message);
+    }
+    if (!requested.data) {
+      redirect(
+        initialPaywallOpen
+          ? '/editor?proyecto=no-disponible&paywall=1'
+          : '/editor?proyecto=no-disponible',
+      );
+    }
+    projectRow = requested.data;
+  } else {
+    const latest = await supabase
+      .from('projects')
+      .select('id, state, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string; state: unknown; updated_at: string }>();
+    if (latest.error) {
+      console.error('[editor latest project]:', latest.error.message);
+    }
+    projectRow = latest.data ?? null;
+  }
+
+  let initialProject: InitialProject | null = null;
+  if (projectRow) {
+    const state = normalizeState(projectRow.state);
+    let design: DesignSourceRef | null = null;
+    try {
+      design = await loadProjectDesignSource(createSupabaseServiceClient(), {
+        userId: user.id,
+        projectId: projectRow.id,
+        // El original se guardó con el D_ext vigente al cargar el diseño;
+        // sin metadata histórica usamos el diámetro actual del proyecto.
+        baseSideMm: state.extDiameter,
+      });
+    } catch (e) {
+      console.error('[editor design]:', e instanceof Error ? e.message : e);
+    }
+    initialProject = {
+      projectId: projectRow.id,
+      updatedAt: projectRow.updated_at,
+      state,
+      design,
+    };
+  }
+
   return (
     <EditorShell
       userId={user.id}
       profile={profile}
       initialPaywallOpen={initialPaywallOpen}
       legalVersions={LEGAL_VERSIONS}
+      initialProject={initialProject}
+      projectUnavailable={projectUnavailable}
     />
   );
 }

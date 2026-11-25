@@ -22,6 +22,7 @@ import {
   type BodyPresetId,
 } from '@/lib/color';
 import { normalizeDesignState } from '@/lib/design';
+import type { DesignSourceRef } from '@/lib/design';
 import { normalizeVariantRows } from '@/lib/links/payload';
 
 const DRAFT_KEY = 'mocap:project-draft';
@@ -33,6 +34,45 @@ export interface LoadedProject {
   projectId: string | null;
   updatedAt: string | null;
   state: EditorStateSnapshot;
+}
+
+/** Proyecto ya resuelto SERVER-SIDE para el primer render del editor. */
+export interface InitialProject {
+  projectId: string;
+  updatedAt: string;
+  state: EditorStateSnapshot;
+  /** Original persistido en `designs` (URL firmada) o null si no hay. */
+  design: DesignSourceRef | null;
+}
+
+/** UUID canónico (projects.id) — un `?project=` inválido no toca la DB. */
+export function isProjectId(raw: unknown): raw is string {
+  return (
+    typeof raw === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
+  );
+}
+
+/**
+ * ¿El borrador local pisa el estado del server?
+ * Regla estricta por proyecto: el draft SOLO aplica si pertenece al MISMO
+ * proyecto y es más nuevo (last-write-wins §6). Un draft legacy sin
+ * `projectId` no se aplica sobre un proyecto del server: mezclar estados de
+ * proyectos distintos sería peor que perder ese borrador de borde.
+ * Sin proyecto server (proyecto nuevo), solo aplica un draft también sin id.
+ */
+export function draftApplies(
+  draft: LocalDraft | null,
+  server: { projectId: string; updatedAt: string } | null,
+): draft is LocalDraft {
+  if (!draft) return false;
+  if (server) {
+    if (draft.projectId !== server.projectId) return false;
+    const draftMs = Date.parse(draft.updatedAt);
+    const serverMs = Date.parse(server.updatedAt);
+    return !Number.isNaN(draftMs) && (Number.isNaN(serverMs) || draftMs > serverMs);
+  }
+  return draft.projectId === null;
 }
 
 /** Estado por defecto de proyecto nuevo (producto default = R1: Camionero). */
@@ -182,14 +222,24 @@ export async function saveProjectState(
 /* Borrador local (§6: corte de internet durante el autosave)                  */
 /* -------------------------------------------------------------------------- */
 
-interface LocalDraft {
+export interface LocalDraft {
   state: EditorStateSnapshot;
   updatedAt: string;
+  /** Proyecto al que pertenece el snapshot; null en proyectos nuevos/bypass. */
+  projectId: string | null;
 }
 
-export function saveLocalDraft(state: EditorStateSnapshot, key: string = DRAFT_KEY): void {
+export function saveLocalDraft(
+  state: EditorStateSnapshot,
+  key: string = DRAFT_KEY,
+  projectId: string | null = null,
+): void {
   try {
-    const draft: LocalDraft = { state, updatedAt: new Date().toISOString() };
+    const draft: LocalDraft = {
+      state,
+      updatedAt: new Date().toISOString(),
+      projectId,
+    };
     localStorage.setItem(key, JSON.stringify(draft));
   } catch {
     // Sin storage (modo privado): se pierde el draft, la edición sigue.
@@ -200,9 +250,13 @@ export function loadLocalDraft(key: string = DRAFT_KEY): LocalDraft | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as LocalDraft;
+    const parsed = JSON.parse(raw) as Partial<LocalDraft>;
     if (!parsed?.state || !parsed?.updatedAt) return null;
-    return { state: normalizeState(parsed.state), updatedAt: parsed.updatedAt };
+    return {
+      state: normalizeState(parsed.state),
+      updatedAt: parsed.updatedAt,
+      projectId: typeof parsed.projectId === 'string' ? parsed.projectId : null,
+    };
   } catch {
     return null;
   }

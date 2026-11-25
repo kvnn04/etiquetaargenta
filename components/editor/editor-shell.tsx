@@ -37,7 +37,14 @@ import LinkModal from '@/components/links/link-modal';
 import AutoGiroBar from '@/components/studio/auto-giro-bar';
 import LegalFooter from '@/components/legal/legal-footer';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { DEV_DRAFT_KEY, loadLatestProject, loadLocalDraft } from '@/lib/projects/persistence';
+import {
+  DEV_DRAFT_KEY,
+  draftApplies,
+  loadLatestProject,
+  loadLocalDraft,
+  type InitialProject,
+} from '@/lib/projects/persistence';
+import { restoreDesignAsset } from '@/lib/design-raster';
 import { useProjectPersistence } from '@/lib/projects/use-autosave';
 import { useEditorStore } from '@/lib/store/editor';
 import { Button } from '@/components/ui/button';
@@ -134,6 +141,8 @@ export default function EditorShell({
   legalVersions,
   devBypass = false,
   initialPaywallOpen = false,
+  initialProject = null,
+  projectUnavailable = false,
 }: {
   userId: string;
   profile: ShellProfile;
@@ -143,11 +152,16 @@ export default function EditorShell({
   devBypass?: boolean;
   /** Posición 13: “Reactivar PRO” abre el paywall normal en el editor. */
   initialPaywallOpen?: boolean;
+  /** Proyecto ya validado server-side (ownership) + diseño persistido. */
+  initialProject?: InitialProject | null;
+  /** `?project=` inválido/ajeno/inexistente: aviso neutro, sin filtrar datos. */
+  projectUnavailable?: boolean;
 }) {
   const [price, setPrice] = useState<PriceInfo | null>(null);
   const [priceError, setPriceError] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(initialPaywallOpen);
   const [actionHint, setActionHint] = useState<string | null>(null);
+  const [designRestoreError, setDesignRestoreError] = useState(false);
   /* R7: estado del auto-giro — dispositivo solamente, NO se persiste. La
    * interacción sobre el lienzo (OrbitControls 'start') pausa el giro y queda
    * en pausa hasta que el tallerista lo reactive con el botón. */
@@ -208,31 +222,87 @@ export default function EditorShell({
   const projectId = useEditorStore((s) => s.projectId);
   const freeDemo = profile.plan === 'free';
 
-  /* Restore del proyecto más reciente (R1 Happy Path: "restaura su último
-   * proyecto guardado… camionero por defecto si no existe estado"). El draft
-   * local más nuevo que el backend manda (last-write-wins, §6) y se marca
-   * dirty para que el autosave lo lleve al backend apenas pueda. */
+  /* Restore del proyecto (R1 Happy Path: "restaura su último proyecto
+   * guardado… camionero por defecto si no existe estado"). En producción el
+   * SERVER ya resolvió el proyecto y validó ownership:
+   *   · `?project=` ⇒ ESE proyecto (no el último);
+   *   · sin param ⇒ el más reciente.
+   * El draft local SOLO pisa si pertenece al mismo proyecto y es más nuevo
+   * (last-write-wins §6). El diseño original persistido se descarga aparte
+   * con la URL firmada que el server entregó al dueño. */
   useEffect(() => {
-    let alive = true;
-    void (async () => {
+    if (devBypass) {
       // DEV ONLY: sin sesión no hay proyecto en Supabase; manda el draft local
       // aislado del bypass (el borrador real no se toca).
-      const server = devBypass ? null : await loadLatestProject(supabase);
-      const draft = loadLocalDraft(devBypass ? DEV_DRAFT_KEY : undefined);
-      if (!alive) return;
-      const draftWins =
-        draft && (!server?.updatedAt || Date.parse(draft.updatedAt) > Date.parse(server.updatedAt));
-      if (draftWins && draft) {
-        useEditorStore.getState().restoreState(draft.state, server?.projectId ?? null);
+      const draft = loadLocalDraft(DEV_DRAFT_KEY);
+      if (draft) {
+        useEditorStore.getState().restoreState(draft.state, null);
         useEditorStore.getState().markDirty();
+      }
+      return;
+    }
+
+    if (initialProject) {
+      const store = useEditorStore.getState();
+      /* Idempotente ante router.refresh() (PlanWatcher, Realtime): si el store
+       * YA apunta a este proyecto, no re-restauramos el snapshot server — así
+       * un refresh no pisa ediciones en curso. Sí completamos el diseño si
+       * todavía no está en memoria (primer render / StrictMode). */
+      if (store.projectId !== initialProject.projectId) {
+        const draft = loadLocalDraft();
+        const useDraft = draftApplies(draft, {
+          projectId: initialProject.projectId,
+          updatedAt: initialProject.updatedAt,
+        });
+        const state = useDraft && draft ? draft.state : initialProject.state;
+        store.restoreState(state, initialProject.projectId);
+        if (useDraft) store.markDirty();
+      }
+
+      if (!initialProject.design) return;
+      if (useEditorStore.getState().designAsset) return;
+
+      const targetProjectId = initialProject.projectId;
+      void (async () => {
+        try {
+          const restored = await restoreDesignAsset(initialProject.design!);
+          const current = useEditorStore.getState();
+          if (current.projectId !== targetProjectId) return; // cambió de proyecto
+          if (current.designAsset) return; // el tallerista ya cargó otro archivo
+          current.loadDesignAsset(restored.asset);
+          current.setInkEnvelope(restored.inkEnvelope);
+          current.setInkScanDegraded(restored.degraded);
+          setDesignRestoreError(false);
+        } catch (e) {
+          console.error('[editor design restore]:', e instanceof Error ? e.message : e);
+          if (useEditorStore.getState().projectId === targetProjectId) {
+            setDesignRestoreError(true);
+          }
+        }
+      })();
+      return;
+    }
+
+    // Fallback (sin proyecto server-side): último proyecto + draft local.
+    void (async () => {
+      const server = await loadLatestProject(supabase);
+      const draft = loadLocalDraft();
+      const store = useEditorStore.getState();
+      if (store.projectId) return; // ya inicializado por otra vía
+      const useDraft = draftApplies(
+        draft,
+        server?.projectId && server.updatedAt
+          ? { projectId: server.projectId, updatedAt: server.updatedAt }
+          : null,
+      );
+      if (useDraft && draft) {
+        store.restoreState(draft.state, server?.projectId ?? null);
+        store.markDirty();
       } else if (server) {
-        useEditorStore.getState().restoreState(server.state, server.projectId);
+        store.restoreState(server.state, server.projectId);
       }
     })();
-    return () => {
-      alive = false;
-    };
-  }, [supabase, devBypass]);
+  }, [initialProject, supabase, devBypass]);
 
   /* Autosave (debounce 2 s, last-write-wins, borrador offline con backoff).
    * DEV ONLY: en bypass guarda solo el borrador local (sin Supabase). */
@@ -405,6 +475,30 @@ export default function EditorShell({
         demoUsed={designAsset != null}
         onUnlockRequest={() => setPaywallOpen(true)}
       />
+
+      {projectUnavailable && (
+        <div className="mx-auto mt-4 w-full max-w-6xl px-4">
+          <p
+            role="status"
+            className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200"
+          >
+            El proyecto solicitado no existe o no tenés acceso. Se abrió tu último proyecto
+            disponible.
+          </p>
+        </div>
+      )}
+
+      {designRestoreError && !designAsset && (
+        <div className="mx-auto mt-2 w-full max-w-6xl px-4">
+          <p
+            role="status"
+            className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200"
+          >
+            No pudimos recuperar el diseño guardado de este proyecto. Volvé a cargar el archivo en
+            la pestaña «Diseño» para seguir editando.
+          </p>
+        </div>
+      )}
 
       <main className="mx-auto grid w-full max-w-6xl flex-1 gap-6 px-4 py-6 lg:grid-cols-[1fr_340px]">
         {/* Estudio 3D (posiciones 4–7: catálogo + medidas + color + grabado con rotación/

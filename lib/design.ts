@@ -197,6 +197,21 @@ export interface DesignAsset {
   baseSideMm: number;
 }
 
+/**
+ * Referencia SERVER-SIDE a un diseño persistido en el bucket privado
+ * `designs` (pos 10A: el original del grabado se conserva por proyecto).
+ * El server la entrega SOLO al dueño del proyecto, con URL firmada de vida
+ * corta; el cliente la descarga y reconstruye el `DesignAsset` de sesión.
+ */
+export interface DesignSourceRef {
+  /** URL firmada (bucket privado) — no se persiste ni se comparte. */
+  url: string;
+  name: string;
+  kind: 'svg' | 'png';
+  /** Base congelada al cargar el diseño (mm). */
+  baseSideMm: number;
+}
+
 /* -------------------------------------------------------------------------- */
 /* §5 — imán SOLO DE DISPOSITIVO (localStorage; nunca projects.state)         */
 /* -------------------------------------------------------------------------- */

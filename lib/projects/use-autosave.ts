@@ -64,7 +64,7 @@ export function useProjectPersistence(
 
       /* DEV ONLY: sin sesión no se toca Supabase; el draft local ES el guardado. */
       if (localOnly) {
-        saveLocalDraft(snap, draftKey);
+        saveLocalDraft(snap, draftKey, s.projectId);
         lastSent.current = payload;
         retryStep.current = 0;
         store.getState().markSaved(new Date().toISOString(), s.projectId);
@@ -81,7 +81,7 @@ export function useProjectPersistence(
         clearLocalDraft(draftKey);
       } else {
         // Guarda el borrador y quedate en modo offline (§6).
-        saveLocalDraft(snap, draftKey);
+        saveLocalDraft(snap, draftKey, s.projectId);
         store.getState().markOfflineDraft(true);
         scheduleRetry();
       }

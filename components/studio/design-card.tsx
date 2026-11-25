@@ -79,11 +79,15 @@ import {
   normalizeScale,
   overflowBannerText,
   parseScaleInput,
-  scanInkEnvelope,
   SCALE_PRESETS,
   SCALE_RANGE,
   SCALE_STEP_PCT,
 } from '@/lib/overflow';
+import {
+  designKindOf,
+  measureInkEnvelopeMm,
+  rasterizeDesignFile,
+} from '@/lib/design-raster';
 
 const FILE_ACCEPT = 'image/svg+xml,image/png,.svg,.png'; // R8: SVG/PNG
 
@@ -95,137 +99,6 @@ const OVERFLOW_SEVERE_MM = 2;
 /** Texto canónico del campo numérico (R3: sin signo raro, sin ceros extra). */
 function fmtAngle(deg: number): string {
   return String(normalizeRotation(deg));
-}
-
-const WORK_SIZE = 2048; // R8: canvas de trabajo en vivo (Ficha HD: pos 9 2048²)
-
-/** Carga un origen (data-URI / blob) en un <img> y resuelve al estar listo. */
-function loadImageElement(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('símbolo ilegible'));
-    image.src = src;
-  });
-}
-
-/** Canvas de trabajo vacío (R8, 2048²) con contexto listo para getImageData. */
-function makeWorkCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
-  const canvas = document.createElement('canvas');
-  canvas.width = WORK_SIZE;
-  canvas.height = WORK_SIZE;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('canvas no disponible');
-  return { canvas, ctx };
-}
-
-/** Texto SVG ⇒ data-URI con payload codificado: segura dentro de atributos
- * XML con comillas dobles (`"` ⇒ %22, `#` ⇒ %23, `<` ⇒ %3C…). */
-function svgDataUri(svgText: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
-}
-
-/**
- * Envoltorio que OBLIGA al navegador a rasterizar el vector a la resolución
- * FINAL (2048², contain): sin él, un SVG con width/height chicos — o sin
- * ellos (el estándar cae a 300×150) — nace rasterizado en su tamaño
- * intrínseco y el estirado posterior del bitmap es la pérdida de nitidez
- * clásica al subirlo a la virola. La URI interior va codificada, así que el
- * wrapper sigue siendo XML bien formado.
- */
-function svgWrapperForRaster(svgText: string, size: number): string {
-  const inner = svgDataUri(svgText);
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"` +
-    ` viewBox="0 0 ${size} ${size}">` +
-    `<image href="${inner}" width="${size}" height="${size}"` +
-    ` preserveAspectRatio="xMidYMid meet"/></svg>`
-  );
-}
-
-/**
- * R8: rasteriza el archivo EN CLIENTE al canvas de trabajo 2048² (contain,
- * centrado). El resultado vive SOLO en el asset de sesión — jamás se envía
- * al backend.
- * · SVG: rasteriza SIEMPRE a la resolución final vía el envoltorio de 2048²
- *   y SIN refuerzo de alfa — el vector ya trae su anti-aliasing correcto y
- *   el ×1.8 lo aterrona (bordes dentados).
- * · PNG: contain + REFUERZO de trazos finos (prototipo: alpha ×1.8 ⇒ los
- *   hairline no desaparecen sobre el metal).
- * SVG que falle por el wrapper (XML exótico, recursos externos…): se cae al
- * rasterizado clásico de bitmap — la carga jamás se bloquea; si ese camino
- * también falla, el caller conserva la última textura válida (§6).
- */
-async function rasterizeDesignFile(file: File): Promise<HTMLCanvasElement> {
-  if (kindOf(file) === 'svg') {
-    try {
-      const svgText = await file.text();
-      if (!svgText.trim()) throw new Error('SVG vacío');
-      const img = await loadImageElement(svgDataUri(svgWrapperForRaster(svgText, WORK_SIZE)));
-      const { canvas, ctx } = makeWorkCanvas();
-      ctx.drawImage(img, 0, 0, WORK_SIZE, WORK_SIZE);
-      return canvas;
-    } catch {
-      /* §6 tolerante: sigue por el camino clásico. */
-    }
-  }
-  return rasterizeBitmapFile(file);
-}
-
-/** Camino clásico por URL de objeto (PNG y respaldo de SVG): contain + alfa ×1.8. */
-async function rasterizeBitmapFile(file: File): Promise<HTMLCanvasElement> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await loadImageElement(url);
-    const { canvas, ctx } = makeWorkCanvas();
-    const w = img.naturalWidth || img.width || WORK_SIZE;
-    const h = img.naturalHeight || img.height || WORK_SIZE;
-    const scale = Math.min(WORK_SIZE / w, WORK_SIZE / h);
-    const dw = w * scale;
-    const dh = h * scale;
-    ctx.drawImage(img, (WORK_SIZE - dw) / 2, (WORK_SIZE - dh) / 2, dw, dh);
-
-    // Refuerzo de trazos finos (técnica del prototipo): α>0 ⇒ ×1.8 (max 255),
-    // silueta, posición y colores respetados — los píxeles con α=0 no se tocan.
-    const imgData = ctx.getImageData(0, 0, WORK_SIZE, WORK_SIZE);
-    const px = imgData.data;
-    for (let i = 3; i < px.length; i += 4) {
-      if (px[i] > 0) px[i] = Math.min(255, Math.round(px[i] * 1.8));
-    }
-    ctx.putImageData(imgData, 0, 0);
-    return canvas;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-/**
- * R4 (pos 7): mide la ENVOLVENTE DE TINTA al 100 % del asset recién cargado —
- * máscara alfa 512×512 (detalle R4) del Ráster base SIN máscara anular NI
- * tinte (mide el trazado tal como lo usaría el láser) y SIN rotación/espejo
- * (R3: isometrías con pivote fijo ⇒ radios preservados por definición).
- * Coste O(n) sobre 512² ⇒ ≤ 25 ms (QA2 con margen).
- * Retorna null si no hay trazo (α≥128) o si el kit de canvas no está.
- */
-function measureInkEnvelopeMm(asset: HTMLCanvasElement, baseSideMm: number) {
-  // El cached de work 2048² ⇒ downsample bilinear a la máscara 512² (R4).
-  const scan = document.createElement('canvas');
-  scan.width = 512;
-  scan.height = 512;
-  const ctx = scan.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return null;
-  ctx.drawImage(asset, 0, 0, 512, 512);
-  const data = ctx.getImageData(0, 0, 512, 512).data;
-  // mm/px de la máscara: el cuadrado completo (2048²) mide baseSideMm de lado
-  // ⇒ al reducirlo a 512², 512 px siguen cubriendo baseSideMm (no se recorta).
-  const mmPerPx = baseSideMm / 512;
-  return scanInkEnvelope({ size: 512, alphaAt: (x, y) => data[(y * 512 + x) * 4 + 3] }, mmPerPx);
-}
-
-function kindOf(file: File): DesignAsset['kind'] {
-  const type = (file.type || '').toLowerCase();
-  const name = file.name.toLowerCase();
-  return type === 'image/svg+xml' || name.endsWith('.svg') ? 'svg' : 'png';
 }
 
 export default function DesignCard() {
@@ -328,7 +201,7 @@ export default function DesignCard() {
       const asset: DesignAsset = {
         canvas,
         name: file.name,
-        kind: kindOf(file),
+        kind: designKindOf(file),
         baseSideMm: extDiameter,
       };
       loadDesignAsset(asset);
