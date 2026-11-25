@@ -8,7 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
 import {
+  missingResourceIsFinal,
   mpSignatureHex,
+  parseLiveMode,
   parseMpSignature,
   parseWebhookEvent,
   verifyMpSignature,
@@ -175,6 +177,22 @@ describe('ruteo del evento (body JSON nuevo + query legada)', () => {
       kind: 'chargeback',
       resourceId: 'cb-3',
     });
+  });
+});
+
+describe('404 del pull: botón "Probar" vs evento live', () => {
+  it('parseLiveMode: solo false explícito se considera no-live', () => {
+    expect(parseLiveMode({ live_mode: false })).toBe(false);
+    expect(parseLiveMode({ live_mode: true })).toBe(true);
+    expect(parseLiveMode({})).toBe(true); // ausente ⇒ se reintenta
+    expect(parseLiveMode(null)).toBe(true);
+  });
+
+  it('missingResourceIsFinal: 404 no-live ⇒ 200; 404 live ⇒ 502 (reintento)', () => {
+    expect(missingResourceIsFinal({ status: 404, liveMode: false })).toBe(true);
+    expect(missingResourceIsFinal({ status: 404, liveMode: true })).toBe(false);
+    expect(missingResourceIsFinal({ status: 500, liveMode: false })).toBe(false);
+    expect(missingResourceIsFinal({ status: 403, liveMode: false })).toBe(false);
   });
 });
 

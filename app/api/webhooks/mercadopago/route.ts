@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
-import { parseWebhookEvent, verifyMpSignature } from '@/lib/payments/webhook';
+import {
+  missingResourceIsFinal,
+  parseLiveMode,
+  parseWebhookEvent,
+  verifyMpSignature,
+} from '@/lib/payments/webhook';
 import {
   getAuthorizedPayment,
   getChargeback,
@@ -55,14 +60,20 @@ interface ResolvedIdentity {
 }
 
 /**
- * Un 404 de MP significa que el recurso no existe en el entorno consultado:
- * típico del botón "Probar" del panel, que manda `payment.id = 123456` y
- * `live_mode: false`. Reintentar no lo va a crear, así que se responde 200
- * (MP deja de reintentar) en vez del 502 reservado a fallas transitorias.
+ * Un 404 de MP significa que el recurso no existe en el entorno consultado.
+ * El botón "Probar" del panel manda `payment.id = 123456` con
+ * `live_mode: false`: reintentar no lo va a crear, así que se responde 200
+ * (MP deja de reintentar). Un 404 de un evento LIVE puede ser un desfasaje de
+ * credenciales (TEST vs producción): se responde 502 para que MP reintente.
  */
-function missingResource(kind: string, id: string, status: number): Response | null {
-  if (status !== 404) return null;
-  console.log('[mp webhook resource_not_found]', JSON.stringify({ kind, id }));
+function missingResource(
+  kind: string,
+  id: string,
+  status: number,
+  liveMode: boolean,
+): Response | null {
+  if (!missingResourceIsFinal({ status, liveMode })) return null;
+  console.log('[mp webhook resource_not_found]', JSON.stringify({ kind, id, liveMode }));
   return NextResponse.json({ received: true as const }, { status: 200 });
 }
 
@@ -231,10 +242,10 @@ async function resolvePaymentIdentity(
   return { ...identity, retryable };
 }
 
-async function handlePayment(resourceId: string): Promise<Response> {
+async function handlePayment(resourceId: string, liveMode: boolean): Promise<Response> {
   const fetched = await getPayment(resourceId);
   if (!fetched.ok) {
-    const missing = missingResource('payment', resourceId, fetched.status);
+    const missing = missingResource('payment', resourceId, fetched.status, liveMode);
     if (missing) return missing;
     console.error('[mp webhook]: pull de payment falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
@@ -286,10 +297,10 @@ async function handlePayment(resourceId: string): Promise<Response> {
   );
 }
 
-async function handlePreapproval(resourceId: string): Promise<Response> {
+async function handlePreapproval(resourceId: string, liveMode: boolean): Promise<Response> {
   const fetched = await getPreapproval(resourceId);
   if (!fetched.ok) {
-    const missing = missingResource('preapproval', resourceId, fetched.status);
+    const missing = missingResource('preapproval', resourceId, fetched.status, liveMode);
     if (missing) return missing;
     console.error('[mp webhook]: pull preapproval falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
@@ -344,10 +355,10 @@ async function handlePreapproval(resourceId: string): Promise<Response> {
  * `applyPayment`. Si el webhook `payment` ya lo aplicó, el dedupe responde
  * `already_applied` y no duplica nada.
  */
-async function handleAuthorizedPayment(resourceId: string): Promise<Response> {
+async function handleAuthorizedPayment(resourceId: string, liveMode: boolean): Promise<Response> {
   const invoice = await getAuthorizedPayment(resourceId);
   if (!invoice.ok) {
-    const missing = missingResource('authorized_payment', resourceId, invoice.status);
+    const missing = missingResource('authorized_payment', resourceId, invoice.status, liveMode);
     if (missing) return missing;
     console.error('[mp webhook]: pull authorized_payment falla:', invoice.status, invoice.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
@@ -367,7 +378,12 @@ async function handleAuthorizedPayment(resourceId: string): Promise<Response> {
 
   const fetched = await getPayment(String(invoice.data.paymentId));
   if (!fetched.ok) {
-    const missing = missingResource('payment', String(invoice.data.paymentId), fetched.status);
+    const missing = missingResource(
+      'payment',
+      String(invoice.data.paymentId),
+      fetched.status,
+      liveMode,
+    );
     if (missing) return missing;
     console.error('[mp webhook]: pull payment del invoice falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
@@ -425,10 +441,10 @@ async function handleAuthorizedPayment(resourceId: string): Promise<Response> {
  * `GET /v1/chargebacks/{id}` + `GET /v1/payments/{payment_id}`. Sin usuario
  * asociado se responde 200 y se logea (§3.4): jamás se inventa un dueño.
  */
-async function handleChargeback(resourceId: string): Promise<Response> {
+async function handleChargeback(resourceId: string, liveMode: boolean): Promise<Response> {
   const fetched = await getChargeback(resourceId);
   if (!fetched.ok) {
-    const missing = missingResource('chargeback', resourceId, fetched.status);
+    const missing = missingResource('chargeback', resourceId, fetched.status, liveMode);
     if (missing) return missing;
     console.error('[mp webhook]: pull chargeback falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
@@ -441,7 +457,12 @@ async function handleChargeback(resourceId: string): Promise<Response> {
 
   const payment = await getPayment(String(fetched.data.paymentId));
   if (!payment.ok && !isChargebackReversal(fetched.data.status)) {
-    const missing = missingResource('payment', String(fetched.data.paymentId), payment.status);
+    const missing = missingResource(
+      'payment',
+      String(fetched.data.paymentId),
+      payment.status,
+      liveMode,
+    );
     if (missing) return missing;
     console.error(
       '[mp webhook]: pull payment del chargeback falla:',
@@ -525,6 +546,7 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = (await request.json().catch(() => null)) as unknown;
+  const liveMode = parseLiveMode(payload);
   const event = parseWebhookEvent(payload, request.nextUrl.searchParams);
   if (!event.resourceId) {
     console.error('[mp webhook]: evento SIN data.id — 403 (sin manifiesto ni pull posible)');
@@ -542,10 +564,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'FIRMA_INVALIDA' }, { status: 403 });
   }
 
-  if (event.kind === 'payment') return handlePayment(event.resourceId);
-  if (event.kind === 'preapproval') return handlePreapproval(event.resourceId);
-  if (event.kind === 'authorized_payment') return handleAuthorizedPayment(event.resourceId);
-  if (event.kind === 'chargeback') return handleChargeback(event.resourceId);
+  if (event.kind === 'payment') return handlePayment(event.resourceId, liveMode);
+  if (event.kind === 'preapproval') return handlePreapproval(event.resourceId, liveMode);
+  if (event.kind === 'authorized_payment') {
+    return handleAuthorizedPayment(event.resourceId, liveMode);
+  }
+  if (event.kind === 'chargeback') return handleChargeback(event.resourceId, liveMode);
 
   console.log('[mp webhook]: tipo ignorado:', event.kind, event.resourceId);
   return NextResponse.json({ received: true as const }, { status: 200 });

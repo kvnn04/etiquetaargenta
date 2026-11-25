@@ -71,6 +71,25 @@ export function verifyMpSignature(input: {
   });
 }
 
+/**
+ * `live_mode` del body: ausente ⇒ true (se trata como evento real y, ante un
+ * 404, se pide reintento). Solo `false` explícito habilita el descarte.
+ */
+export function parseLiveMode(payload: unknown): boolean {
+  const body = payload as { live_mode?: unknown } | null;
+  return body?.live_mode !== false;
+}
+
+/**
+ * 404 definitivo: el botón "Probar" del panel manda un id ficticio con
+ * `live_mode: false`, que jamás va a existir. En cambio, un 404 de un evento
+ * live puede ser un desfasaje de credenciales (TEST vs producción): hay que
+ * responder 502 para que MP reintente cuando el entorno se corrija.
+ */
+export function missingResourceIsFinal(input: { status: number; liveMode: boolean }): boolean {
+  return input.status === 404 && !input.liveMode;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Evento entrante: RUTA× (nueva form) × topic/id (query form legada)          */
 /* -------------------------------------------------------------------------- */
