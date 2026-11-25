@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Link2, LogOut, ShieldAlert, UserRound } from 'lucide-react';
+import { ChevronDown, ExternalLink, Link2, LogOut, ShieldAlert, UserRound } from 'lucide-react';
 import type { Plan } from '@/lib/permissions';
+import { MERCADOPAGO_PORTAL_URL } from '@/lib/payments/core';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 
@@ -121,15 +122,18 @@ export default function TopBar({
                 >
                   <UserRound className="h-3.5 w-3.5 text-stone-500" /> Perfil
                 </button>
-                <button
-                  type="button"
+                <a
                   role="menuitem"
+                  href={MERCADOPAGO_PORTAL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs text-stone-300 hover:bg-white/5"
                   onClick={() => setMenuOpen(false)}
                 >
+                  <ExternalLink className="h-3.5 w-3.5 text-stone-500" />
                   Gestión de suscripción
-                  <span className="ml-auto text-[9px] text-stone-600">posición 10</span>
-                </button>
+                  <span className="ml-auto text-[9px] text-stone-600">Mercado Pago</span>
+                </a>
                 <div className="h-px bg-white/5" />
                 <button
                   type="button"
