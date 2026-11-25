@@ -54,6 +54,18 @@ interface ResolvedIdentity {
   retryable?: boolean;
 }
 
+/**
+ * Un 404 de MP significa que el recurso no existe en el entorno consultado:
+ * típico del botón "Probar" del panel, que manda `payment.id = 123456` y
+ * `live_mode: false`. Reintentar no lo va a crear, así que se responde 200
+ * (MP deja de reintentar) en vez del 502 reservado a fallas transitorias.
+ */
+function missingResource(kind: string, id: string, status: number): Response | null {
+  if (status !== 404) return null;
+  console.log('[mp webhook resource_not_found]', JSON.stringify({ kind, id }));
+  return NextResponse.json({ received: true as const }, { status: 200 });
+}
+
 /** users.id existe y no está eliminado. */
 async function lookupUser(service: Service, userId: string | null): Promise<string | null> {
   if (!userId || !isUuid(userId)) return null;
@@ -222,6 +234,8 @@ async function resolvePaymentIdentity(
 async function handlePayment(resourceId: string): Promise<Response> {
   const fetched = await getPayment(resourceId);
   if (!fetched.ok) {
+    const missing = missingResource('payment', resourceId, fetched.status);
+    if (missing) return missing;
     console.error('[mp webhook]: pull de payment falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
   }
@@ -275,6 +289,8 @@ async function handlePayment(resourceId: string): Promise<Response> {
 async function handlePreapproval(resourceId: string): Promise<Response> {
   const fetched = await getPreapproval(resourceId);
   if (!fetched.ok) {
+    const missing = missingResource('preapproval', resourceId, fetched.status);
+    if (missing) return missing;
     console.error('[mp webhook]: pull preapproval falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
   }
@@ -331,6 +347,8 @@ async function handlePreapproval(resourceId: string): Promise<Response> {
 async function handleAuthorizedPayment(resourceId: string): Promise<Response> {
   const invoice = await getAuthorizedPayment(resourceId);
   if (!invoice.ok) {
+    const missing = missingResource('authorized_payment', resourceId, invoice.status);
+    if (missing) return missing;
     console.error('[mp webhook]: pull authorized_payment falla:', invoice.status, invoice.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
   }
@@ -349,6 +367,8 @@ async function handleAuthorizedPayment(resourceId: string): Promise<Response> {
 
   const fetched = await getPayment(String(invoice.data.paymentId));
   if (!fetched.ok) {
+    const missing = missingResource('payment', String(invoice.data.paymentId), fetched.status);
+    if (missing) return missing;
     console.error('[mp webhook]: pull payment del invoice falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
   }
@@ -408,6 +428,8 @@ async function handleAuthorizedPayment(resourceId: string): Promise<Response> {
 async function handleChargeback(resourceId: string): Promise<Response> {
   const fetched = await getChargeback(resourceId);
   if (!fetched.ok) {
+    const missing = missingResource('chargeback', resourceId, fetched.status);
+    if (missing) return missing;
     console.error('[mp webhook]: pull chargeback falla:', fetched.status, fetched.message);
     return NextResponse.json({ error: 'MP_PULL_UNAVAILABLE' }, { status: 502 });
   }
@@ -419,6 +441,8 @@ async function handleChargeback(resourceId: string): Promise<Response> {
 
   const payment = await getPayment(String(fetched.data.paymentId));
   if (!payment.ok && !isChargebackReversal(fetched.data.status)) {
+    const missing = missingResource('payment', String(fetched.data.paymentId), payment.status);
+    if (missing) return missing;
     console.error(
       '[mp webhook]: pull payment del chargeback falla:',
       payment.status,
