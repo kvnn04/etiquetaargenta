@@ -7,6 +7,7 @@ import {
   initialsOf,
   normalizeInstagram,
   resolveBranding,
+  splitE164,
   toE164,
 } from '@/lib/branding';
 import { completionCopy, completionPct } from '@/lib/profile';
@@ -77,6 +78,34 @@ describe('whatsapp E.164 (§6)', () => {
   });
   it('tira el 0 inicial para el formato E.164', () => {
     expect(toE164('54', '01123456789')).toBe('+541123456789');
+  });
+});
+
+describe('splitE164 (el select debe mostrar el país guardado)', () => {
+  it('Argentina +54 no se parte como +541', () => {
+    expect(splitE164('+541151351658')).toEqual({
+      prefix: '54',
+      local: '1151351658',
+    });
+  });
+  it('respeta prefijos de 3 dígitos (Paraguay +595)', () => {
+    expect(splitE164('+595981123456')).toEqual({
+      prefix: '595',
+      local: '981123456',
+    });
+  });
+  it('US/Canadá +1', () => {
+    expect(splitE164('+12125550123')).toEqual({
+      prefix: '1',
+      local: '2125550123',
+    });
+  });
+  it('vacío ⇒ Argentina por defecto', () => {
+    expect(splitE164('')).toEqual({ prefix: '54', local: '' });
+  });
+  it('round-trip: split + toE164 conserva el número', () => {
+    const { prefix, local } = splitE164('+541151351658');
+    expect(toE164(prefix, local)).toBe('+541151351658');
   });
 });
 

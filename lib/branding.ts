@@ -101,6 +101,52 @@ export function toE164(prefix: string, localDigits: string): string | null {
   return `+${country}${local}`;
 }
 
+/**
+ * Prefijos ofrecidos en Perfil. Es un ARRAY (no un objeto): los objetos con
+ * claves numéricas se ordenan por número y EE. UU. (+1) quedaba primero.
+ */
+export const WHATSAPP_PREFIXES = [
+  { code: '54', label: 'Argentina (+54)' },
+  { code: '1', label: 'US / Canada (+1)' },
+  { code: '55', label: 'Brasil (+55)' },
+  { code: '56', label: 'Chile (+56)' },
+  { code: '595', label: 'Paraguay (+595)' },
+  { code: '591', label: 'Bolivia (+591)' },
+  { code: '593', label: 'Ecuador (+593)' },
+  { code: '598', label: 'Uruguay (+598)' },
+  { code: '34', label: 'España (+34)' },
+  { code: '39', label: 'Italia (+39)' },
+] as const;
+
+/** Prefijos de 3 dígitos primero: +595 no debe partirse como +59. */
+const PREFIX_CODES_LONGEST_FIRST = WHATSAPP_PREFIXES.map((p) => p.code).sort(
+  (a, b) => b.length - a.length,
+);
+
+/**
+ * Separa un E.164 guardado en prefijo país + número local. Usa el prefijo
+ * conocido MÁS LARGO: `+541151351658` ⇒ `54` + `1151351658` (antes el regex
+ * tomaba `541` y el select, sin opción válida, mostraba la primera: EE. UU.).
+ * Un prefijo no listado se conserva tal cual para no cambiar el país cargado.
+ */
+export function splitE164(e164: string | null | undefined): {
+  prefix: string;
+  local: string;
+} {
+  const digits = digitsOnly(e164 ?? '');
+  if (!digits) return { prefix: '54', local: '' };
+
+  const known = PREFIX_CODES_LONGEST_FIRST.find(
+    (code) => digits.startsWith(code) && digits.length > code.length,
+  );
+  if (known) return { prefix: known, local: digits.slice(known.length) };
+
+  // Prefijo desconocido (número legacy): se preserva para que el select no
+  // lo disfrace con otro país. 1–3 dígitos, dejando siempre número local.
+  const prefix = digits.slice(0, Math.min(3, Math.max(1, digits.length - 1)));
+  return { prefix, local: digits.slice(prefix.length) };
+}
+
 /** Generador del código legible y único de la R5. linkId admite hex (3a8f9b). */
 export function approvalCode(variant: string, linkId: string): string {
   const v = (variant || '').trim().toUpperCase().slice(0, 1) || 'B';

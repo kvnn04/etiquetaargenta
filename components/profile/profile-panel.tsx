@@ -39,26 +39,13 @@ import {
   completionCopy,
   completionPct,
 } from '@/lib/profile';
-import { digitsOnly, initialsOf, normalizeInstagram, toE164 } from '@/lib/branding';
+import { digitsOnly, initialsOf, normalizeInstagram, splitE164, toE164, WHATSAPP_PREFIXES } from '@/lib/branding';
 
 /* ==========================================================================
  * PANEL DE PERFIL — spec registro §4 (posición 2).
  * Tarjetas con guardado inline (sin toasts persistentes), indicador 5×20 %
  * calculado en cliente, pipeline de logo client-side y Zona de peligra R8.
  * ========================================================================== */
-
-const WHATSAPP_PREFIXES: Record<string, string> = {
-  '54': 'Argentina (+54)',
-  '1': 'US / Canada (+1)',
-  '55': 'Brasil (+55)',
-  '56': 'Chile (+56)',
-  '595': 'Paraguay (+595)',
-  '591': 'Bolivia (+591)',
-  '593': 'Ecuador (+593)',
-  '598': 'Uruguay (+598)',
-  '34': 'España (+34)',
-  '39': 'Italia (+39)',
-};
 
 interface EditableFields {
   brandName: string;
@@ -71,12 +58,6 @@ interface LogoProps {
   stored: boolean;
   thumbViewUrl: string | null;
   fullViewUrl: string | null;
-}
-
-function splitE164(e164: string): { prefix: string; local: string } {
-  const match = /^\+(\d{1,3})(\d+)$/.exec(e164.trim());
-  if (!match) return { prefix: '54', local: '' };
-  return { prefix: match[1]!, local: match[2]! };
 }
 
 /** Motivos del API (server) → el mismo mensaje inline del codificador. */
@@ -139,6 +120,11 @@ export default function ProfilePanel({
   const W = splitE164(initial.whatsappE164);
   const [waPrefix, setWaPrefix] = useState(W.prefix);
   const [waDigits, setWaDigits] = useState(W.local);
+  /* Si el número guardado trae un prefijo fuera de la lista, se muestra tal
+   * cual en vez de dejar el <select> sin opción (y que caiga en la primera). */
+  const prefixOptions = WHATSAPP_PREFIXES.some((p) => p.code === waPrefix)
+    ? WHATSAPP_PREFIXES
+    : [{ code: waPrefix, label: `Otro (+${waPrefix})` }, ...WHATSAPP_PREFIXES];
   const [instagramRaw, setInstagramRaw] = useState(
     initial.instagramHandle ? `@${initial.instagramHandle}` : '',
   );
@@ -465,7 +451,7 @@ export default function ProfilePanel({
             onChange={(e) => setWaPrefix(e.target.value)}
             className="h-10 rounded-lg border border-white/10 bg-black/30 px-2 text-sm text-cream outline-none focus:border-gold/60 sm:w-52"
           >
-            {Object.entries(WHATSAPP_PREFIXES).map(([code, label]) => (
+            {prefixOptions.map(({ code, label }) => (
               <option key={code} value={code}>
                 {label}
               </option>
