@@ -8,6 +8,7 @@ import {
   Check,
   FileText,
   ImageOff,
+  Link2,
   Mail,
   MapPin,
   RefreshCw,
@@ -251,9 +252,14 @@ export default function ProfilePanel({
             <p className="text-[11px] text-stone-500">Los datos de acá alimentan fichas, visor y enlaces.</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => router.push('/editor')}>
-          ← Volver al editor
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => router.push('/enlaces')}>
+            <Link2 className="size-3.5" /> Mis enlaces
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => router.push('/editor')}>
+            ← Volver al editor
+          </Button>
+        </div>
       </header>
 
       {/* ---------------------------------------------------------------- */}

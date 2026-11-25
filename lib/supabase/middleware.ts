@@ -26,7 +26,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       url.search = '';
       return NextResponse.redirect(url);
     }
-    if (bypassPath.startsWith('/perfil')) {
+    if (bypassPath.startsWith('/perfil') || bypassPath.startsWith('/enlaces')) {
       const url = request.nextUrl.clone();
       url.pathname = '/editor';
       url.search = '';
@@ -72,7 +72,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   /* Pos 10A (R8, spec shareable-link §6): /v/[linkId] es PÚBLICA de manera
    * DELIBERADA — abrir/ver/aprobar un enlace no paga ni loguea. JAMÁS agregar
    * /v a la lista que redirect a /auth: rompería el Modo Cliente completo. */
-  if (!user && (path.startsWith('/editor') || path.startsWith('/perfil'))) {
+  if (!user && (path.startsWith('/editor') || path.startsWith('/perfil') || path.startsWith('/enlaces'))) {
     const url = request.nextUrl.clone();
     url.pathname = '/auth';
     url.search = '';

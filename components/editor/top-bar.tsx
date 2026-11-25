@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, LogOut, ShieldAlert, UserRound } from 'lucide-react';
+import { ChevronDown, Link2, LogOut, ShieldAlert, UserRound } from 'lucide-react';
 import type { Plan } from '@/lib/permissions';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -155,6 +155,16 @@ export default function TopBar({
             <LogOut className="h-4 w-4" />
           </Button>
         )}
+
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Mis enlaces"
+          title="Mis enlaces comerciales"
+          onClick={() => router.push('/enlaces')}
+        >
+          <Link2 className="h-4 w-4" />
+        </Button>
 
         <Button
           variant="ghost"

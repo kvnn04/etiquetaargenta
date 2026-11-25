@@ -1,7 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Copy, ExternalLink, Loader2, MessageCircle, RefreshCw, Send, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  Link2,
+  Loader2,
+  MessageCircle,
+  RefreshCw,
+  Send,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   canonicalLinkUrl,
@@ -514,6 +526,16 @@ export default function LinkModal({
             </div>
           </div>
         )}
+
+        <div className="mt-4 border-t border-line pt-3">
+          <Link
+            href="/enlaces"
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gold-soft hover:underline"
+          >
+            <Link2 className="size-3.5" />
+            Ver y buscar todos mis enlaces
+          </Link>
+        </div>
       </div>
     </div>
   );
