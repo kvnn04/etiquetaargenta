@@ -3,10 +3,10 @@
 /* ============================================================================
  * FOOTER LEGAL — posición 12 (spec_paginas_legales.md §4 + R13.2/R13.12)
  * ----------------------------------------------------------------------------
- * Visible en /auth, /editor, /perfil y /v/[linkId]. Los DOS BOTONES
- * (arrepentimiento y baja) son botones outlined de verdad, no texto gris de
- * 9 px, y se apilan en móvil sin scroll horizontal. Sin login, sin submenús,
- * sin letra chica que contradiga la ley.
+ * Visible en /editor, /perfil, /v/[linkId] y las páginas legales. Los DOS
+ * BOTONES (arrepentimiento y baja) son botones outlined de verdad, no texto
+ * gris de 9 px, y se apilan en móvil sin scroll horizontal. Sin login, sin
+ * submenús, sin letra chica que contradiga la ley.
  * Client-safe: solo importa rutas públicas (`lib/legal/links`).
  * ============================================================================ */
 
