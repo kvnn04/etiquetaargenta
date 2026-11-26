@@ -32,6 +32,12 @@ export type MailKind =
   | 'decision_cliente'
   | 'observacion_cliente';
 
+/** Adjunto de Resend: `content` SIEMPRE en base64. */
+export interface MailAttachment {
+  filename: string;
+  content: string;
+}
+
 export interface MailContent {
   kind: MailKind;
   to: string;
@@ -43,6 +49,8 @@ export interface MailContent {
    * `payments.email_claimed_at` sigue siendo la barrera principal.
    */
   idempotencyKey?: string;
+  /** Constancia PDF del cobro (solo pagos aprobados). */
+  attachments?: MailAttachment[];
 }
 
 export interface MailOutcome {
@@ -86,6 +94,7 @@ export async function sendMail(
         to: [content.to],
         subject: content.subject,
         html: content.html,
+        ...(content.attachments?.length ? { attachments: content.attachments } : {}),
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -112,17 +121,32 @@ export function mailReceipt(input: {
   amountArs: number;
   occurredAtMs: number;
   receiptUrl: string | null;
+  /** true cuando `sendPaymentEmail` pudo adjuntar la constancia PDF. */
+  hasReceiptPdf?: boolean;
 }): MailContent {
   const monto = formatArs(input.amountArs) ?? 'monto indeterminado';
   const fecha = formatDateAR(input.occurredAtMs) ?? '';
-  const constancia = input.receiptUrl
-    ? `<p style="margin-top:12px">Tu constancia de Mercado Pago: <a href="${input.receiptUrl}">${input.receiptUrl}</a></p>`
-    : '<p style="margin-top:12px">La constancia también está en tu Centro de Suscripción (Perfil → Suscripción).</p>';
+  const constancia: string[] = [];
+  if (input.hasReceiptPdf) {
+    constancia.push(
+      '<p style="margin-top:12px">Adjuntamos tu <strong>constancia de pago en PDF</strong>. También podés descargarla desde Perfil → Suscripción.</p>',
+    );
+  }
+  if (input.receiptUrl) {
+    constancia.push(
+      `<p style="margin-top:12px">Tu constancia de Mercado Pago: <a href="${input.receiptUrl}">${input.receiptUrl}</a></p>`,
+    );
+  }
+  if (!input.hasReceiptPdf && !input.receiptUrl) {
+    constancia.push(
+      '<p style="margin-top:12px">La constancia también está en tu Centro de Suscripción (Perfil → Suscripción).</p>',
+    );
+  }
   return {
     kind: 'recibo_cobro',
     to: input.to,
     subject: `Recibimos tu pago de ${monto} — Simulador Mates PRO`,
-    html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Recibo de cobro</h2><p>Pago de tu suscripción PRO por <strong>${monto}</strong> el día ${fecha} (ARS, débito automático de tarjeta).</p>${constancia}<p style="margin-top:12px;color:#78716c">La factura ARCA la emite el responsable del SaaS a mano (R6): si la necesitás, respondé este email.</p></div>`,
+    html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Recibo de cobro</h2><p>Pago de tu suscripción PRO por <strong>${monto}</strong> el día ${fecha} (ARS, débito automático de tarjeta).</p>${constancia.join('')}<p style="margin-top:12px;color:#78716c">La factura ARCA la emite el responsable del SaaS a mano (R6): si la necesitás, respondé este email.</p></div>`,
   };
 }
 

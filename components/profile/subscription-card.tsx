@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CircleX, ExternalLink, Mail, RefreshCw } from 'lucide-react';
+import { CircleX, Download, ExternalLink, Mail, RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button';
@@ -434,7 +434,7 @@ export default function SubscriptionCard({
       {pago === 'pending' && (
         <p className="mt-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-stone-300">
           El pago quedó <b>en proceso</b>: si se aprueba, tu plan se activa solo (banner en todas
-          las pestañas) y recibís la constancia por email.
+          las pestañas) y recibís la constancia en PDF por email.
         </p>
       )}
 
@@ -647,8 +647,9 @@ export default function SubscriptionCard({
       </h3>
       {payments.length === 0 ? (
         <p className="mt-2 text-[11px] text-stone-500">
-          Todavía no hay cobros registrados. Tras cada débito aparece acá con su constancia
-          (factura ARCA: la emite a mano el responsable del SaaS, R6).
+          Todavía no hay cobros registrados. Tras cada débito aparece acá con su constancia en
+          PDF y, si Mercado Pago la devuelve, también la constancia de MP. La factura ARCA se
+          emite a mano a pedido del suscriptor (R6).
         </p>
       ) : (
         <div className="mt-2 overflow-x-auto">
@@ -681,18 +682,29 @@ export default function SubscriptionCard({
                       <span className={badgeRow.className}>{badgeRow.label}</span>
                     </td>
                     <td className="py-1.5">
-                      {p.receiptUrl ? (
-                        <a
-                          href={p.receiptUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-gold-soft underline"
-                        >
-                          <ExternalLink className="h-3 w-3" /> ver
-                        </a>
-                      ) : (
-                        <span className="text-stone-600">—</span>
-                      )}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        {p.status !== 'rejected' && (
+                          <a
+                            href={`/api/billing/receipt/${p.id}`}
+                            className="inline-flex items-center gap-1 text-gold-soft underline"
+                          >
+                            <Download className="h-3 w-3" /> PDF
+                          </a>
+                        )}
+                        {p.receiptUrl && (
+                          <a
+                            href={p.receiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-stone-400 underline"
+                          >
+                            <ExternalLink className="h-3 w-3" /> MP
+                          </a>
+                        )}
+                        {p.status === 'rejected' && !p.receiptUrl && (
+                          <span className="text-stone-600">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

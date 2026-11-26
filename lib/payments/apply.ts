@@ -71,6 +71,7 @@ import {
   mailRefundTotal,
   mailScheduledClose,
   sendMail,
+  type MailAttachment,
 } from '@/lib/payments/mail';
 import {
   cancelPreapproval,
@@ -348,6 +349,20 @@ async function mailTo(service: Service, userId: string): Promise<string | null> 
   return email;
 }
 
+/** Nombre comercial del taller para la constancia PDF (nunca inventa uno). */
+async function readWorkshopName(service: Service, userId: string): Promise<string> {
+  const { data, error } = await service
+    .from('users')
+    .select('base_name, brand_name')
+    .eq('id', userId)
+    .maybeSingle<{ base_name: string | null; brand_name: string | null }>();
+  if (error) {
+    console.error('[mp apply receipt profile]:', error.message);
+    return 'Taller';
+  }
+  return data?.brand_name?.trim() || data?.base_name?.trim() || 'Taller';
+}
+
 /* -------------------------------------------------------------------------- */
 /* Email por pago — claim atómico (R12.7)                                     */
 /* -------------------------------------------------------------------------- */
@@ -429,6 +444,35 @@ async function sendPaymentEmail(
     return 'failed';
   }
 
+  let receiptAttachment: MailAttachment | null = null;
+  if (input.status === 'approved') {
+    try {
+      const [{ buildPaymentReceiptPdf }, workshopName] = await Promise.all([
+        import('@/lib/payments/receipt-pdf'),
+        readWorkshopName(service, input.userId),
+      ]);
+      const pdfBytes = await buildPaymentReceiptPdf({
+        paymentId: claim.data.id,
+        mpPaymentId: input.mpPaymentId,
+        amountArs: input.amount,
+        currency: 'ARS',
+        status: input.status,
+        occurredAtMs: input.occurredMs,
+        workshopName,
+        subscriberEmail: to,
+        receiptUrl: input.receiptUrl,
+      });
+      receiptAttachment = {
+        filename: `constancia-pago-${input.mpPaymentId}.pdf`,
+        content: Buffer.from(pdfBytes).toString('base64'),
+      };
+    } catch (err) {
+      // El email es un aviso: si el PDF falla, el recibo sale igual y el
+      // usuario puede descargar la constancia desde /perfil.
+      console.error('[mp email receipt pdf]:', err instanceof Error ? err.message : err);
+    }
+  }
+
   const content =
     input.status === 'approved'
       ? mailReceipt({
@@ -436,12 +480,14 @@ async function sendPaymentEmail(
           amountArs: input.amount,
           occurredAtMs: input.occurredMs,
           receiptUrl: input.receiptUrl,
+          hasReceiptPdf: receiptAttachment != null,
         })
       : mailGrace({ to, graceExpiresAtMs: input.graceExpiresAtMs as number });
 
   const sent = await sendMail(
     {
       ...content,
+      ...(receiptAttachment ? { attachments: [receiptAttachment] } : {}),
       idempotencyKey: `receipt:${input.mpPaymentId}`,
     },
     { timeoutMs: input.timeoutMs },
