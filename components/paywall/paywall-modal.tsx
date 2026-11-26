@@ -55,6 +55,8 @@ const ERROR_BY_CODE: Record<string, string> = {
   PAGOS_NO_CONFIGURADOS:
     'La caja de pagos aún no está configurada (faltan las credenciales de Mercado Pago).',
   MP_UNAVAILABLE: 'Mercado Pago no respondió — reintentá en unos minutos.',
+  PLAN_INCONSISTENTE:
+    'No pudimos validar el plan de pago de tu cuenta. Para no duplicar la suscripción, no iniciamos un cobro nuevo. Reintentá en unos minutos; si sigue, escribinos.',
   EVIDENCIA_NO_DISPONIBLE:
     'No pudimos registrar tu aceptación legal, así que no iniciamos el cobro. Reintentá en un rato.',
   LEGAL_NOT_ACCEPTED: 'Marcá la aceptación de los Términos y la Política de Privacidad para pagar.',

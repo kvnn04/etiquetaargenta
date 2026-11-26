@@ -163,6 +163,11 @@ simulador-mates/
    > `-git-main-…` (pueden pedir login SSO de Vercel) ni los `-<hash>-…` (cambian en
    > cada deploy). Configurá `NEXT_PUBLIC_SITE_URL` y `MP_PUBLIC_ORIGIN` con ese
    > dominio y volvé a desplegar: el `back_url` de MP y los links compartidos lo usan.
+   >
+   > Para probar pagos con credenciales **TEST** usá el proyecto de test
+   > (`https://etiquetaargenta-gilt.vercel.app`). No mezcles credenciales ni bases
+   > entre test y producción: un plan creado en un entorno no existe en el otro y
+   > el checkout responde `PLAN_INCONSISTENTE` en vez de duplicar la suscripción.
 
 6. **Dev**: `npm run dev` → `http://localhost:3000/auth`.
 

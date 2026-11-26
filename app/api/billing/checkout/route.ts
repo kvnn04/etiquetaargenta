@@ -11,6 +11,7 @@ import {
   updatePreapprovalPlanBackUrl,
 } from '@/lib/payments/mercadopago';
 import { isPositiveAmount } from '@/lib/payments/core';
+import { classifyPlanReadFailure } from '@/lib/payments/plan-guard';
 import { LEGAL_VERSIONS } from '@/lib/legal/config';
 import { checkCheckoutAcceptance } from '@/lib/legal/requests';
 import { legalRequestContext, recordCheckoutAcceptances } from '@/lib/legal/service';
@@ -46,6 +47,9 @@ import { legalRequestContext, recordCheckoutAcceptances } from '@/lib/legal/serv
  *      /preapproval_plan` con external_reference = user_id, ARS/meses y
  *      back_url canónica. Su `init_point` hospedado pide la cuenta del pagador:
  *      el email de Supabase ya no tiene que coincidir con la cuenta que paga.
+ *      Si el plan guardado NO es visible con las credenciales de este deploy
+ *      (404/401/403) ⇒ 409 PLAN_INCONSISTENTE y NO se crea otro plan: mezclar
+ *      entornos test/producción deja la cuenta con dos suscripciones.
  *   9. Mapping `mp_preapproval_plans` (upsert) ANTES de redirigir; si falla ⇒
  *      cancelar SOLO un plan nuevo y 503. Los planes viejos no se cancelan:
  *      pueden tener un checkout abierto en otra pestaña/dominio.
@@ -155,7 +159,12 @@ export async function POST(request: NextRequest) {
    * ("Algo salió mal"). Ahora se reutiliza el plan vigente si sigue activo,
    * es del mismo usuario y mantiene precio/moneda. Recién si cambió el precio
    * o MP lo canceló se crea otro. Los planes viejos NO se cancelan: pueden
-   * tener una pestaña de checkout abierta. */
+   * tener una pestaña de checkout abierta.
+   *
+   * FALLAR CERRADO (26-nov-2026): si el plan guardado no se puede leer con las
+   * credenciales de este deploy, NO se crea uno nuevo a ciegas. Ese 404 delata
+   * credenciales de otro entorno (test vs. producción) o un plan borrado;
+   * crear otro escondía el problema y vinculaba la cuenta a dos colectores. */
   const webOrigin = checkoutBackUrlOrigin({
     nextUrlOrigin: request.nextUrl.origin,
     nextUrlProtocol: request.nextUrl.protocol,
@@ -169,8 +178,17 @@ export async function POST(request: NextRequest) {
 
   if (sub?.preapproval_plan_id) {
     const existing = await getPreapprovalPlan(sub.preapproval_plan_id);
+    if (!existing.ok) {
+      console.error(
+        '[billing plan read]:',
+        sub.preapproval_plan_id,
+        existing.status,
+        existing.message,
+      );
+      const failure = classifyPlanReadFailure(existing.status);
+      return NextResponse.json({ error: failure.error }, { status: failure.status });
+    }
     if (
-      existing.ok &&
       existing.data.status === 'active' &&
       existing.data.externalReference === user.id &&
       existing.data.amount === amount &&
@@ -190,7 +208,7 @@ export async function POST(request: NextRequest) {
           }),
         );
       }
-    } else if (existing.ok) {
+    } else {
       console.log(
         '[billing plan reuse skipped]:',
         JSON.stringify({

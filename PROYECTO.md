@@ -1241,6 +1241,14 @@ para recuperar cobros recurrentes por `GET /authorized_payments/{id}`. Spec:
 ya no siguen el Host de la request. Usar el dominio de producción o un custom domain, nunca
 el alias de rama `-git-main-…` (protegido por SSO) ni el URL `-<hash>-…` de un deployment.
 
+**Dos proyectos de Vercel (26-nov):** `etiquetaargenta` y `etiquetaargenta-gilt` apuntan al
+MISMO Supabase pero tienen credenciales MP distintas: un plan creado en uno no existe en el
+otro (404). Por eso el checkout ahora falla cerrado con `409 PLAN_INCONSISTENTE` si
+`subscriptions.preapproval_plan_id` no es visible con las credenciales del deploy; no crea
+otro plan a ciegas. Para probar pagos usar SOLO el proyecto con credenciales TEST
+(`etiquetaargenta-gilt.vercel.app`). Para producción, usar un proyecto con credenciales PROD
+y, idealmente, una base separada: no compartir Supabase entre test y producción.
+
 **Pendiente:** aplicar `0011`, configurar el topic nuevo en el panel de MP, deployar y hacer
 un alta real con una cuenta de MP cuyo email NO coincida con el de Supabase.
 

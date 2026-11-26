@@ -25,6 +25,7 @@ let server: NextServer;
 let cookie = '';
 let userId = '';
 let planId = '';
+const plansToCancel = new Set<string>();
 const email = `qa-checkout-reuse-${Date.now()}@simuladormates.test`;
 
 async function postCheckout(): Promise<{
@@ -92,9 +93,9 @@ beforeAll(async () => {
 }, 240_000);
 
 afterAll(async () => {
-  if (planId) {
-    const cancelled = await cancelPreapprovalPlan(planId);
-    if (!cancelled.ok) console.error('[QA reuse cleanup]', cancelled.status, cancelled.message);
+  for (const id of plansToCancel) {
+    const cancelled = await cancelPreapprovalPlan(id);
+    if (!cancelled.ok) console.error('[QA reuse cleanup]', id, cancelled.status, cancelled.message);
   }
   if (userId) {
     const service = serviceClient();
@@ -112,6 +113,7 @@ describe('checkout con plan reutilizable', () => {
     expect(first.body?.planId).toBeTruthy();
     expect(first.body?.initPoint).toContain('preapproval_plan_id=');
     planId = String(first.body?.planId);
+    plansToCancel.add(planId);
 
     const second = await postCheckout();
     expect(second.status, JSON.stringify(second.body)).toBe(201);
@@ -144,5 +146,37 @@ describe('checkout con plan reutilizable', () => {
       .maybeSingle<{ user_id: string; status: string }>();
     expect(mapping.error).toBeNull();
     expect(mapping.data).toMatchObject({ user_id: userId, status: 'active' });
+  }, 120_000);
+
+  it('plan guardado en otro entorno ⇒ 409 PLAN_INCONSISTENTE y no crea otro', async () => {
+    const service = serviceClient();
+    const bogusPlanId = '00000000000000000000000000000000';
+    const updated = await service
+      .from('subscriptions')
+      .update({ preapproval_plan_id: bogusPlanId })
+      .eq('user_id', userId);
+    expect(updated.error).toBeNull();
+
+    const res = await postCheckout();
+    // Si el guard fallara, el checkout crearía un plan nuevo: se agenda para
+    // cancelarlo en el cleanup y el test falla igual por el status esperado.
+    if (res.body?.planId) plansToCancel.add(String(res.body.planId));
+    expect(res.status, JSON.stringify(res.body)).toBe(409);
+    expect(res.body?.error).toBe('PLAN_INCONSISTENTE');
+
+    const sub = await service
+      .from('subscriptions')
+      .select('preapproval_plan_id')
+      .eq('user_id', userId)
+      .maybeSingle<{ preapproval_plan_id: string | null }>();
+    expect(sub.error).toBeNull();
+    expect(sub.data?.preapproval_plan_id).toBe(bogusPlanId);
+
+    const mappings = await service
+      .from('mp_preapproval_plans')
+      .select('id')
+      .eq('user_id', userId);
+    expect(mappings.error).toBeNull();
+    expect(mappings.data).toHaveLength(1);
   }, 120_000);
 });
