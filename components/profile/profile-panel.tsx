@@ -30,6 +30,7 @@ import SubscriptionCard, {
   type SubscriptionView,
   type SupportChannels,
 } from '@/components/profile/subscription-card';
+import type { CancellationRefundQuote } from '@/lib/payments/refunds';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
   encodeLogo,
@@ -98,6 +99,8 @@ export default function ProfilePanel({
     payments: PaymentRowView[];
     pago: PagoBanner;
     nowMs: number;
+    /** Estimación de la baja inmediata, calculada en el server (R9/R11.5). */
+    refundQuote: CancellationRefundQuote;
     /** Lease del sync (R12.3): la card calcula el cooldown de 20 s. */
     lastSyncedAtMs: number | null;
     accountEmail: string | null;
@@ -327,6 +330,7 @@ export default function ProfilePanel({
         payments={billing.payments}
         pago={billing.pago}
         nowMs={billing.nowMs}
+        refundQuote={billing.refundQuote}
         lastSyncedAtMs={billing.lastSyncedAtMs}
         accountEmail={billing.accountEmail}
         support={billing.support}

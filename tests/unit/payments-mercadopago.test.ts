@@ -9,6 +9,7 @@ import {
   getPreapproval,
   getPreapprovalPlan,
   preapprovalStartDateIso,
+  refundPayment,
   updatePreapprovalPlanBackUrl,
 } from '@/lib/payments/mercadopago';
 
@@ -435,5 +436,138 @@ describe('lecturas del checkout con plan', () => {
       paymentStatus: 'approved',
       paymentStatusDetail: 'accredited',
     });
+  });
+});
+
+describe('refundPayment — POST /v1/payments/{id}/refunds', () => {
+  it('reembolso TOTAL: sin body + X-Idempotency-Key + parseo de la respuesta', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    const captured: { url?: string; init?: RequestInit } = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        captured.url = String(url);
+        captured.init = init;
+        return new Response(
+          JSON.stringify({
+            id: 9001,
+            payment_id: 19951521071,
+            amount: 20000,
+            status: 'approved',
+            date_created: '2026-11-26T12:00:00.000Z',
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await refundPayment(19951521071, {
+      idempotencyKey: 'cancel-refund:test-1',
+    });
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        id: '9001',
+        paymentId: 19951521071,
+        amount: 20000,
+        status: 'approved',
+        dateCreated: '2026-11-26T12:00:00.000Z',
+      },
+    });
+    expect(captured.url).toBe(
+      'https://api.mercadopago.com/v1/payments/19951521071/refunds',
+    );
+    expect(captured.init?.method).toBe('POST');
+    expect(captured.init?.body).toBeUndefined();
+    const headers = captured.init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer TEST-token');
+    expect(headers['X-Idempotency-Key']).toBe('cancel-refund:test-1');
+  });
+
+  it('reembolso PARCIAL: manda { amount } redondeado por el caller', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    const captured: { init?: RequestInit } = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        captured.init = init;
+        return new Response(
+          JSON.stringify({
+            id: '9002',
+            payment_id: '19951521071',
+            amount: '6333.33',
+            status: 'approved',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await refundPayment(19951521071, {
+      amount: 6333.33,
+      idempotencyKey: 'cancel-refund:test-2',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.amount).toBe(6333.33);
+    expect(JSON.parse(String(captured.init?.body))).toEqual({ amount: 6333.33 });
+  });
+
+  it('202 no confirma el reembolso: el downgrade exige 200/201', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 9003, status: 'pending' }), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    const result = await refundPayment(19951521071, {
+      idempotencyKey: 'cancel-refund:test-202',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(202);
+  });
+
+  it('400 de MP ⇒ resultado honesto, sin throw', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ message: 'payment already refunded' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    const result = await refundPayment(19951521071, {
+      idempotencyKey: 'cancel-refund:test-3',
+    });
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: 'payment already refunded',
+    });
+  });
+
+  it('sin idempotency key ⇒ no llama a MP', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await refundPayment(19951521071, { idempotencyKey: '   ' });
+    expect(result).toEqual({
+      ok: false,
+      status: 0,
+      message: 'X-Idempotency-Key requerido',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

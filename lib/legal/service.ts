@@ -17,7 +17,8 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { isIP } from 'node:net';
 import { applyPreapproval } from '@/lib/payments/apply';
-import { formatPricePerMonth } from '@/lib/payments/core';
+import { executeImmediateCancellation } from '@/lib/payments/cancel';
+import { formatArs, formatPricePerMonth } from '@/lib/payments/core';
 import {
   cancelPreapproval,
   getPreapproval,
@@ -355,11 +356,19 @@ async function insertLegalRequest(
 /* Arrepentimiento (R13.5)                                                     */
 /* -------------------------------------------------------------------------- */
 
+export type WithdrawalAutoRefund =
+  | 'processed'
+  | 'sync_pending'
+  | 'failed'
+  | 'not_applicable';
+
 export type CreateWithdrawalResult =
   | {
       ok: true;
       row: LegalRequestRow;
       emailSent: boolean;
+      autoRefund: WithdrawalAutoRefund;
+      autoRefundAmountArs: number | null;
     }
   | LegalServiceFailure;
 
@@ -399,11 +408,92 @@ export async function createWithdrawal(input: {
   );
   if ('error' in inserted) return { ok: false, reason: 'db', detail: inserted.error };
 
-  const internal = ownerAlert(inserted.row);
+  /* R13.5 + decisión del titular (2026-11-26): si el pago REAL está dentro de
+   * los 10 días corridos, el arrepentimiento se ejecuta solo: reembolso total
+   * por MP + baja inmediata del PRO. La ventana se mide contra el pago, no
+   * contra la fecha tipeada (esa solo orienta la revisión manual). */
+  let autoRefund: WithdrawalAutoRefund = 'not_applicable';
+  let autoRefundAmountArs: number | null = null;
+  let autoRefundNote: string | null = null;
+  let finalRow = inserted.row;
+
+  if (userId) {
+    const auto = await executeImmediateCancellation({
+      userId,
+      nowMs,
+      kind: 'withdrawal',
+      source: 'legal',
+      legalRequestId: inserted.row.id,
+      requireFullRefund: true,
+      allowMissingPreapproval: true,
+      suppressScheduledCloseEmail: true,
+    });
+
+    if (auto.ok && auto.status === 'revocada') {
+      autoRefund = 'processed';
+      autoRefundAmountArs = auto.refund.amountArs;
+      finalRow =
+        (await updateLegalRequest(service, inserted.row.id, {
+          status: 'resuelta',
+          responded_at: new Date(nowMs).toISOString(),
+          resolution_note: `Arrepentimiento dentro de los 10 días: reembolso total de ${
+            auto.refund.amountArs
+          } ARS (MP ${auto.refundId ?? 's/d'}) y baja inmediata del PRO.`,
+        })) ?? inserted.row;
+    } else if (auto.ok && auto.warning === 'LOCAL_SYNC_PENDING') {
+      /* MP YA devolvió el dinero; falta converger el estado local. No se
+       * promete una baja instantánea ni se pierde el reembolso. */
+      autoRefund = 'sync_pending';
+      autoRefundAmountArs = auto.refund.amountArs;
+      autoRefundNote =
+        'Arrepentimiento: MP devolvió el dinero, pero el estado local quedó pendiente de sincronizar. Reconciliar la suscripción y avisar al cliente.';
+      finalRow =
+        (await updateLegalRequest(service, inserted.row.id, {
+          status: 'en_proceso',
+          resolution_note:
+            'Reembolso total procesado en MP; pendiente converger payments/subscriptions/users.',
+        })) ?? inserted.row;
+    } else if (!auto.ok && auto.reason === 'refund_failed') {
+      autoRefund = 'failed';
+      autoRefundAmountArs = auto.refund?.amountArs ?? null;
+      autoRefundNote =
+        'Arrepentimiento: la renovación se canceló pero el reembolso falló; reintentar en MP.';
+      finalRow =
+        (await updateLegalRequest(service, inserted.row.id, {
+          status: 'en_proceso',
+          resolution_note:
+            'Renovación cancelada; Mercado Pago rechazó el reembolso. Reintentar el reembolso y avisar al cliente.',
+        })) ?? inserted.row;
+    } else if (!auto.ok && auto.reason === 'refund_not_eligible') {
+      autoRefundNote =
+        'Arrepentimiento: el pago real no está dentro de los 10 días corridos; revisar encuadre.';
+      finalRow =
+        (await updateLegalRequest(service, inserted.row.id, {
+          resolution_note:
+            'El pago real no está dentro de los 10 días corridos: revisar encuadre antes de reembolsar.',
+        })) ?? inserted.row;
+    } else if (!auto.ok) {
+      /* DB/MP/titularidad: el reembolso automático no se ejecutó. La solicitud
+       * sigue su curso manual y el titular recibe la alerta. */
+      autoRefundNote = `Arrepentimiento: el reembolso automático no se pudo ejecutar (${auto.reason}); revisar a mano.`;
+      finalRow =
+        (await updateLegalRequest(service, inserted.row.id, {
+          resolution_note: `Reembolso automático no ejecutado (${auto.reason}): revisar y procesar a mano.`,
+        })) ?? inserted.row;
+    }
+  }
+
+  const internal = ownerAlert(
+    finalRow,
+    autoRefundNote ??
+      (autoRefund === 'processed'
+        ? 'Arrepentimiento dentro de 10 días: reembolso total y baja inmediata ejecutados.'
+        : null),
+  );
   const notified = await sendLegalNotifications({
     consumer: mailWithdrawalAck({
       to: input.value.email,
-      code: inserted.row.code,
+      code: finalRow.code,
       fullName: input.value.fullName,
       purchaseDateMs: input.value.purchaseDateMs,
       withinWindow: input.value.withinWindow,
@@ -413,7 +503,36 @@ export async function createWithdrawal(input: {
     timeoutMs: 8_000,
   });
 
-  return { ok: true, row: inserted.row, emailSent: notified.consumer.sent };
+  return {
+    ok: true,
+    row: finalRow,
+    emailSent: notified.consumer.sent,
+    autoRefund,
+    autoRefundAmountArs,
+  };
+}
+
+/** Update acotado de legal_requests (service-role); null si la DB falla. */
+async function updateLegalRequest(
+  service: ReturnType<typeof createSupabaseServiceClient>,
+  id: string,
+  patch: {
+    status?: LegalRequestStatus;
+    responded_at?: string | null;
+    resolution_note?: string | null;
+  },
+): Promise<LegalRequestRow | null> {
+  const { data, error } = await service
+    .from('legal_requests')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .maybeSingle<LegalRequestRow>();
+  if (error) {
+    console.error('[legal update]:', error.message);
+    return null;
+  }
+  return data ?? null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1025,34 +1144,105 @@ export async function confirmBajaByToken(
     }
   }
 
-  /* Máquina R9: programada_cierre hasta period_end. Sin email duplicado. */
-  const applied = await applyPreapproval(
-    {
-      id: preapprovalId,
-      status: 'cancelled',
-      externalReference: userId,
-      preapprovalPlanId: pre.data.preapprovalPlanId ?? null,
-      payerEmail: row.email,
-      nextPaymentDate: pre.data.nextPaymentDate,
-      transactionAmount: pre.data.transactionAmount,
-      currency: pre.data.currency,
-      dateCreated: pre.data.dateCreated ?? null,
-      lastModified: pre.data.lastModified ?? null,
-    },
-    { userId, source: 'legal', suppressEmail: true },
-  );
+  /* R13.5 + decisión del titular (2026-11-26): si el pago REAL está dentro de
+   * los 10 días corridos, la baja ejecuta reembolso total por MP y downgrade
+   * inmediato. Fuera de la ventana se conserva el camino R9 (PRO hasta
+   * period_end). Si el reembolso falla, la renovación ya quedó cancelada y el
+   * PRO sigue hasta period_end: NUNCA se baja el plan sin dinero devuelto. */
+  const auto = await executeImmediateCancellation({
+    userId,
+    nowMs,
+    kind: 'withdrawal',
+    source: 'legal',
+    legalRequestId: row.id,
+    requireFullRefund: true,
+    allowMissingPreapproval: true,
+    suppressScheduledCloseEmail: true,
+  });
+  const autoRefunded = auto.ok && auto.status === 'revocada';
+  const refundFailed = !auto.ok && auto.reason === 'refund_failed';
+  /* `LOCAL_SYNC_PENDING` puede significar dos cosas MUY distintas: el reembolso
+   * ya volvió y falta revocar localmente, o no había saldo y solo falta
+   * programar el cierre. El acuse no puede atribuirse un reembolso inexistente. */
+  const refundAttempted = auto.refund != null && auto.refund.kind !== 'none';
+  const syncPendingRefund =
+    auto.ok &&
+    !autoRefunded &&
+    auto.warning === 'LOCAL_SYNC_PENDING' &&
+    refundAttempted;
+  const syncPendingClose =
+    auto.ok &&
+    !autoRefunded &&
+    auto.warning === 'LOCAL_SYNC_PENDING' &&
+    !refundAttempted;
+  const syncPending = syncPendingRefund || syncPendingClose;
+  const refundInProgress = !auto.ok && auto.reason === 'refund_in_progress';
 
-  const parsedPeriodEnd = applied.periodEndMs
-    ? applied.periodEndMs
-    : sub?.period_end
-      ? Date.parse(sub.period_end)
-      : null;
-  const periodEndMs =
-    parsedPeriodEnd != null && Number.isFinite(parsedPeriodEnd) ? parsedPeriodEnd : null;
-  const action = applied.action;
-  const manual = action === 'error';
+  let applyAction = 'revoked';
+  let periodEndMs: number | null = null;
+
+  if (!autoRefunded) {
+    /* Máquina R9: programada_cierre hasta period_end. Sin email duplicado.
+     * Si el intento de reembolso ya programó el cierre, este apply es no-op. */
+    const applied = await applyPreapproval(
+      {
+        id: preapprovalId,
+        status: 'cancelled',
+        externalReference: userId,
+        preapprovalPlanId: pre.data.preapprovalPlanId ?? null,
+        payerEmail: row.email,
+        nextPaymentDate: pre.data.nextPaymentDate,
+        transactionAmount: pre.data.transactionAmount,
+        currency: pre.data.currency,
+        dateCreated: pre.data.dateCreated ?? null,
+        lastModified: pre.data.lastModified ?? null,
+      },
+      { userId, source: 'legal', suppressEmail: true },
+    );
+    applyAction = applied.action;
+
+    const parsedPeriodEnd = applied.periodEndMs
+      ? applied.periodEndMs
+      : sub?.period_end
+        ? Date.parse(sub.period_end)
+        : null;
+    periodEndMs =
+      parsedPeriodEnd != null && Number.isFinite(parsedPeriodEnd)
+        ? parsedPeriodEnd
+        : null;
+  }
+
+  const manual =
+    !autoRefunded &&
+    (refundFailed || syncPending || refundInProgress || applyAction === 'error');
   const status: LegalRequestStatus = manual ? 'en_proceso' : 'resuelta';
   const nowIso = new Date().toISOString();
+
+  const resolutionNote = autoRefunded
+    ? `Baja inmediata con reembolso total de ${
+        auto.refund?.amountArs ?? 0
+      } ARS (MP ${auto.refundId ?? 's/d'}) por arrepentimiento dentro de los 10 días.`
+    : refundFailed
+      ? noteForManual(
+          `Renovación cancelada; Mercado Pago rechazó el reembolso${
+            auto.detail ? ` (${auto.detail})` : ''
+          }. Reintentar el reembolso.`,
+        )
+      : syncPendingRefund
+        ? noteForManual(
+            'Reembolso total procesado en MP; falta converger payments/subscriptions/users.',
+          )
+        : syncPendingClose
+          ? noteForManual(
+              'Renovación cancelada; el cierre local no convergió (sin reembolso por falta de saldo).',
+            )
+          : refundInProgress
+          ? noteForManual(
+              'Ya hay un reembolso en curso para este pago; esperar y reconciliar (no duplicar).',
+            )
+          : manual
+            ? noteForManual('Preapproval cancelado en MP; falta reconciliar el estado local (R9).')
+            : 'Baja confirmada y preapproval cancelado (R9).';
 
   const updated = await service
     .from('legal_requests')
@@ -1060,9 +1250,7 @@ export async function confirmBajaByToken(
       status,
       confirmed_at: nowIso,
       responded_at: manual ? null : nowIso,
-      resolution_note: manual
-        ? noteForManual('Preapproval cancelado en MP; falta reconciliar el estado local (R9).')
-        : 'Baja confirmada y preapproval cancelado (R9).',
+      resolution_note: resolutionNote,
     })
     .eq('id', row.id)
     .select('*')
@@ -1081,21 +1269,35 @@ export async function confirmBajaByToken(
   const finalRow = updated.data ?? row;
   const alert = ownerAlert(
     finalRow,
-    manual
-      ? 'Preapproval cancelado en MP; apply R9 devolvió error (reconciliar).'
-      : `Baja efectiva: preapproval ${preapprovalId} cancelado; periodo hasta ${periodEndMs ? new Date(periodEndMs).toISOString() : 'sin fecha'}.`,
+    autoRefunded
+      ? `Baja inmediata con reembolso total: preapproval ${preapprovalId} cancelado; refund MP ${auto.refundId ?? 's/d'}.`
+      : refundFailed
+        ? 'Renovación cancelada; reembolso rechazado por MP: reintentar y avisar al cliente.'
+        : syncPendingRefund
+          ? 'Reembolso total procesado; estado local pendiente de sincronizar: reconciliar.'
+          : syncPendingClose
+            ? 'Renovación cancelada; cierre local pendiente de sincronizar (sin reembolso).'
+            : refundInProgress
+            ? 'Reembolso en curso para el pago: esperar y reconciliar; NO duplicar.'
+            : manual
+              ? 'Preapproval cancelado en MP; apply R9 devolvió error (reconciliar).'
+              : `Baja efectiva: preapproval ${preapprovalId} cancelado; periodo hasta ${periodEndMs ? new Date(periodEndMs).toISOString() : 'sin fecha'}.`,
   );
   if (alert) await sendMail(alert, { timeoutMs: 8_000 });
 
-  await sendMail(
-    mailBajaDone({
-      to: row.email,
-      code: row.code,
-      periodEndMs,
-      manual,
-    }),
-    { timeoutMs: 8_000 },
-  );
+  /* Con reembolso total, el fold ya mandó el email de baja+reembolso. En los
+   * demás casos se manda el acuse propio de la baja. */
+  if (!autoRefunded) {
+    await sendMail(
+      mailBajaDone({
+        to: row.email,
+        code: row.code,
+        periodEndMs,
+        manual,
+      }),
+      { timeoutMs: 8_000 },
+    );
+  }
 
   return {
     ok: true,
@@ -1104,11 +1306,25 @@ export async function confirmBajaByToken(
     periodEndMs,
     manual,
     alreadyConfirmed: false,
-    message: manual
-      ? 'Cancelamos el débito en Mercado Pago. La confirmación local queda en proceso; te contactamos si hace falta.'
-      : periodEndMs
-        ? `Baja confirmada. Tu acceso sigue hasta el ${new Date(periodEndMs).toLocaleDateString('es-AR')} (fin del ciclo ya pago).`
-        : 'Baja confirmada. No se generan cobros posteriores.',
+    message: autoRefunded
+      ? `Baja confirmada. Reembolsamos ${
+          formatArs(auto.refund?.amountArs ?? 0) ?? 'el total del ciclo'
+        } y el plan PRO quedó inactivo.`
+      : refundFailed
+        ? `Cancelamos el débito en Mercado Pago, pero el reembolso no se pudo procesar. Tu PRO sigue hasta ${
+            periodEndMs ? new Date(periodEndMs).toLocaleDateString('es-AR') : 'el fin del ciclo'
+          }; lo reintentamos y te contactamos.`
+        : syncPendingRefund
+          ? 'Procesamos el reembolso total. Estamos actualizando el estado del plan: en unos minutos vas a ver el PRO inactivo. Te contactamos si no se refleja.'
+          : syncPendingClose
+            ? 'Cancelamos el débito en Mercado Pago. La confirmación local queda en proceso; te contactamos si hace falta.'
+            : refundInProgress
+            ? 'Ya hay un reembolso en curso para tu pago. La baja queda en proceso y te contactamos cuando se confirme.'
+            : manual
+              ? 'Cancelamos el débito en Mercado Pago. La confirmación local queda en proceso; te contactamos si hace falta.'
+              : periodEndMs
+                ? `Baja confirmada. Tu acceso sigue hasta el ${new Date(periodEndMs).toLocaleDateString('es-AR')} (fin del ciclo ya pago).`
+                : 'Baja confirmada. No se generan cobros posteriores.',
   };
 }
 

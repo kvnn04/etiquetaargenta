@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mailScheduledClose } from '@/lib/payments/mail';
+import { mailCancellationRefund, mailScheduledClose } from '@/lib/payments/mail';
 
 /* ============================================================================
  * R9 — el email de cierre debe decir la VERDAD sobre el origen de la baja:
@@ -28,5 +28,34 @@ describe('mailScheduledClose — origen de la baja (R9)', () => {
     });
     expect(mail.html).toContain('Pediste la baja de tu suscripción PRO');
     expect(mail.html).not.toContain('desde la app');
+  });
+});
+
+describe('mailCancellationRefund — baja inmediata con reembolso (R9/R11)', () => {
+  it('reembolso total: informa el 100 % y el PRO inactivo sin prometer fechas del banco', () => {
+    const mail = mailCancellationRefund({
+      to: 'taller@example.com',
+      amountArs: 36_799,
+      refundKind: 'full',
+      occurredAtMs: Date.UTC(2026, 10, 20, 15),
+    });
+    expect(mail.subject).toContain('Baja confirmada');
+    expect(mail.html).toContain('100 %');
+    expect(mail.html).toContain('inactivo');
+    expect(mail.html).not.toMatch(/acreditad[oa] (el|en) \d/);
+    expect(mail.html).toContain('dependen de Mercado Pago');
+  });
+
+  it('reembolso parcial: muestra el monto prorrateado y los días no usados', () => {
+    const mail = mailCancellationRefund({
+      to: 'taller@example.com',
+      amountArs: 12_345.67,
+      refundKind: 'partial',
+      occurredAtMs: Date.UTC(2026, 10, 20, 15),
+      daysRemaining: 11,
+    });
+    expect(mail.html).toContain('12.345,67');
+    expect(mail.html).toContain('11 día(s)');
+    expect(mail.html).not.toContain('100 %');
   });
 });

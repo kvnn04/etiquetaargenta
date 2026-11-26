@@ -135,6 +135,24 @@ export function formatPricePerMonth(amount: number, currency = 'ARS'): string | 
   return base ? `${base} / mes` : null;
 }
 
+/**
+ * `$ 12.666,67` — montos de reembolso con centavos. El prorrateo se calcula a
+ * 2 decimales y la constancia/email deben mostrar EXACTAMENTE lo devuelto.
+ */
+export function formatArsExact(amount: number, currency = 'ARS'): string | null {
+  if (!Number.isFinite(amount)) return null;
+  try {
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Fechas (R1 tz canónica; §4: formato DD/MM/YYYY)                             */
 /* -------------------------------------------------------------------------- */
@@ -299,7 +317,13 @@ export type SubscriptionEvent =
   /** Reembolso TOTAL del ciclo vigente (R11.4): acceso cortado ya. */
   | { kind: 'reembolso_total'; occurredAtMs: number }
   /** Contracargo del ciclo vigente (R11.6): suspensión inmediata. */
-  | { kind: 'contracargo'; occurredAtMs: number };
+  | { kind: 'contracargo'; occurredAtMs: number }
+  /**
+   * Baja INMEDIATA pedida por el usuario con reembolso (total o prorrateado).
+   * No es un reembolso originado en MP: el motivo del cierre es `cancel` y la
+   * UI lo distingue de `refund` (R11.4) y `chargeback` (R11.6).
+   */
+  | { kind: 'cancelacion_inmediata'; occurredAtMs: number };
 
 /** Patch a aplicar: `undefined` = no tocar, `null` = limpiar a NULL. */
 export interface SubscriptionPatch {
@@ -418,7 +442,8 @@ export function transitionSubscription(
       return null;
     }
     case 'reembolso_total':
-    case 'contracargo': {
+    case 'contracargo':
+    case 'cancelacion_inmediata': {
       // Solo desde un ciclo VIVO: `inactiva` ya está en FREE y `revocada` ya
       // fue cerrada (un contracargo posterior no duplica email ni transición).
       if (
@@ -433,7 +458,12 @@ export function transitionSubscription(
         freezePrice: false,
         graceExpiresAtMs: null,
         periodEndMs: null,
-        closureReason: event.kind === 'reembolso_total' ? 'refund' : 'chargeback',
+        closureReason:
+          event.kind === 'reembolso_total'
+            ? 'refund'
+            : event.kind === 'contracargo'
+              ? 'chargeback'
+              : 'cancel',
         closedAtMs: event.occurredAtMs,
       };
     }

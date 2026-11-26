@@ -12,7 +12,7 @@
  * Remitente: EMAIL_FROM verificado en Resend (dominio con DNS al deployar).
  * ============================================================================ */
 
-import { formatArs, formatDateAR, MERCADOPAGO_PORTAL_URL } from '@/lib/payments/core';
+import { formatArs, formatArsExact, formatDateAR, MERCADOPAGO_PORTAL_URL } from '@/lib/payments/core';
 
 const RESEND_API = 'https://api.resend.com/emails';
 
@@ -23,6 +23,7 @@ export type MailKind =
   /* Posición 13 (R11.9): reembolsos, contracargo y alerta operativa. */
   | 'reembolso_total'
   | 'reembolso_parcial'
+  | 'baja_con_reembolso'
   | 'contracargo'
   | 'alerta_pago'
   /* Posición 12 (R13.4/R13.6/R13.10): acuses y alertas legales. */
@@ -233,6 +234,33 @@ export function mailRefundPartial(input: {
     to: input.to,
     subject: 'Registramos un reembolso parcial — Simulador Mates',
     html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Reembolso parcial</h2><p>Registramos un reembolso parcial de <strong>${devuelto}</strong> sobre tu pago de ${original}.</p><p>Tu plan PRO sigue activo ${vigencia}. No se generan cobros extra por este ajuste.</p><p style="margin-top:12px;color:#78716c">Tus proyectos, assets y links se conservan. Si tenés dudas, respondé este email.</p></div>`,
+  };
+}
+
+/**
+ * Baja INMEDIATA pedida por el usuario con reembolso (total o prorrateado).
+ * El acceso ya se cortó; el texto NO promete plazos de acreditación del banco.
+ */
+export function mailCancellationRefund(input: {
+  to: string;
+  amountArs: number;
+  refundKind: 'full' | 'partial';
+  occurredAtMs: number;
+  daysRemaining?: number | null;
+}): MailContent {
+  const monto = formatArsExact(input.amountArs) ?? 'el monto del reembolso';
+  const fecha = formatDateAR(input.occurredAtMs) ?? '';
+  const alcance =
+    input.refundKind === 'full'
+      ? 'Reembolsamos el <strong>100 %</strong> del saldo de tu último pago'
+      : `Reembolsamos <strong>${monto}</strong> por los días no usados de tu ciclo${
+          input.daysRemaining != null ? ` (${input.daysRemaining} día(s))` : ''
+        }`;
+  return {
+    kind: 'baja_con_reembolso',
+    to: input.to,
+    subject: 'Baja confirmada y reembolso procesado — Plan PRO inactivo',
+    html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Baja confirmada</h2><p>Procesamos tu baja inmediata. ${alcance} del ${fecha}.</p><p>El plan PRO quedó <strong>inactivo</strong>. Tus proyectos, assets y links siguen guardados: podés reactivar PRO cuando quieras desde Perfil → Suscripción.</p><p style="margin-top:12px;color:#78716c">El reintegro se procesa por el mismo medio de pago. Los plazos de acreditación dependen de Mercado Pago y de tu banco: no prometemos fechas.</p></div>`,
   };
 }
 

@@ -25,6 +25,8 @@ interface SuccessState {
   code: string;
   emailSent: boolean;
   withinWindow: boolean;
+  autoRefund: 'processed' | 'sync_pending' | 'failed' | 'not_applicable';
+  autoRefundAmountArs: number | null;
 }
 
 const INITIAL = {
@@ -95,6 +97,8 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
             code?: string;
             emailSent?: boolean;
             withinWindow?: boolean;
+            autoRefund?: 'processed' | 'sync_pending' | 'failed' | 'not_applicable';
+            autoRefundAmountArs?: number | null;
             message?: string;
             error?: string;
             fields?: Record<string, string>;
@@ -106,6 +110,11 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
           code: payload.code,
           emailSent: Boolean(payload.emailSent),
           withinWindow: Boolean(payload.withinWindow),
+          autoRefund: payload.autoRefund ?? 'not_applicable',
+          autoRefundAmountArs:
+            typeof payload.autoRefundAmountArs === 'number'
+              ? payload.autoRefundAmountArs
+              : null,
         });
         return;
       }
@@ -128,28 +137,80 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
   }
 
   if (success) {
+    const refundText =
+      success.autoRefundAmountArs != null
+        ? new Intl.NumberFormat('es-AR', {
+            style: 'currency',
+            currency: 'ARS',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(success.autoRefundAmountArs)
+        : null;
     return (
       <LegalSuccess
-        title="Solicitud registrada"
+        title={
+          success.autoRefund === 'processed' || success.autoRefund === 'sync_pending'
+            ? 'Arrepentimiento ejecutado'
+            : 'Solicitud registrada'
+        }
         code={success.code}
         emailSent={success.emailSent}
         contactEmail={contactEmail || undefined}
         onReset={reset}
       >
-        <p>
-          {success.withinWindow
-            ? 'La solicitud queda dentro de los 10 días corridos del arrepentimiento (Ley 24.240 art. 34 y Disposición 954/2025).'
-            : 'La fecha informada queda fuera de los 10 días corridos. La revisamos igual y te respondemos con una decisión fundada.'}
-        </p>
-        <p>
-          En un plazo máximo de <strong>24 horas</strong> te confirmamos el encuadre y el reembolso.
-          El reintegro se hace por el mismo medio de pago, por el total del ciclo, y la acreditación
-          final depende de Mercado Pago y del banco emisor.
-        </p>
-        <p>
-          Si corresponde, damos de baja el acceso al plan. Tus proyectos, assets y links se
-          conservan.
-        </p>
+        {success.autoRefund === 'processed' ? (
+          <>
+            <p>
+              Tu pago estaba dentro de los <strong>10 días corridos</strong> del arrepentimiento
+              (Ley 24.240 art. 34 y Disposición 954/2025). Reembolsamos{' '}
+              <strong>{refundText ?? 'el total del ciclo'}</strong> por el mismo medio de pago y
+              dimos de baja el plan PRO <strong>ahora</strong>.
+            </p>
+            <p>
+              La acreditación final depende de Mercado Pago y del banco emisor. Tus proyectos,
+              assets y links se conservan.
+            </p>
+          </>
+        ) : success.autoRefund === 'sync_pending' ? (
+          <>
+            <p>
+              Tu pago estaba dentro de los <strong>10 días corridos</strong> y procesamos el
+              reembolso de <strong>{refundText ?? 'el total del ciclo'}</strong> por el mismo medio
+              de pago. Estamos terminando de actualizar el estado de tu plan: en unos minutos vas a
+              ver el PRO inactivo.
+            </p>
+            <p>
+              La acreditación final depende de Mercado Pago y del banco emisor. Tus proyectos,
+              assets y links se conservan.
+            </p>
+          </>
+        ) : success.autoRefund === 'failed' ? (
+          <>
+            <p>
+              Registramos tu arrepentimiento y cancelamos la renovación. Mercado Pago no aceptó el
+              reembolso en este intento: lo reintentamos y te contactamos. Tu PRO sigue hasta el
+              fin del ciclo ya pago.
+            </p>
+            <p>Tus proyectos, assets y links se conservan.</p>
+          </>
+        ) : (
+          <>
+            <p>
+              {success.withinWindow
+                ? 'La solicitud queda dentro de los 10 días corridos del arrepentimiento (Ley 24.240 art. 34 y Disposición 954/2025).'
+                : 'La fecha informada queda fuera de los 10 días corridos. La revisamos igual y te respondemos con una decisión fundada.'}
+            </p>
+            <p>
+              En un plazo máximo de <strong>24 horas</strong> te confirmamos el encuadre y el
+              reembolso. El reintegro se hace por el mismo medio de pago, por el total del ciclo, y
+              la acreditación final depende de Mercado Pago y del banco emisor.
+            </p>
+            <p>
+              Si corresponde, damos de baja el acceso al plan. Tus proyectos, assets y links se
+              conservan.
+            </p>
+          </>
+        )}
       </LegalSuccess>
     );
   }

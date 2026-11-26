@@ -41,6 +41,17 @@ export async function POST(request: NextRequest) {
   });
   if (!result.ok) return serviceFailure(result, 'arrepentimiento');
 
+  const message =
+    result.autoRefund === 'processed'
+      ? 'Arrepentimiento ejecutado: reembolso total procesado y plan PRO dado de baja.'
+      : result.autoRefund === 'sync_pending'
+        ? 'Reembolso total procesado. Estamos actualizando el estado del plan; en unos minutos vas a ver el PRO inactivo.'
+        : result.autoRefund === 'failed'
+          ? 'Solicitud registrada. La renovación quedó cancelada, pero Mercado Pago no aceptó el reembolso en este intento: lo reintentamos y te contactamos.'
+          : validation.value.withinWindow
+            ? 'Solicitud registrada dentro de los 10 días corridos.'
+            : 'Solicitud registrada. La fecha informada queda fuera de los 10 días corridos: la revisamos igual.';
+
   return okJson(
     {
       code: result.row.code,
@@ -48,9 +59,9 @@ export async function POST(request: NextRequest) {
       emailSent: result.emailSent,
       withinWindow: validation.value.withinWindow,
       responseHours: LEGAL_RESPONSE_HOURS,
-      message: validation.value.withinWindow
-        ? 'Solicitud registrada dentro de los 10 días corridos.'
-        : 'Solicitud registrada. La fecha informada queda fuera de los 10 días corridos: la revisamos igual.',
+      autoRefund: result.autoRefund,
+      autoRefundAmountArs: result.autoRefundAmountArs,
+      message,
     },
     201,
   );

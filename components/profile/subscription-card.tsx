@@ -8,6 +8,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import {
   formatArs,
+  formatArsExact,
   formatDateAR,
   formatPricePerMonth,
   graceDaysLeft,
@@ -20,6 +21,9 @@ import {
   type PaymentStatus,
   type SubscriptionStatus,
 } from '@/lib/payments/core';
+import {
+  type CancellationRefundQuote,
+} from '@/lib/payments/refunds';
 import type { Plan } from '@/lib/permissions';
 
 /* ==========================================================================
@@ -90,16 +94,36 @@ type VerifyState =
   | { kind: 'mp_down' }
   | { kind: 'error'; message: string };
 
+type CancelMode = 'end_of_cycle' | 'immediate';
+
+interface RefundView {
+  amountArs: number;
+  kind: 'full' | 'partial' | 'none';
+  reason: string;
+  daysSincePayment: number | null;
+  daysRemaining: number | null;
+}
+
 type CancelState =
   | { kind: 'idle' }
   | { kind: 'confirming' }
-  | { kind: 'sending' }
+  | { kind: 'sending'; mode: CancelMode }
   | {
       kind: 'done';
+      mode: CancelMode;
+      status: SubscriptionStatus;
       periodEndMs: number | null;
       warning: 'LOCAL_SYNC_PENDING' | null;
+      refund: RefundView | null;
+      refundId: string | null;
+      fallbackReason: string | null;
     }
-  | { kind: 'error'; message: string };
+  | {
+      kind: 'error';
+      message: string;
+      periodEndMs?: number | null;
+      refund?: RefundView | null;
+    };
 
 interface BadgeStyle {
   className: string;
@@ -162,6 +186,7 @@ export default function SubscriptionCard({
   payments,
   pago,
   nowMs,
+  refundQuote,
   lastSyncedAtMs,
   accountEmail,
   support,
@@ -170,6 +195,7 @@ export default function SubscriptionCard({
   payments: PaymentRowView[];
   pago: PagoBanner;
   nowMs: number; // del server (evita hydration shift; PlanWatcher/refresh mantienen vigencia)
+  refundQuote: CancellationRefundQuote; // cotización calculada por el server (solo estimación)
   lastSyncedAtMs: number | null;
   accountEmail: string | null;
   support: SupportChannels;
@@ -188,6 +214,14 @@ export default function SubscriptionCard({
     (p) => p.status === 'approved' || p.status === 'partially_refunded',
   );
   const partialRefund = planPro && fundingPayment?.status === 'partially_refunded';
+
+  /* Baja inmediata (R9 + R11.5): la cotización la calcula el server con la
+   * misma función pura; acá solo se muestra. Nunca se manda un importe desde
+   * el cliente. */
+  const refundText =
+    refundQuote.kind === 'none'
+      ? null
+      : formatArsExact(refundQuote.amountArs) ?? `$ ${refundQuote.amountArs}`;
 
   /* R9: baja directa sólo antes de programar el cierre. La fecha mostrada es
    * la del fin del ciclo ya pagado (o la ventana de gracia si está en dunning). */
@@ -319,21 +353,27 @@ export default function SubscriptionCard({
   /* Baja directa (R9): POST sin body; el server resuelve el preapproval */
   /* desde la sesión y aplica `programada_cierre` + `period_end`.        */
   /* ------------------------------------------------------------------ */
-  async function cancelSubscription() {
+  async function cancelSubscription(mode: CancelMode) {
     if (cancel.kind === 'sending') return;
-    setCancel({ kind: 'sending' });
+    setCancel({ kind: 'sending', mode });
 
     try {
       const res = await fetch('/api/billing/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
       });
       const data = (await res.json().catch(() => null)) as {
         ok?: boolean;
         error?: string;
+        mode?: string;
+        status?: SubscriptionStatus;
         periodEndMs?: number | null;
         alreadyCancelled?: boolean;
         warning?: string | null;
+        refund?: RefundView | null;
+        refundId?: string | null;
+        fallbackReason?: string | null;
       } | null;
 
       if (res.status === 401) {
@@ -351,23 +391,51 @@ export default function SubscriptionCard({
               ? 'No pudimos validar que la suscripción sea tuya. No cancelamos nada; escribinos.'
               : data?.error === 'SIN_SUSCRIPCION'
                 ? 'No tenés una suscripción PRO activa para cancelar.'
-                : 'La suscripción ya no está en un estado cancelable desde acá.';
-        setCancel({ kind: 'error', message });
+                : data?.error === 'REEMBOLSO_EN_CURSO'
+                  ? `Ya hay un reembolso en curso para tu último pago. La renovación quedó cancelada${
+                      data?.periodEndMs
+                        ? ` y tu PRO sigue hasta el ${formatDateAR(data.periodEndMs)}`
+                        : ''
+                    } mientras se confirma.`
+                  : data?.error === 'REEMBOLSO_NO_ELEGIBLE'
+                    ? 'Tu último pago ya no está dentro de la ventana de reembolso. Podés cancelar la renovación y seguir con PRO hasta el fin del ciclo.'
+                    : 'La suscripción ya no está en un estado cancelable desde acá.';
+        setCancel({
+          kind: 'error',
+          message,
+          periodEndMs: data?.periodEndMs ?? null,
+          refund: data?.refund ?? null,
+        });
+        router.refresh();
         return;
       }
       if (res.status === 502) {
+        const refundFailed = data?.error === 'REFUND_FAILED';
         setCancel({
           kind: 'error',
-          message: 'Mercado Pago no respondió en este momento. Probá de nuevo en unos minutos.',
+          message: refundFailed
+            ? `Cancelamos la renovación, pero Mercado Pago no aceptó el reembolso. Tu PRO sigue hasta ${
+                data?.periodEndMs ? `el ${formatDateAR(data.periodEndMs)}` : 'el fin del ciclo'
+              }; reintentá en unos minutos o escribinos.`
+            : 'Mercado Pago no respondió en este momento. Probá de nuevo en unos minutos.',
+          periodEndMs: data?.periodEndMs ?? null,
+          refund: data?.refund ?? null,
         });
+        router.refresh();
         return;
       }
       if (res.status === 503) {
         setCancel({
           kind: 'error',
-          message:
-            'La cancelación no está disponible en este momento. Probá más tarde o usá Mercado Pago.',
+          message: data?.periodEndMs
+            ? `Cancelamos la renovación, pero no pudimos iniciar el reembolso. Tu PRO sigue hasta el ${formatDateAR(
+                data.periodEndMs,
+              )}; reintentá en unos minutos o escribinos.`
+            : 'La cancelación no está disponible en este momento. Probá más tarde o usá Mercado Pago.',
+          periodEndMs: data?.periodEndMs ?? null,
+          refund: data?.refund ?? null,
         });
+        router.refresh();
         return;
       }
       if (!res.ok || !data?.ok) {
@@ -380,12 +448,17 @@ export default function SubscriptionCard({
 
       setCancel({
         kind: 'done',
+        mode: data.mode === 'immediate' ? 'immediate' : 'end_of_cycle',
+        status: data.status ?? 'programada_cierre',
         periodEndMs:
           typeof data.periodEndMs === 'number' && Number.isFinite(data.periodEndMs)
             ? data.periodEndMs
             : null,
         warning:
           data.warning === 'LOCAL_SYNC_PENDING' ? 'LOCAL_SYNC_PENDING' : null,
+        refund: data.refund ?? null,
+        refundId: data.refundId ?? null,
+        fallbackReason: data.fallbackReason ?? null,
       });
       router.refresh();
     } catch {
@@ -717,7 +790,7 @@ export default function SubscriptionCard({
       {/* -------------------------------------------------------------- */}
       {/* Baja de la suscripción (R9): confirmación + resultado           */}
       {/* -------------------------------------------------------------- */}
-      {cancel.kind === 'confirming' && (
+      {(cancel.kind === 'confirming' || cancel.kind === 'sending') && (
         <div
           className="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-3"
           role="alertdialog"
@@ -728,27 +801,85 @@ export default function SubscriptionCard({
             ¿Estás seguro de que querés cancelar?
           </p>
           <p id="cancel-sub-desc" className="mt-1 text-[11px] leading-relaxed text-stone-300">
-            No se te va a cobrar más. Seguís con PRO hasta{' '}
-            {cancelAccessUntilMs ? (
-              <b>el {formatDateAR(cancelAccessUntilMs)}</b>
-            ) : (
-              'el fin del ciclo ya pagado'
-            )}{' '}
-            y después tu cuenta vuelve a FREE sin perder proyectos, assets ni links.
+            En los dos casos dejamos de cobrarte. Elegí qué pasa con el ciclo ya pago:
           </p>
+
+          <div className="mt-2 grid gap-2">
+            <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-stone-200">
+                Al final del ciclo — sin reembolso
+              </p>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-stone-400">
+                Seguís con PRO hasta{' '}
+                {cancelAccessUntilMs ? (
+                  <b className="text-stone-300">{formatDateAR(cancelAccessUntilMs)}</b>
+                ) : (
+                  'el fin del ciclo ya pagado'
+                )}{' '}
+                y después tu cuenta vuelve a FREE sin perder proyectos, assets ni links.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void cancelSubscription('end_of_cycle')}
+                disabled={cancel.kind === 'sending'}
+                className="mt-2 border-rose-500/50 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+              >
+                <CircleX className="h-3.5 w-3.5" />
+                Cancelar al final del ciclo
+              </Button>
+            </div>
+
+            {refundQuote.kind !== 'none' && refundText && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-2">
+                <p className="text-[11px] font-semibold text-amber-100">
+                  Ahora — con reembolso
+                </p>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-stone-400">
+                  Te devolvemos <b className="text-amber-200">{refundText}</b>{' '}
+                  {refundQuote.kind === 'full'
+                    ? '(100 % del saldo de tu último pago)'
+                    : `(${refundQuote.daysRemaining ?? 0} día(s) no usados)`}{' '}
+                  y el plan PRO se desactiva al confirmar. El reintegro va por el mismo medio de
+                  pago; los plazos dependen de Mercado Pago y tu banco.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void cancelSubscription('immediate')}
+                  disabled={cancel.kind === 'sending'}
+                  className="mt-2 border-amber-500/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
+                >
+                  <CircleX className="h-3.5 w-3.5" />
+                  Cancelar ahora y reembolsar {refundText}
+                </Button>
+              </div>
+            )}
+
+            {refundQuote.kind === 'none' && (
+              <p className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed text-stone-400">
+                No hay saldo a reintegrar: {refundNoneReason(refundQuote.reason)}. La única baja
+                disponible conserva PRO hasta el fin del ciclo.
+              </p>
+            )}
+          </div>
+
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setCancel({ kind: 'idle' })}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCancel({ kind: 'idle' })}
+              disabled={cancel.kind === 'sending'}
+            >
               Volver
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void cancelSubscription()}
-              className="border-rose-500/50 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
-            >
-              <CircleX className="h-3.5 w-3.5" />
-              Sí, cancelar suscripción
-            </Button>
+            {cancel.kind === 'sending' && (
+              <span className="text-[10px] text-stone-400">
+                {cancel.mode === 'immediate'
+                  ? 'Procesando el reembolso en Mercado Pago…'
+                  : 'Cancelando el débito…'}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -776,8 +907,11 @@ export default function SubscriptionCard({
         >
           {cancel.warning === 'LOCAL_SYNC_PENDING' ? (
             <>
-              Cancelamos el débito en Mercado Pago. Estamos actualizando tu estado local:
-              recargá en unos segundos para ver el cierre programado.{' '}
+              {cancel.mode === 'immediate' && cancel.refundId
+                ? `Procesamos el reembolso de ${
+                    formatArsExact(cancel.refund?.amountArs ?? 0) ?? 'tu último pago'
+                  }. Estamos actualizando tu estado local: recargá en unos segundos para ver el plan actualizado.`
+                : 'Cancelamos el débito en Mercado Pago. Estamos actualizando tu estado local: recargá en unos segundos para ver el cierre programado.'}{' '}
               <button
                 type="button"
                 onClick={() => router.refresh()}
@@ -785,6 +919,19 @@ export default function SubscriptionCard({
               >
                 Actualizar estado
               </button>
+            </>
+          ) : cancel.mode === 'immediate' && cancel.status === 'revocada' ? (
+            <>
+              Listo: reembolsamos{' '}
+              <b>{formatArsExact(cancel.refund?.amountArs ?? 0) ?? 'tu último pago'}</b> y el
+              plan PRO quedó <b>inactivo</b>. Tus proyectos, assets y links siguen guardados.
+            </>
+          ) : cancel.mode === 'immediate' && cancel.fallbackReason ? (
+            <>
+              No había saldo a reintegrar ({refundNoneReason(cancel.fallbackReason)}). Cancelamos
+              la renovación: seguís con PRO hasta{' '}
+              <b>{cancel.periodEndMs ? formatDateAR(cancel.periodEndMs) : 'el fin del ciclo'}</b>{' '}
+              y después tu cuenta vuelve a FREE.
             </>
           ) : cancel.periodEndMs ? (
             <>
@@ -798,17 +945,18 @@ export default function SubscriptionCard({
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {canCancel && cancel.kind !== 'confirming' && cancel.kind !== 'done' && (
+        {canCancel &&
+          cancel.kind !== 'confirming' &&
+          cancel.kind !== 'sending' &&
+          cancel.kind !== 'done' && (
           <Button
             variant="outline"
             size="sm"
             onClick={() => setCancel({ kind: 'confirming' })}
-            disabled={cancel.kind === 'sending'}
-            aria-busy={cancel.kind === 'sending'}
             className="border-rose-500/30 text-rose-300 hover:border-rose-400 hover:text-rose-200"
           >
             <CircleX className="h-3 w-3" />
-            {cancel.kind === 'sending' ? 'Cancelando…' : 'Cancelar suscripción'}
+            Cancelar suscripción
           </Button>
         )}
         {planPro && (
@@ -834,6 +982,24 @@ export default function SubscriptionCard({
       )}
     </section>
   );
+}
+
+/** Motivo legible por el que la baja inmediata no tiene saldo a reintegrar. */
+function refundNoneReason(reason: string): string {
+  switch (reason) {
+    case 'no_payment':
+      return 'no encontramos un pago aprobado a tu nombre';
+    case 'no_balance':
+      return 'el saldo del último pago ya no tiene monto disponible';
+    case 'less_than_one_day':
+      return 'faltan menos de 24 h para que termine el ciclo';
+    case 'cycle_expired':
+      return 'el ciclo ya venció';
+    case 'invalid_dates':
+      return 'las fechas del pago no permiten calcular el prorrateo';
+    default:
+      return 'no hay un monto reembolsable';
+  }
 }
 
 /** Mensaje del ciclo según el estado (banners §4: gracia/cierre/vacío). */

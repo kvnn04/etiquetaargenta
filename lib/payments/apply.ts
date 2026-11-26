@@ -59,10 +59,12 @@ import {
   mergeRefundStatus,
   refundImpactKindFor,
   resolveRefundStatus,
+  type RefundImpact,
   type RefundLikeStatus,
 } from '@/lib/payments/refunds';
 import {
   hasResendCredentials,
+  mailCancellationRefund,
   mailChargeback,
   mailGrace,
   mailPaymentInternalAlert,
@@ -73,6 +75,13 @@ import {
   sendMail,
   type MailAttachment,
 } from '@/lib/payments/mail';
+import {
+  claimRefundRequestEmail,
+  findCancellationRefundForPayment,
+  markRefundRequestApplied,
+  markRefundRequestEmailResult,
+  type RefundRequestRow,
+} from '@/lib/payments/refund-requests';
 import {
   cancelPreapproval,
   type MpChargebackFull,
@@ -655,7 +664,7 @@ async function insertAdjustment(
 }
 
 /** Alerta operativa al titular (Q7): LEGAL_EMAIL primero, EMAIL_FROM después. */
-async function sendPaymentAlert(input: {
+export async function sendPaymentAlert(input: {
   userId: string;
   mpPaymentId: number;
   kind: 'refund_total' | 'refund_partial' | 'chargeback' | 'chargeback_reversal';
@@ -707,6 +716,12 @@ async function applyRefundEvent(
     forceKind?: 'chargeback';
     rawStatus?: string | null;
     precomputed?: { subBefore: SubRow | null; validation: PaymentValidationOk };
+    /**
+     * Baja inmediata con reembolso: el caller ya confirmó la solicitud. Fuerza
+     * la revocación aunque el reembolso sea PARCIAL (excepción a R11.5) y usa
+     * `closure_reason='cancel'` (no `refund`).
+     */
+    forceCancellation?: boolean;
   } = {},
 ): Promise<ApplyResult> {
   const service = createSupabaseServiceClient();
@@ -747,6 +762,16 @@ async function applyRefundEvent(
       : 'refund';
   const rawStatus = opts.rawStatus ?? statusDetail ?? pay.status;
   const chargeMs = isoToMs(pay.dateApproved) ?? isoToMs(pay.dateCreated) ?? occurredMs;
+
+  /* Baja inmediata: la solicitud se reclama ANTES de llamar a MP, así el
+   * webhook que llegue en paralelo ya ve la intención y revoca con motivo
+   * `cancel` aunque el reembolso sea parcial. Si la migración 0012 no está
+   * aplicada, el lookup devuelve null y R11 sigue funcionando igual. */
+  const cancellationRequest: RefundRequestRow | null =
+    kind === 'refund'
+      ? await findCancellationRefundForPayment(service, ctx.userId, pay.id)
+      : null;
+  const cancellationRefund = cancellationRequest != null || opts.forceCancellation === true;
 
   /* 1) ¿El pago financió el ciclo vigente? Se consulta ANTES de actualizar el
    * pago: un parcial sigue siendo el pago del ciclo (approved/partially). */
@@ -943,11 +968,15 @@ async function applyRefundEvent(
           amount,
           refundedAmount: mergedRefunded,
         });
-  const impact = decideRefundImpact({
-    kind: impactKind,
-    currentCycle,
-    subscriptionStatus: subBefore?.status ?? 'inactiva',
-  });
+  const impact: RefundImpact = cancellationRefund
+    ? currentCycle
+      ? 'revoke'
+      : 'audit'
+    : decideRefundImpact({
+        kind: impactKind,
+        currentCycle,
+        subscriptionStatus: subBefore?.status ?? 'inactiva',
+      });
 
   let statusAfter: SubscriptionStatus = subBefore?.status ?? 'inactiva';
   let planAfter: Plan = subBefore
@@ -964,9 +993,11 @@ async function applyRefundEvent(
 
   if (impact === 'revoke') {
     const event =
-      impactKind === 'chargeback'
-        ? ({ kind: 'contracargo', occurredAtMs: occurredMs } as const)
-        : ({ kind: 'reembolso_total', occurredAtMs: occurredMs } as const);
+      cancellationRefund
+        ? ({ kind: 'cancelacion_inmediata', occurredAtMs: occurredMs } as const)
+        : impactKind === 'chargeback'
+          ? ({ kind: 'contracargo', occurredAtMs: occurredMs } as const)
+          : ({ kind: 'reembolso_total', occurredAtMs: occurredMs } as const);
 
     if (subBefore) {
       const patch = transitionSubscription(subBefore.status, event);
@@ -1063,49 +1094,95 @@ async function applyRefundEvent(
     .is('applied_at', null);
   if (applied.error) console.error('[mp apply refund applied_at]:', applied.error.message);
 
-  /* 6) Emails: SOLO con novedad nueva. Un reintento no reenvía (R11.9). */
+  /* 6) Emails: SOLO con novedad nueva. Un reintento no reenvía (R11.9).
+   * La baja inmediata tiene su propio email y su propio claim: el webhook y
+   * la API pueden foldear el mismo reembolso y solo uno lo manda. */
   let email: ApplyEmailOutcome = 'skipped';
-  if (newAdjustments > 0) {
+  const cancellationEmail =
+    cancellationRefund && impact !== 'audit' && cancellationRequest != null;
+  if (cancellationEmail || (newAdjustments > 0 && impact !== 'audit')) {
     const to = await mailTo(service, ctx.userId);
-    if (to && impact !== 'audit') {
-      const cycleEndMs =
-        isoToMs(subBefore?.period_end ?? null) ??
-        (subBefore?.cycle_anchor
-          ? nextCycleDateMs(
-              cycleAnchorDayOfStr(subBefore.cycle_anchor) ?? 1,
-              occurredMs,
-            )
-          : null);
-      const content =
-        impact === 'partial_keep'
-          ? mailRefundPartial({
+    if (to) {
+      if (cancellationEmail && cancellationRequest) {
+        const claimed = await claimRefundRequestEmail(
+          service,
+          cancellationRequest.id,
+          nowMs,
+        );
+        if (claimed) {
+          const refundedNow =
+            Number(cancellationRequest.amount) > 0
+              ? Number(cancellationRequest.amount)
+              : mergedRefunded;
+          const sent = await sendMail(
+            mailCancellationRefund({
               to,
-              amountArs: amount,
-              refundedArs: mergedRefunded,
-              cycleEndMs,
-            })
-          : impactKind === 'chargeback'
-            ? mailChargeback({
-                to,
-                amountArs: amount,
-                occurredAtMs: occurredMs,
-                supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || null,
-              })
-            : mailRefundTotal({
+              amountArs: refundedNow,
+              refundKind: cancellationRequest.refund_kind,
+              occurredAtMs: occurredMs,
+              daysRemaining: cancellationRequest.days_remaining,
+            }),
+            {
+              timeoutMs:
+                ctx.deadlineMs != null
+                  ? Math.max(1_000, Math.min(15_000, ctx.deadlineMs - Date.now()))
+                  : undefined,
+            },
+          );
+          email = sent.sent
+            ? 'sent'
+            : sent.note === 'env-no-configurado'
+              ? 'no_env'
+              : 'failed';
+          await markRefundRequestEmailResult(service, {
+            id: cancellationRequest.id,
+            sent: sent.sent,
+            error: sent.note,
+            nowMs,
+          });
+        }
+      } else {
+        const cycleEndMs =
+          isoToMs(subBefore?.period_end ?? null) ??
+          (subBefore?.cycle_anchor
+            ? nextCycleDateMs(
+                cycleAnchorDayOfStr(subBefore.cycle_anchor) ?? 1,
+                occurredMs,
+              )
+            : null);
+        const content =
+          impact === 'partial_keep'
+            ? mailRefundPartial({
                 to,
                 amountArs: amount,
                 refundedArs: mergedRefunded,
-                occurredAtMs: occurredMs,
-              });
-      const sent = await sendMail(content, {
-        timeoutMs:
-          ctx.deadlineMs != null
-            ? Math.max(1_000, Math.min(15_000, ctx.deadlineMs - Date.now()))
-            : undefined,
-      });
-      email = sent.sent ? 'sent' : sent.note === 'env-no-configurado' ? 'no_env' : 'failed';
+                cycleEndMs,
+              })
+            : impactKind === 'chargeback'
+              ? mailChargeback({
+                  to,
+                  amountArs: amount,
+                  occurredAtMs: occurredMs,
+                  supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || null,
+                })
+              : mailRefundTotal({
+                  to,
+                  amountArs: amount,
+                  refundedArs: mergedRefunded,
+                  occurredAtMs: occurredMs,
+                });
+        const sent = await sendMail(content, {
+          timeoutMs:
+            ctx.deadlineMs != null
+              ? Math.max(1_000, Math.min(15_000, ctx.deadlineMs - Date.now()))
+              : undefined,
+        });
+        email = sent.sent ? 'sent' : sent.note === 'env-no-configurado' ? 'no_env' : 'failed';
+      }
     }
+  }
 
+  if (newAdjustments > 0) {
     await sendPaymentAlert({
       userId: ctx.userId,
       mpPaymentId: pay.id,
@@ -1138,6 +1215,88 @@ async function applyRefundEvent(
     email,
     adjustmentKind: kind,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* applyConfirmedCancellationRefund — baja inmediata ya reembolsada en MP     */
+/* -------------------------------------------------------------------------- */
+
+export interface ConfirmedCancellationRefundInput {
+  userId: string;
+  source: ApplySource;
+  mpPaymentId: number;
+  paymentAmount: number;
+  refundedTotal: number;
+  refundAmount: number;
+  refundId: string;
+  occurredAtMs: number;
+  nowMs?: number;
+  deadlineMs?: number;
+}
+
+/**
+ * Fold LOCAL de una baja inmediata cuyo reembolso MP ya devolvió 200/201.
+ *
+ * El caller (API de baja o Botón de Arrepentimiento) ya:
+ *   1. canceló el preapproval;
+ *   2. reclamó la fila de `refund_requests` (idempotency key);
+ *   3. ejecutó `POST /v1/payments/{id}/refunds`.
+ *
+ * Acá se construye el pago sintético con el refund REAL y se reutiliza el fold
+ * de R11 con `forceCancellation`: aunque el monto sea parcial, revoca ya y
+ * deja `closure_reason='cancel'`. Si el webhook ganó la carrera, el fold es
+ * idempotente y el email sale una sola vez (claim en `refund_requests`).
+ */
+export async function applyConfirmedCancellationRefund(
+  input: ConfirmedCancellationRefundInput,
+): Promise<ApplyResult> {
+  const service = createSupabaseServiceClient();
+  const [local, sub] = await Promise.all([
+    readLocalPayment(service, input.userId, input.mpPaymentId),
+    readSubRow(service, input.userId),
+  ]);
+  const status: 'refunded' | 'partially_refunded' =
+    input.refundedTotal >= input.paymentAmount - 0.009
+      ? 'refunded'
+      : 'partially_refunded';
+  const occurredIso = new Date(input.occurredAtMs).toISOString();
+  const chargeIso = local?.occurred_at ?? occurredIso;
+
+  const pay: MpPaymentFull = {
+    id: input.mpPaymentId,
+    status,
+    statusDetail: 'refunded',
+    externalReference: input.userId,
+    transactionAmount: input.paymentAmount,
+    transactionAmountRefunded: input.refundedTotal,
+    refunds: [
+      {
+        id: input.refundId,
+        amount: input.refundAmount,
+        dateCreated: occurredIso,
+      },
+    ],
+    receiptUrl: null,
+    dateApproved: chargeIso,
+    dateLastUpdated: occurredIso,
+    dateCreated: chargeIso,
+    currencyId: 'ARS',
+    preapprovalId: sub?.preapproval_id ?? null,
+    payerEmail: null,
+  };
+
+  return applyRefundEvent(
+    pay,
+    {
+      userId: input.userId,
+      source: input.source,
+      watermarkMs: null,
+      nowMs: input.nowMs,
+      deadlineMs: input.deadlineMs,
+      allowMissingExternalReference: true,
+    },
+    { forceCancellation: true },
+  );
 }
 
 /* -------------------------------------------------------------------------- */

@@ -123,12 +123,9 @@ export default function BajaConfirm({
             Después vuelven los límites del plan FREE, conservando proyectos, assets y links.
           </p>
         )}
-        {result.manual && (
-          <p className="mt-2 text-xs leading-relaxed text-stone-400">
-            La solicitud quedó en la cola de atención manual. Te contactamos dentro de las próximas
-            24 horas al email informado.
-          </p>
-        )}
+        {/* El caso manual ya viene explicado con precisión en `result.message`
+            (reembolso procesado, rechazado o en curso). No se agrega un texto
+            genérico que podría contradecirlo. */}
         <p className="mt-4 text-[11px] leading-relaxed text-stone-500">
           Guardá este código. Si necesitás revertir la baja, escribinos dentro de los 30 días.
         </p>

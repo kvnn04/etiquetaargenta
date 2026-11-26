@@ -729,6 +729,108 @@ export async function getPayment(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Reembolsos de un pago (R9 + R11.5 — baja inmediata)                         */
+/* -------------------------------------------------------------------------- */
+
+/** Respuesta de `POST /v1/payments/{id}/refunds` (total o parcial). */
+export interface MpRefundResult {
+  id: string;
+  paymentId: number | null;
+  amount: number | null;
+  status: string;
+  dateCreated: string | null;
+}
+
+/**
+ * POST /v1/payments/{payment_id}/refunds — API oficial de reembolsos.
+ *
+ *   · `amount == null` ⇒ reembolso TOTAL (sin body, como documenta MP);
+ *   · `amount > 0`    ⇒ reembolso PARCIAL con `{ amount }`.
+ *
+ * `X-Idempotency-Key` es OBLIGATORIO: el caller guarda la key en
+ * `refund_requests` y la reutiliza en cada reintento. Un fetch repetido con la
+ * misma key jamás devuelve dos veces el dinero. Solo se considera éxito un
+ * HTTP 200/201 con `id`; el caller decide además por `status`.
+ */
+export async function refundPayment(
+  paymentId: string | number,
+  input: { amount?: number | null; idempotencyKey: string; timeoutMs?: number },
+): Promise<MpResult<MpRefundResult>> {
+  const env = mpEnv();
+  if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey) {
+    return { ok: false, status: 0, message: 'X-Idempotency-Key requerido' };
+  }
+  if (
+    input.amount != null &&
+    (!Number.isFinite(input.amount) || input.amount <= 0)
+  ) {
+    return { ok: false, status: 0, message: 'Monto de reembolso inválido' };
+  }
+
+  try {
+    const res = await fetch(
+      `${MP_API}/v1/payments/${encodeURIComponent(String(paymentId))}/refunds`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKey,
+        },
+        body: input.amount != null ? JSON.stringify({ amount: input.amount }) : undefined,
+        signal: timeoutSignal(input.timeoutMs),
+      },
+    );
+    /* Solo 200/201 confirman el reembolso (decisión del titular): un 202/204
+     * no es una confirmación y NO puede disparar el downgrade. */
+    if (res.status !== 200 && res.status !== 201) {
+      const detail = await mpErrorDetail(res);
+      console.error(
+        '[mp refund]:',
+        paymentId,
+        `HTTP ${res.status}`,
+        detail ? `— ${detail}` : '',
+      );
+      return { ok: false, status: res.status, message: detail ?? `HTTP ${res.status}` };
+    }
+
+    const raw = (await res.json()) as {
+      id?: string | number;
+      payment_id?: number | string | null;
+      amount?: number | string | null;
+      status?: string | null;
+      date_created?: string | null;
+    };
+    if (raw.id == null) {
+      console.error('[mp refund]: respuesta sin id');
+      return { ok: false, status: res.status, message: 'Respuesta sin id de reembolso' };
+    }
+    const paymentIdRaw = raw.payment_id;
+    return {
+      ok: true,
+      data: {
+        id: String(raw.id),
+        paymentId:
+          typeof paymentIdRaw === 'number'
+            ? paymentIdRaw
+            : typeof paymentIdRaw === 'string' && /^\d+$/.test(paymentIdRaw)
+              ? Number(paymentIdRaw)
+              : null,
+        amount: asNumberLike(raw.amount),
+        status: raw.status ?? 'approved',
+        dateCreated: asIso(raw.date_created),
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp refund]:', paymentId, message);
+    return { ok: false, status: 0, message };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Invoice de suscripción (topic subscription_authorized_payment)              */
 /* -------------------------------------------------------------------------- */
 

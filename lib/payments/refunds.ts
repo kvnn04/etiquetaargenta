@@ -12,6 +12,8 @@
  * ============================================================================ */
 
 import {
+  DAY_MS,
+  arDateParts,
   isLiveSubscriptionStatus,
   type PaymentStatus,
   type SubscriptionStatus,
@@ -175,4 +177,168 @@ export function isChargebackReversal(status: string): boolean {
     default:
       return false;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Baja inmediata con reembolso (R9 + R11.5, decisión del titular)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Motivo de la cotización. `none` siempre viene acompañado de un motivo
+ * legible para que la UI no invente un monto ni prometa un reembolso.
+ */
+export type CancellationRefundReason =
+  | 'full_window'
+  | 'prorated'
+  | 'no_payment'
+  | 'no_balance'
+  | 'less_than_one_day'
+  | 'cycle_expired'
+  | 'invalid_dates';
+
+export interface CancellationRefundQuote {
+  /** `full` = 100 % del saldo; `partial` = prorrateo; `none` = no hay dinero. */
+  kind: 'full' | 'partial' | 'none';
+  amountArs: number;
+  paymentAmount: number;
+  refundedBefore: number;
+  availableArs: number;
+  daysSincePayment: number | null;
+  daysRemaining: number | null;
+  cycleDays: number | null;
+  reason: CancellationRefundReason;
+}
+
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+
+/** Medianoche AR de un instante (03:00 UTC), para contar días corridos. */
+function arDayStartMs(ms: number): number {
+  const { year, month, day } = arDateParts(ms);
+  return Date.UTC(year, month - 1, day, 3);
+}
+
+/** Días de calendario argentino entre dos instantes (positivo si `to` > `from`). */
+export function arCalendarDaysBetween(fromMs: number, toMs: number): number {
+  return Math.round((arDayStartMs(toMs) - arDayStartMs(fromMs)) / DAY_MS);
+}
+
+/**
+ * Cotiza la baja inmediata de la suscripción (R9 + decisión del titular):
+ *
+ *   · dentro de los 10 días corridos desde el pago ⇒ 100 % del saldo;
+ *   · después ⇒ `monto_pagado / días_totales_ciclo * días_restantes`, en días
+ *     de calendario argentino y redondeado a 2 decimales;
+ *   · menos de 24 h para el vencimiento, ciclo vencido o sin pago aprobado ⇒
+ *     NO hay reembolso: se cancela la renovación y el PRO sigue hasta vencer.
+ *
+ * El monto SIEMPRE se topea al saldo no devuelto (`amount - refunded_amount`):
+ * un reembolso previo no se devuelve dos veces. Función pura: sin DB ni red.
+ */
+export function quoteCancellationRefund(input: {
+  paymentAmount: number | null;
+  refundedAmount?: number | null;
+  paidAtMs: number | null;
+  cycleEndMs: number | null;
+  nowMs: number;
+}): CancellationRefundQuote {
+  const paymentAmount =
+    input.paymentAmount != null && Number.isFinite(input.paymentAmount)
+      ? input.paymentAmount
+      : 0;
+  const refundedBefore = clampRefundedAmount(paymentAmount, input.refundedAmount ?? 0);
+  const availableArs = Math.max(0, round2(paymentAmount - refundedBefore));
+  const base = {
+    paymentAmount,
+    refundedBefore,
+    availableArs,
+    daysSincePayment: null,
+    daysRemaining: null,
+    cycleDays: null,
+  };
+
+  if (
+    paymentAmount <= 0 ||
+    input.paidAtMs == null ||
+    !Number.isFinite(input.paidAtMs) ||
+    input.cycleEndMs == null ||
+    !Number.isFinite(input.cycleEndMs)
+  ) {
+    return { ...base, kind: 'none', amountArs: 0, reason: 'no_payment' };
+  }
+  if (input.cycleEndMs <= input.paidAtMs) {
+    return { ...base, kind: 'none', amountArs: 0, reason: 'invalid_dates' };
+  }
+  if (availableArs <= 0.009) {
+    return { ...base, kind: 'none', amountArs: 0, reason: 'no_balance' };
+  }
+
+  const remainingMs = input.cycleEndMs - input.nowMs;
+  if (remainingMs <= 0) {
+    return { ...base, kind: 'none', amountArs: 0, reason: 'cycle_expired' };
+  }
+
+  const daysSincePayment = arCalendarDaysBetween(input.paidAtMs, input.nowMs);
+  const cycleDays = Math.max(1, arCalendarDaysBetween(input.paidAtMs, input.cycleEndMs));
+  const daysRemaining = arCalendarDaysBetween(input.nowMs, input.cycleEndMs);
+
+  if (daysSincePayment < 0) {
+    return {
+      ...base,
+      daysSincePayment,
+      daysRemaining,
+      cycleDays,
+      kind: 'none',
+      amountArs: 0,
+      reason: 'invalid_dates',
+    };
+  }
+
+  // Menos de 24 h exactas para el vencimiento: no hay reembolso (decisión).
+  if (remainingMs < DAY_MS || daysRemaining < 1) {
+    return {
+      ...base,
+      daysSincePayment,
+      daysRemaining,
+      cycleDays,
+      kind: 'none',
+      amountArs: 0,
+      reason: 'less_than_one_day',
+    };
+  }
+
+  if (daysSincePayment <= 10) {
+    return {
+      ...base,
+      daysSincePayment,
+      daysRemaining,
+      cycleDays,
+      kind: 'full',
+      amountArs: availableArs,
+      reason: 'full_window',
+    };
+  }
+
+  const prorated = round2((paymentAmount / cycleDays) * daysRemaining);
+  const amountArs = Math.min(availableArs, Math.max(0, prorated));
+  if (amountArs < 0.01) {
+    return {
+      ...base,
+      daysSincePayment,
+      daysRemaining,
+      cycleDays,
+      kind: 'none',
+      amountArs: 0,
+      reason: 'no_balance',
+    };
+  }
+
+  return {
+    ...base,
+    daysSincePayment,
+    daysRemaining,
+    cycleDays,
+    kind: 'partial',
+    amountArs,
+    reason: 'prorated',
+  };
 }
