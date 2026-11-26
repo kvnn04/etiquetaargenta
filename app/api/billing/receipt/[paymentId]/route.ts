@@ -88,7 +88,6 @@ export async function GET(
   try {
     const { buildPaymentReceiptPdf } = await import('@/lib/payments/receipt-pdf');
     const pdfBytes = await buildPaymentReceiptPdf({
-      paymentId: payment.id,
       mpPaymentId: Number(payment.mp_payment_id),
       amountArs: Number(payment.amount),
       currency: 'ARS',

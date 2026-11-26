@@ -16,8 +16,6 @@ import { LEGAL_ENTITY } from '@/lib/legal/config';
 import { formatArs, formatDateAR } from '@/lib/payments/core';
 
 export interface PaymentReceiptPdfInput {
-  /** UUID interno de `payments.id` (trazabilidad de soporte). */
-  paymentId: string;
   mpPaymentId: number;
   amountArs: number;
   currency: string;
@@ -279,20 +277,10 @@ export async function buildPaymentReceiptPdf(
 
   /* Emisor ---------------------------------------------------------------- */
   y = drawSection(page, y, 'DATOS DEL EMISOR', fonts);
-  const emitterFields: Array<[string, string]> = [];
-  if (LEGAL_ENTITY.legalName) {
-    emitterFields.push(['Razón social', LEGAL_ENTITY.legalName]);
-    if (LEGAL_ENTITY.name && LEGAL_ENTITY.name !== LEGAL_ENTITY.legalName) {
-      emitterFields.push(['Nombre comercial', LEGAL_ENTITY.name]);
-    }
-  } else {
-    emitterFields.push(['Emisor', LEGAL_ENTITY.name]);
-  }
+  const emitterFields: Array<[string, string]> = [
+    ['Nombre comercial', LEGAL_ENTITY.name],
+  ];
   if (LEGAL_ENTITY.cuit) emitterFields.push(['CUIT', LEGAL_ENTITY.cuit]);
-  if (LEGAL_ENTITY.taxCondition) {
-    emitterFields.push(['Condición fiscal', LEGAL_ENTITY.taxCondition]);
-  }
-  if (LEGAL_ENTITY.address) emitterFields.push(['Domicilio', LEGAL_ENTITY.address]);
   if (LEGAL_ENTITY.email) emitterFields.push(['Email', LEGAL_ENTITY.email]);
   for (const [label, value] of emitterFields) {
     y = drawField(page, y, label, value, fonts);
@@ -310,7 +298,6 @@ export async function buildPaymentReceiptPdf(
   /* Detalle del pago ------------------------------------------------------ */
   y = drawSection(page, y, 'DETALLE DEL PAGO', fonts);
   y = drawField(page, y, 'Concepto', 'Suscripción PRO - plan mensual', fonts);
-  y = drawField(page, y, 'Importe', `${amountText} (${input.currency})`, fonts);
   y = drawField(page, y, 'Fecha de pago', formatDateTimeAR(input.occurredAtMs), fonts);
   y = drawField(page, y, 'Estado', STATUS_LABEL[input.status] ?? input.status, fonts);
   y = drawField(page, y, 'Número de operación (MP)', String(input.mpPaymentId), fonts);
@@ -326,9 +313,8 @@ export async function buildPaymentReceiptPdf(
   y = input.receiptUrl
     ? drawField(page, y, 'Comprobante MP', input.receiptUrl, fonts)
     : drawField(page, y, 'Medio de pago', 'Tarjeta (Mercado Pago)', fonts);
-  y = drawField(page, y, 'ID de constancia', input.paymentId, fonts);
 
-  /* Pie: aclaración fiscal + generación ----------------------------------- */
+  /* Pie: aclaración fiscal ------------------------------------------------ */
   const footerTop = Math.max(MARGIN_PT + 120, Math.min(y - 18, 210));
   page.drawLine({
     start: { x: MARGIN_PT, y: footerTop },
@@ -351,21 +337,7 @@ export async function buildPaymentReceiptPdf(
       lineHeight: 10,
     },
   );
-  footerY -= 6;
-  footerY = drawWrapped(
-    page,
-    `Documento generado el ${formatDateTimeAR(Date.now())} (hora de Argentina).`,
-    {
-      x: MARGIN_PT,
-      y: footerY,
-      maxWidth: CONTENT_WIDTH_PT,
-      size: 7.5,
-      font: regular,
-      color: MUTED,
-      lineHeight: 9.5,
-    },
-  );
-  footerY -= 4;
+  footerY -= 8;
   page.drawText(sanitizeWinAnsi('Verificá este comprobante en Perfil - Suscripción.'), {
     x: MARGIN_PT,
     y: footerY,

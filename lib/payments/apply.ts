@@ -452,7 +452,6 @@ async function sendPaymentEmail(
         readWorkshopName(service, input.userId),
       ]);
       const pdfBytes = await buildPaymentReceiptPdf({
-        paymentId: claim.data.id,
         mpPaymentId: input.mpPaymentId,
         amountArs: input.amount,
         currency: 'ARS',

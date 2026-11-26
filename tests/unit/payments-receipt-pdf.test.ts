@@ -10,7 +10,6 @@ import { mailReceipt, sendMail } from '@/lib/payments/mail';
  * ========================================================================== */
 
 const BASE = {
-  paymentId: '11111111-2222-4333-8444-555555555555',
   mpPaymentId: 190672595499,
   amountArs: 50,
   currency: 'ARS',
