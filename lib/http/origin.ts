@@ -31,11 +31,15 @@ export function publicRequestOrigin(input: {
 /**
  * Origin para el `back_url` del checkout de suscripción.
  *
- * Un preview de Vercel (`etiquetaargenta-<hash>-…vercel.app`) es efímero y
- * puede pedir login: jamás debe ser el retorno de un pago. En producción se usa
- * el Host real (alias canónico); en preview/local se prefiere el origin público
- * configurado (`MP_PUBLIC_ORIGIN` o `NEXT_PUBLIC_SITE_URL`). Si no hay ninguno,
- * cae al Host de la request como antes.
+ * Un preview/branch de Vercel (`etiquetaargenta-git-main-…vercel.app`,
+ * `etiquetaargenta-<hash>-…vercel.app`) es efímero o puede pedir login SSO:
+ * jamás debe ser el retorno de un pago. Por eso el origin configurado
+ * (`MP_PUBLIC_ORIGIN` o `NEXT_PUBLIC_SITE_URL`) gana SIEMPRE, también en
+ * producción. Si no hay ninguno, cae al Host de la request como antes.
+ *
+ * Regla operativa: `MP_PUBLIC_ORIGIN` debe apuntar al dominio canónico
+ * (custom domain o `https://etiquetaargenta.vercel.app`), nunca al URL de un
+ * deployment ni al alias de una rama.
  */
 export function checkoutBackUrlOrigin(
   input: {
@@ -46,10 +50,6 @@ export function checkoutBackUrlOrigin(
   },
   env: Record<string, string | undefined> = process.env,
 ): string {
-  if (env.VERCEL_ENV === 'production') {
-    return publicRequestOrigin(input);
-  }
-
   const configured = (env.MP_PUBLIC_ORIGIN?.trim() || env.NEXT_PUBLIC_SITE_URL?.trim() || '')
     .replace(/\/+$/, '');
   if (configured) {
@@ -60,4 +60,19 @@ export function checkoutBackUrlOrigin(
   }
 
   return publicRequestOrigin(input);
+}
+
+/**
+ * Origin canónico para links que se comparten (WhatsApp/email) y para los
+ * redirects de auth. `NEXT_PUBLIC_SITE_URL` se inlinea en el bundle cliente;
+ * si no está configurado se conserva el origin actual.
+ */
+export function canonicalSiteOrigin(
+  fallback: string,
+  // Referencia ESTÁTICA a propósito: Next la inlinea en el bundle cliente.
+  configuredOrigin: string | undefined = process.env.NEXT_PUBLIC_SITE_URL,
+): string {
+  const configured = (configuredOrigin?.trim() || '').replace(/\/+$/, '');
+  if (configured) return configured;
+  return fallback.replace(/\/+$/, '');
 }

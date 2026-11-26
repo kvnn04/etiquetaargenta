@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { canonicalSiteOrigin } from '@/lib/http/origin';
 import {
   canonicalLinkUrl,
   editionBadgeText,
@@ -407,7 +408,10 @@ export default function LinkModal({
                       v.decisionEmailSentAt,
                       v.decisionEmailError,
                     );
-                    const url = canonicalLinkUrl(v.linkId, window.location.origin);
+                    const url = canonicalLinkUrl(
+                      v.linkId,
+                      canonicalSiteOrigin(window.location.origin),
+                    );
                     return (
                       <li
                         key={v.linkId}

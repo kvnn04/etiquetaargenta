@@ -29,6 +29,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, FileDown, FileImage, Link2, Lock, RefreshCw, X, AlertTriangle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { canonicalSiteOrigin } from '@/lib/http/origin';
 import { gate, type Plan } from '@/lib/permissions';
 import { resolveBranding } from '@/lib/branding';
 import { useEditorStore } from '@/lib/store/editor';
@@ -402,7 +403,7 @@ export default function QuoteModal({
       onGenerateLink(); // sin versión no hay nada que compartir: se publica primero
       return;
     }
-    const url = canonicalLinkUrl(linkId, window.location.origin);
+    const url = canonicalLinkUrl(linkId, canonicalSiteOrigin(window.location.origin));
     setPosHint(null);
     /* El share NO lleva número: WhatsApp abre el selector y el taller elige al
      * cliente. El E.164 del Perfil es el destino de la aprobación (R6). */

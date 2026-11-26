@@ -1236,6 +1236,11 @@ es la clave de identidad del webhook; el pago sigue siendo la ÚNICA fuente que 
 (`applyPreapproval` solo vincula IDs). Se sumó el topic `subscription_authorized_payment`
 para recuperar cobros recurrentes por `GET /authorized_payments/{id}`. Spec:
 `../simulador_Mates/spec_pagos_plan_mp.md`.
+**Dominio canónico (26-nov):** el `back_url` de MP y los links compartidos usan
+`NEXT_PUBLIC_SITE_URL` (cliente) / `MP_PUBLIC_ORIGIN` (servidor) cuando están configurados;
+ya no siguen el Host de la request. Usar el dominio de producción o un custom domain, nunca
+el alias de rama `-git-main-…` (protegido por SSO) ni el URL `-<hash>-…` de un deployment.
+
 **Pendiente:** aplicar `0011`, configurar el topic nuevo en el panel de MP, deployar y hacer
 un alta real con una cuenta de MP cuyo email NO coincida con el de Supabase.
 

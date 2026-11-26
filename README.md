@@ -157,6 +157,13 @@ simulador-mates/
    en producción.
    (un archivo llamado `.env` también vale — Next lo carga igual; `.env.local` únicamente gana
    si existieran ambos)
+
+   > **Dominio canónico:** usá siempre el dominio de producción
+   > (`https://etiquetaargenta.vercel.app`) o un dominio propio. No uses los alias
+   > `-git-main-…` (pueden pedir login SSO de Vercel) ni los `-<hash>-…` (cambian en
+   > cada deploy). Configurá `NEXT_PUBLIC_SITE_URL` y `MP_PUBLIC_ORIGIN` con ese
+   > dominio y volvé a desplegar: el `back_url` de MP y los links compartidos lo usan.
+
 6. **Dev**: `npm run dev` → `http://localhost:3000/auth`.
 
 > ⚠️ Windows/PowerShell: si `npm` da *Execution Policy* error, usar `npm.cmd` (es el shim ps1

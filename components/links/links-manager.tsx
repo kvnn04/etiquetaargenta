@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
+import { canonicalSiteOrigin } from '@/lib/http/origin';
 import {
   canonicalLinkUrl,
   editionBadgeText,
@@ -108,7 +109,7 @@ export default function LinksManager({
 
   async function copyLink(linkId: string): Promise<void> {
     try {
-      const url = canonicalLinkUrl(linkId, window.location.origin);
+      const url = canonicalLinkUrl(linkId, canonicalSiteOrigin(window.location.origin));
       await navigator.clipboard.writeText(url);
       setCopiedId(linkId);
       window.setTimeout(() => {
@@ -120,7 +121,7 @@ export default function LinksManager({
   }
 
   function shareWhatsApp(linkId: string): void {
-    const url = canonicalLinkUrl(linkId, window.location.origin);
+    const url = canonicalLinkUrl(linkId, canonicalSiteOrigin(window.location.origin));
     window.open(whatsappShareHref(url), '_blank', 'noopener,noreferrer');
   }
 

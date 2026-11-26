@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Sparkles } from 'lucide-react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { canonicalSiteOrigin } from '@/lib/http/origin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -19,6 +20,10 @@ type Mode = 'signin' | 'signup' | 'recover';
 const VALUE_PROP =
   'Diseñá y mostrá mates 3D hiperrealistas a tus clientes en segundos. Probá tu primer diseño gratis.';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Vuelta de OAuth/confirmación: siempre al dominio canónico configurado. */
+const authCallbackUrl = (): string =>
+  `${canonicalSiteOrigin(window.location.origin)}/auth/callback`;
 
 const CAMPOS_COPY: Record<Mode, { heading: string; submit: string }> = {
   signin: { heading: 'Iniciá sesión', submit: 'Entrar' },
@@ -50,7 +55,7 @@ export default function AuthOverlay({ banner }: { banner?: string }) {
     setGoogleBusy(true);
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: authCallbackUrl() },
     });
     setGoogleBusy(false);
     // En OAuth el éxito navega fuera; si volvió, hubo error:
@@ -76,7 +81,7 @@ export default function AuthOverlay({ banner }: { banner?: string }) {
         const { data, error: err } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+          options: { emailRedirectTo: authCallbackUrl() },
         });
         if (err) {
           if (err.message.toLowerCase().includes('already')) {
@@ -100,7 +105,7 @@ export default function AuthOverlay({ banner }: { banner?: string }) {
 
       if (mode === 'recover') {
         const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: authCallbackUrl(),
         });
         if (err) {
           setError('No pudimos enviar el correo. Reintentá en un momento.');

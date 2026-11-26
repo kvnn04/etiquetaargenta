@@ -34,6 +34,7 @@ import {
   Repeat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { canonicalSiteOrigin } from '@/lib/http/origin';
 import type { PublicLinkView, PublicVariantView } from '@/lib/links/view-shape';
 import { isLinkVariantId, type LinkVariantId } from '@/lib/links/payload';
 import { approvalCode, canonicalLinkUrl, whatsappApprovalHref } from '@/lib/links/states';
@@ -630,7 +631,7 @@ export default function ClientViewer({
   const openApprovalWhatsapp = useCallback(() => {
     const href = whatsappApprovalHref(
       view.workshop.whatsapp,
-      canonicalLinkUrl(view.linkId, window.location.origin),
+      canonicalLinkUrl(view.linkId, canonicalSiteOrigin(window.location.origin)),
       approvedLabel,
     );
     if (href) window.location.href = href;
@@ -640,7 +641,7 @@ export default function ClientViewer({
     if (!observation) return;
     const href = whatsappRejectionHref(
       view.workshop.whatsapp,
-      canonicalLinkUrl(view.linkId, window.location.origin),
+      canonicalLinkUrl(view.linkId, canonicalSiteOrigin(window.location.origin)),
       observation,
     );
     if (href) window.location.href = href;
@@ -650,7 +651,7 @@ export default function ClientViewer({
     if (!observation) return;
     const href = whatsappObservationHref(
       view.workshop.whatsapp,
-      canonicalLinkUrl(view.linkId, window.location.origin),
+      canonicalLinkUrl(view.linkId, canonicalSiteOrigin(window.location.origin)),
       observation,
     );
     if (href) window.location.href = href;

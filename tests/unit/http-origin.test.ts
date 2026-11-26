@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { checkoutBackUrlOrigin, publicRequestOrigin } from '@/lib/http/origin';
+import {
+  canonicalSiteOrigin,
+  checkoutBackUrlOrigin,
+  publicRequestOrigin,
+} from '@/lib/http/origin';
 
 /* ============================================================================
  * Origin para back_urls de MP (QA 23-nov-2026)
@@ -84,13 +88,23 @@ describe('checkoutBackUrlOrigin', () => {
     forwardedProto: 'https',
   };
 
-  it('en producción usa el Host real de la request (alias canónico)', () => {
+  it('en producción prefiere el origin canónico configurado sobre el Host', () => {
     expect(
       checkoutBackUrlOrigin(request, {
         VERCEL_ENV: 'production',
-        MP_PUBLIC_ORIGIN: 'https://viejo.example',
+        MP_PUBLIC_ORIGIN: 'https://etiquetaargenta.vercel.app/',
       }),
-    ).toBe('https://preview-abc.vercel.app');
+    ).toBe('https://etiquetaargenta.vercel.app');
+  });
+
+  it('en producción usa NEXT_PUBLIC_SITE_URL si MP_PUBLIC_ORIGIN está vacío', () => {
+    expect(
+      checkoutBackUrlOrigin(request, {
+        VERCEL_ENV: 'production',
+        MP_PUBLIC_ORIGIN: '',
+        NEXT_PUBLIC_SITE_URL: 'https://etiquetaargenta.vercel.app/',
+      }),
+    ).toBe('https://etiquetaargenta.vercel.app');
   });
 
   it('en preview prefiere MP_PUBLIC_ORIGIN para no volver a un deploy efímero', () => {
@@ -114,5 +128,22 @@ describe('checkoutBackUrlOrigin', () => {
 
   it('sin origin configurado cae al Host de la request', () => {
     expect(checkoutBackUrlOrigin(request, {})).toBe('https://preview-abc.vercel.app');
+  });
+});
+
+describe('canonicalSiteOrigin', () => {
+  it('usa NEXT_PUBLIC_SITE_URL y limpia la barra final', () => {
+    expect(
+      canonicalSiteOrigin(
+        'https://preview-abc.vercel.app',
+        'https://etiquetaargenta.vercel.app/',
+      ),
+    ).toBe('https://etiquetaargenta.vercel.app');
+  });
+
+  it('sin NEXT_PUBLIC_SITE_URL conserva el origin actual', () => {
+    expect(canonicalSiteOrigin('https://preview-abc.vercel.app/', undefined)).toBe(
+      'https://preview-abc.vercel.app',
+    );
   });
 });
