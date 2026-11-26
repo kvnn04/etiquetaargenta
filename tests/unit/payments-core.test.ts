@@ -19,6 +19,7 @@ import {
   formatPricePerMonth,
   graceDaysLeft,
   graceExpiresAtMs,
+  isCancelableSubscriptionStatus,
   isPositiveAmount,
   nextCycleDateMs,
   normalizeMpPaymentStatus,
@@ -306,6 +307,16 @@ describe('máquina de estados (R7 compare-and-set en el caller)', () => {
   it('gracia_vencida desde estados sin gracia ⇒ null (evento no aplica)', () => {
     expect(transitionSubscription('activa', { kind: 'gracia_vencida' })).toBeNull();
     expect(transitionSubscription('inactiva', { kind: 'gracia_vencida' })).toBeNull();
+  });
+});
+
+describe('R9 — baja in-app habilitada por estado', () => {
+  it('sólo activa/gracia se pueden cancelar desde la app', () => {
+    expect(isCancelableSubscriptionStatus('activa')).toBe(true);
+    expect(isCancelableSubscriptionStatus('gracia')).toBe(true);
+    expect(isCancelableSubscriptionStatus('programada_cierre')).toBe(false);
+    expect(isCancelableSubscriptionStatus('revocada')).toBe(false);
+    expect(isCancelableSubscriptionStatus('inactiva')).toBe(false);
   });
 });
 

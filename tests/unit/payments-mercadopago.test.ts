@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PREAPPROVAL_START_MARGIN_MS,
+  cancelPreapproval,
   cancelPreapprovalPlan,
   createPreapproval,
   createPreapprovalPlan,
   getAuthorizedPayment,
   getPreapproval,
+  getPreapprovalPlan,
   preapprovalStartDateIso,
+  updatePreapprovalPlanBackUrl,
 } from '@/lib/payments/mercadopago';
 
 /* ============================================================================
@@ -249,6 +252,50 @@ describe('cancelPreapprovalPlan — PUT status cancelled', () => {
   });
 });
 
+describe('cancelPreapproval — PUT status cancelled (R9 in-app)', () => {
+  it('manda PUT al endpoint oficial con { status: cancelled }', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    const captured: { url?: string; init?: RequestInit } = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        captured.url = String(url);
+        captured.init = init;
+        return new Response(JSON.stringify({ id: 'pre-1', status: 'cancelled' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+
+    const result = await cancelPreapproval('pre-1');
+    expect(result).toEqual({ ok: true, data: { id: 'pre-1', status: 'cancelled' } });
+    expect(captured.url).toBe('https://api.mercadopago.com/preapproval/pre-1');
+    expect(captured.init?.method).toBe('PUT');
+    expect(JSON.parse(String(captured.init?.body))).toEqual({ status: 'cancelled' });
+    expect((captured.init?.headers as Record<string, string>).Authorization).toBe(
+      'Bearer TEST-token',
+    );
+  });
+
+  it('400 de MP ⇒ resultado honesto, sin throw', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ message: 'preapproval not found' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    const result = await cancelPreapproval('pre-1');
+    expect(result).toEqual({ ok: false, status: 400, message: 'preapproval not found' });
+  });
+});
+
 describe('lecturas del checkout con plan', () => {
   it('getPreapproval expone preapproval_plan_id y fechas', async () => {
     process.env.MP_ACCESS_TOKEN = 'TEST-token';
@@ -280,6 +327,77 @@ describe('lecturas del checkout con plan', () => {
     expect(result.data.status).toBe('authorized');
     expect(result.data.dateCreated).toBe('2026-11-24T12:00:00.000Z');
     expect(result.data.lastModified).toBe('2026-11-24T12:05:00.000Z');
+  });
+
+  it('getPreapprovalPlan lee estado, dueño, precio y back_url para reutilizar', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 'plan-1',
+            status: 'active',
+            init_point:
+              'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=plan-1',
+            external_reference: 'ced3fa8c-41b4-4068-89c6-4007076dba07',
+            back_url: 'https://etiquetaargenta-gilt.vercel.app/perfil?pago=success',
+            auto_recurring: { transaction_amount: 50.0, currency_id: 'ARS' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    const result = await getPreapprovalPlan('plan-1');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toMatchObject({
+      id: 'plan-1',
+      status: 'active',
+      externalReference: 'ced3fa8c-41b4-4068-89c6-4007076dba07',
+      amount: 50,
+      currency: 'ARS',
+      backUrl: 'https://etiquetaargenta-gilt.vercel.app/perfil?pago=success',
+    });
+  });
+
+  it('updatePreapprovalPlanBackUrl manda PUT parcial con back_url', async () => {
+    process.env.MP_ACCESS_TOKEN = 'TEST-token';
+    const captured: { url?: string; init?: RequestInit } = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        captured.url = String(url);
+        captured.init = init;
+        return new Response(
+          JSON.stringify({
+            id: 'plan-1',
+            status: 'active',
+            back_url: 'https://etiquetaargenta-gilt.vercel.app/perfil?pago=success',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await updatePreapprovalPlanBackUrl(
+      'plan-1',
+      'https://etiquetaargenta-gilt.vercel.app/perfil?pago=success',
+    );
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        id: 'plan-1',
+        status: 'active',
+        backUrl: 'https://etiquetaargenta-gilt.vercel.app/perfil?pago=success',
+      },
+    });
+    expect(captured.url).toBe('https://api.mercadopago.com/preapproval_plan/plan-1');
+    expect(captured.init?.method).toBe('PUT');
+    expect(JSON.parse(String(captured.init?.body))).toEqual({
+      back_url: 'https://etiquetaargenta-gilt.vercel.app/perfil?pago=success',
+    });
   });
 
   it('getAuthorizedPayment lee preapproval_id, external_reference y payment.id/status', async () => {

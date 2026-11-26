@@ -26,8 +26,9 @@
  * R8: gracia de 5 días corridos desde el PRIMER rechazo (MP reintenta dentro
  *     de la ventana: un segundo rechazo NO re-abre los 5 días) y resolver de
  *     plan con downgrade a FREE preservando proyectos/assets/links.
- * R9: cancelación solo por Portal de MP ⇒ `programada_cierre` hasta
- *     period_end (fin del ciclo ya pago).
+ * R9: cancelación desde la app (botón in-app) o el Portal de MP ⇒
+ *     `programada_cierre` hasta period_end (fin del ciclo ya pago). El Portal
+ *     queda como vía alternativa y para actualizar la tarjeta.
  * R10: sin helper de recuperación — el abandono de checkout es SOLO una fila
  *     de auditoría (`checkout_intents`), acá no vive nada de eso.
  *
@@ -91,6 +92,15 @@ export function isLiveSubscriptionStatus(status: SubscriptionStatus): boolean {
   return (
     status === 'activa' || status === 'gracia' || status === 'programada_cierre'
   );
+}
+
+/**
+ * true ⇒ la baja puede pedirse desde la app (R9): solo antes de programar el
+ * cierre. `programada_cierre` ya está cancelada (idempotente) y `revocada`/
+ * `inactiva` ya no tienen débito que cortar.
+ */
+export function isCancelableSubscriptionStatus(status: SubscriptionStatus): boolean {
+  return status === 'activa' || status === 'gracia';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -210,12 +220,11 @@ export function cycleAnchorDayOfStr(dateStr: string): number | null {
 }
 
 /**
- * URL oficial de "Mis suscripciones" de MP (R9: cancelar/actualizar tarjeta
- * SOLO ahí, nunca botón in-app). `/subscriptions/portal` devolvía error; la
- * sección real es `/subscriptions` (el hash abre el menú lateral).
+ * Portal oficial de Mercado Pago (R9): vía alternativa para cancelar y para
+ * actualizar la tarjeta. La baja principal vive en la app; la URL va limpia
+ * porque la sección de suscripciones queda detrás del login del comprador.
  */
-export const MERCADOPAGO_PORTAL_URL =
-  'https://www.mercadopago.com.ar/subscriptions#from-section=menu';
+export const MERCADOPAGO_PORTAL_URL = 'https://mercadopago.com.ar';
 
 /**
  * Próxima fecha del ciclo (00:00 AR de ese día): fin del cierre programado

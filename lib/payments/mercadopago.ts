@@ -313,10 +313,137 @@ export async function createPreapprovalPlan(
   }
 }
 
+export interface MpPreapprovalPlanDetail extends MpPreapprovalPlan {
+  amount: number | null;
+  currency: string | null;
+  backUrl: string | null;
+}
+
+const asNumberLike = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+/**
+ * GET /preapproval_plan/{id} — se usa para REUTILIZAR el plan vigente antes de
+ * crear otro. Un plan cancelado en MP invalida su checkout; reutilizarlo sin
+ * leer su estado real devolvería un `init_point` muerto.
+ */
+export async function getPreapprovalPlan(
+  planId: string,
+  opts?: { timeoutMs?: number },
+): Promise<MpResult<MpPreapprovalPlanDetail>> {
+  const env = mpEnv();
+  if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+
+  try {
+    const res = await fetch(`${MP_API}/preapproval_plan/${encodeURIComponent(planId)}`, {
+      headers: { Authorization: `Bearer ${env.accessToken}` },
+      signal: timeoutSignal(opts?.timeoutMs),
+    });
+    if (!res.ok) {
+      const detail = await mpErrorDetail(res);
+      console.error(
+        '[mp preapproval_plan get]:',
+        planId,
+        `HTTP ${res.status}`,
+        detail ? `— ${detail}` : '',
+      );
+      return { ok: false, status: res.status, message: detail ?? `HTTP ${res.status}` };
+    }
+
+    const raw = (await res.json()) as {
+      id?: string | number;
+      init_point?: string;
+      status?: string;
+      external_reference?: string | null;
+      back_url?: string | null;
+      auto_recurring?: { transaction_amount?: unknown; currency_id?: unknown };
+    };
+    if (raw.id == null || !raw.init_point) {
+      console.error('[mp preapproval_plan get]: respuesta sin id/init_point');
+      return { ok: false, status: res.status, message: 'Respuesta incompleta de MP' };
+    }
+    return {
+      ok: true,
+      data: {
+        id: String(raw.id),
+        initPoint: raw.init_point,
+        status: raw.status ?? 'active',
+        externalReference: raw.external_reference ?? null,
+        amount: asNumberLike(raw.auto_recurring?.transaction_amount),
+        currency: asIso(raw.auto_recurring?.currency_id),
+        backUrl: asIso(raw.back_url),
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp preapproval_plan get]:', planId, message);
+    return { ok: false, status: 0, message };
+  }
+}
+
+/**
+ * PUT /preapproval_plan/{id} con `back_url` — MP acepta actualizaciones
+ * parciales (verificado en vivo el 26-nov-2026). Mantiene el retorno del plan
+ * en el dominio canónico aunque el checkout se haya abierto desde un preview.
+ */
+export async function updatePreapprovalPlanBackUrl(
+  planId: string,
+  backUrl: string,
+  opts?: { timeoutMs?: number },
+): Promise<MpResult<{ id: string; status: string; backUrl: string | null }>> {
+  const env = mpEnv();
+  if (!env) return { ok: false, status: 0, message: 'MP_ACCESS_TOKEN no configurado' };
+
+  try {
+    const res = await fetch(`${MP_API}/preapproval_plan/${encodeURIComponent(planId)}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${env.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ back_url: backUrl }),
+      signal: timeoutSignal(opts?.timeoutMs),
+    });
+    if (!res.ok) {
+      const detail = await mpErrorDetail(res);
+      console.error(
+        '[mp preapproval_plan update]:',
+        planId,
+        `HTTP ${res.status}`,
+        detail ? `— ${detail}` : '',
+      );
+      return { ok: false, status: res.status, message: detail ?? `HTTP ${res.status}` };
+    }
+    const raw = (await res.json().catch(() => null)) as
+      | { id?: string | number; status?: string; back_url?: string | null }
+      | null;
+    return {
+      ok: true,
+      data: {
+        id: raw?.id != null ? String(raw.id) : planId,
+        status: raw?.status ?? 'active',
+        backUrl: asIso(raw?.back_url) ?? backUrl,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'fallo de red';
+    console.error('[mp preapproval_plan update]:', planId, message);
+    return { ok: false, status: 0, message };
+  }
+}
+
 /**
  * PUT /preapproval_plan/{id} con `status: cancelled` (verificado en vivo el
- * 24-nov-2026). El checkout cancela el plan anterior al crear uno nuevo para
- * dejar como máximo un plan activo por usuario.
+ * 24-nov-2026). Ya NO se usa para "un plan por checkout": cancelar el plan de
+ * una pestaña abierta hacía que MP mostrara "Algo salió mal" (redirect
+ * `/checkout/v1/subscription/redirect/expired`). Queda para el rollback de un
+ * plan recién creado cuyo mapping no se pudo persistir.
  */
 export async function cancelPreapprovalPlan(
   planId: string,

@@ -43,7 +43,7 @@ Mapa completo y evidencia: `PROYECTO.md`.
 simulador-mates/
   app/
     auth/            → Auth Overlay + callback OAuth (PKCE) + banner neutro de cuenta baja (R8)
-    perfil/          → PANEL DE PERFIL (posición 2): 5 campos + indicador 5×20 % + zona de peligro + CENTRO DE SUSCRIPCIÓN (10B/11/13: badge, precio congelado, historial con constancia y montos devueltos, Portal MP, sync al-vuelo, "Verifico de nuevo" real, `REEMBOLSADO`/`CONTRACARGO` y "Reactivar PRO") + derechos del consumidor y banner legal no bloqueante (pos 12)
+    perfil/          → PANEL DE PERFIL (posición 2): 5 campos + indicador 5×20 % + zona de peligro + CENTRO DE SUSCRIPCIÓN (10B/11/13: badge, precio congelado, historial con constancia y montos devueltos, botón "Cancelar suscripción" con confirmación + Portal MP como respaldo, sync al-vuelo, "Verifico de nuevo" real, `REEMBOLSADO`/`CONTRACARGO` y "Reactivar PRO") + derechos del consumidor y banner legal no bloqueante (pos 12)
     (legal)/         → POS 12: páginas públicas /terminos · /privacidad · /arrepentimiento · /baja · /baja/confirmar (sin login, sin paywall, con print CSS y metadatos)
     (editor)/editor/ → shell del editor con gating R2 (guard deleted_at; escena 3D real desde la posición 3); `?paywall=1` abre el checkout normal para "Reactivar PRO" (pos 13)
     api/

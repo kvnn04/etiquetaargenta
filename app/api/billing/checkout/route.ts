@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { publicRequestOrigin } from '@/lib/http/origin';
+import { checkoutBackUrlOrigin } from '@/lib/http/origin';
 import {
   cancelPreapproval,
   cancelPreapprovalPlan,
   createPreapprovalPlan,
+  getPreapprovalPlan,
   hasMercadoPagoCredentials,
+  updatePreapprovalPlanBackUrl,
 } from '@/lib/payments/mercadopago';
 import { isPositiveAmount } from '@/lib/payments/core';
 import { LEGAL_VERSIONS } from '@/lib/legal/config';
@@ -39,12 +41,14 @@ import { legalRequestContext, recordCheckoutAcceptances } from '@/lib/legal/serv
  *   7. `checkout_intents`: UNA fila de auditoría del intento (R10 — cero
  *      emails de recuperación; cf. QA1). fallo= no frena el checkout: es
  *      métrica, no cobro (log).
- *   8. PLAN MP (spec_pagos_plan_mp.md): `POST /preapproval_plan` con
- *      external_reference = user_id, ARS/meses y back_url. Su `init_point`
- *      hospedado pide la cuenta del pagador: el email de Supabase ya no tiene
- *      que coincidir con la cuenta que paga.
- *   9. Mapping `mp_preapproval_plans` ANTES de redirigir; si falla ⇒ cancelar
- *      el plan y 503. Los planes activos anteriores se cancelan (best-effort).
+ *   8. PLAN MP (spec_pagos_plan_mp.md): se REUTILIZA el plan vigente si sigue
+ *      activo, es del usuario y conserva precio/moneda; si no, `POST
+ *      /preapproval_plan` con external_reference = user_id, ARS/meses y
+ *      back_url canónica. Su `init_point` hospedado pide la cuenta del pagador:
+ *      el email de Supabase ya no tiene que coincidir con la cuenta que paga.
+ *   9. Mapping `mp_preapproval_plans` (upsert) ANTES de redirigir; si falla ⇒
+ *      cancelar SOLO un plan nuevo y 503. Los planes viejos no se cancelan:
+ *      pueden tener un checkout abierto en otra pestaña/dominio.
  *  10. Seed de `subscriptions` { status: 'inactiva', preapproval_plan_id }:
  *      el CONGELAMIENTO real lo hace el webhook al aprobarse el cobro con
  *      `freezePrice` de la máquina (R4) usando el monto DEL PAGO.
@@ -143,79 +147,110 @@ export async function POST(request: NextRequest) {
 
   /* 8 — PLAN de suscripción (spec_pagos_plan_mp.md). El checkout hospedado
    * del plan es el único que pide la cuenta de Mercado Pago del pagador: el
-   * email de Supabase ya no tiene que coincidir con la cuenta que paga. */
-  // Next dev reporta `nextUrl.origin = http://localhost:...` aunque el server
-  // escuche en 127.0.0.1; MP rechaza localhost como back_url. El helper usa el
-  // Host real y normaliza loopback (QA 23-nov-2026).
-  const webOrigin = publicRequestOrigin({
+   * email de Supabase ya no tiene que coincidir con la cuenta que paga.
+   *
+   * REUTILIZACIÓN (26-nov-2026): antes se creaba un plan por click y se
+   * cancelaba el anterior. Eso invalidaba un checkout ya abierto en otra
+   * pestaña/dominio y MP lo mandaba a `/subscription/redirect/expired`
+   * ("Algo salió mal"). Ahora se reutiliza el plan vigente si sigue activo,
+   * es del mismo usuario y mantiene precio/moneda. Recién si cambió el precio
+   * o MP lo canceló se crea otro. Los planes viejos NO se cancelan: pueden
+   * tener una pestaña de checkout abierta. */
+  const webOrigin = checkoutBackUrlOrigin({
     nextUrlOrigin: request.nextUrl.origin,
     nextUrlProtocol: request.nextUrl.protocol,
     host: request.headers.get('host'),
     forwardedProto: request.headers.get('x-forwarded-proto'),
   });
+  const backUrl = `${webOrigin}/perfil?pago=success`;
 
-  const drafted = await createPreapprovalPlan({
-    reason: CHECKOUT_REASON,
-    externalReference: user.id,
-    amount,
-    backUrl: `${webOrigin}/perfil?pago=success`,
-  });
-  if (!drafted.ok) {
-    console.error('[billing preapproval_plan]:', drafted.status, drafted.message);
-    return NextResponse.json({ error: 'MP_UNAVAILABLE' }, { status: 502 });
+  let plan: { id: string; initPoint: string; status: string } | null = null;
+  let reusedPlan = false;
+
+  if (sub?.preapproval_plan_id) {
+    const existing = await getPreapprovalPlan(sub.preapproval_plan_id);
+    if (
+      existing.ok &&
+      existing.data.status === 'active' &&
+      existing.data.externalReference === user.id &&
+      existing.data.amount === amount &&
+      existing.data.currency === 'ARS'
+    ) {
+      plan = existing.data;
+      reusedPlan = true;
+      if (existing.data.backUrl !== backUrl) {
+        const updated = await updatePreapprovalPlanBackUrl(plan.id, backUrl);
+        console.log(
+          '[billing plan back_url]:',
+          JSON.stringify({
+            plan: plan.id,
+            from: existing.data.backUrl,
+            to: updated.ok ? updated.data.backUrl : backUrl,
+            ok: updated.ok,
+          }),
+        );
+      }
+    } else if (existing.ok) {
+      console.log(
+        '[billing plan reuse skipped]:',
+        JSON.stringify({
+          plan: existing.data.id,
+          status: existing.data.status,
+          amount: existing.data.amount,
+          currency: existing.data.currency,
+          owner: existing.data.externalReference === user.id,
+        }),
+      );
+    }
+  }
+
+  if (!plan) {
+    const drafted = await createPreapprovalPlan({
+      reason: CHECKOUT_REASON,
+      externalReference: user.id,
+      amount,
+      backUrl,
+    });
+    if (!drafted.ok) {
+      console.error('[billing preapproval_plan]:', drafted.status, drafted.message);
+      return NextResponse.json({ error: 'MP_UNAVAILABLE' }, { status: 502 });
+    }
+    plan = drafted.data;
   }
 
   /* 9 — mapping local ANTES de redirigir. Sin esta fila el webhook no podría
    * atribuir el preapproval (MP no garantiza heredar external_reference).
-   * Si falla, se cancela el plan recién creado: no se manda al pagador a un
-   * checkout que no vamos a poder mapear. */
-  const mapping = await service.from('mp_preapproval_plans').insert({
-    id: drafted.data.id,
-    user_id: user.id,
-    amount,
-    currency: 'ARS',
-    status: 'active',
-  });
+   * Upsert porque un plan reutilizado ya tiene su fila. Si falla, solo se
+   * cancela el plan si es NUEVO: el vigente puede estar en uso. */
+  const mapping = await service.from('mp_preapproval_plans').upsert(
+    {
+      id: plan.id,
+      user_id: user.id,
+      amount,
+      currency: 'ARS',
+      status: 'active',
+      cancelled_at: null,
+    },
+    { onConflict: 'id' },
+  );
   if (mapping.error) {
     console.error('[billing plan mapping]:', mapping.error.message);
-    const cancelled = await cancelPreapprovalPlan(drafted.data.id);
-    if (!cancelled.ok) {
-      console.error(
-        '[billing plan mapping rollback]:',
-        drafted.data.id,
-        cancelled.status,
-        cancelled.message,
-      );
+    if (!reusedPlan) {
+      const cancelled = await cancelPreapprovalPlan(plan.id);
+      if (!cancelled.ok) {
+        console.error(
+          '[billing plan mapping rollback]:',
+          plan.id,
+          cancelled.status,
+          cancelled.message,
+        );
+      }
     }
     return NextResponse.json({ error: 'PERSIST_UNAVAILABLE' }, { status: 503 });
   }
 
-  /* 10 — como máximo un plan activo por usuario: el anterior se cancela
-   * best-effort. Su mapping se conserva para resolver webhooks tardíos. */
-  const previousPlans = await service
-    .from('mp_preapproval_plans')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .neq('id', drafted.data.id);
-  if (previousPlans.error) {
-    console.error('[billing plans previos]:', previousPlans.error.message);
-  }
-  for (const row of previousPlans.data ?? []) {
-    const cancelled = await cancelPreapprovalPlan(row.id);
-    if (!cancelled.ok) {
-      console.error('[billing plan viejo]:', row.id, cancelled.status, cancelled.message);
-      continue;
-    }
-    const marked = await service
-      .from('mp_preapproval_plans')
-      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
-      .eq('id', row.id);
-    if (marked.error) console.error('[billing plan viejo mapping]:', marked.error.message);
-  }
-
-  /* Reactivación tras revocación: el preapproval viejo NO se reutiliza y, si
-   * MP todavía lo tiene vivo, se cancela para que no vuelva a cobrar (Q6).
+  /* 10 — Reactivación tras revocación: el preapproval viejo NO se reutiliza y,
+   * si MP todavía lo tiene vivo, se cancela para que no vuelva a cobrar (Q6).
    * Un fallo de cancelación no frena el alta nueva: se logea. */
   if (oldPreapprovalId) {
     const cancelled = await cancelPreapproval(oldPreapprovalId);
@@ -239,7 +274,7 @@ export async function POST(request: NextRequest) {
     {
       user_id: user.id,
       preapproval_id: null,
-      preapproval_plan_id: drafted.data.id,
+      preapproval_plan_id: plan.id,
       status: 'inactiva',
       price_frozen: amount,
       currency: 'ARS',
@@ -260,11 +295,11 @@ export async function POST(request: NextRequest) {
 
   console.log(
     '[billing QA registro]',
-    JSON.stringify({ user: user.id, artifact: 'checkout', planId: drafted.data.id }),
+    JSON.stringify({ user: user.id, artifact: 'checkout', planId: plan.id, reused: reusedPlan }),
   );
 
   return NextResponse.json(
-    { ok: true as const, initPoint: drafted.data.initPoint, planId: drafted.data.id },
+    { ok: true as const, initPoint: plan.initPoint, planId: plan.id },
     { status: 201 },
   );
 }

@@ -83,7 +83,7 @@ import {
   preapprovalEventDecision,
 } from '@/lib/payments/identity';
 
-export type ApplySource = 'webhook' | 'sync' | 'legal';
+export type ApplySource = 'webhook' | 'sync' | 'legal' | 'app';
 
 export interface ApplyContext {
   userId: string;
@@ -1631,12 +1631,19 @@ export async function applyPreapproval(
 
   const to = await mailTo(service, ctx.userId);
   if (to && !ctx.suppressEmail) {
-    await sendMail(mailScheduledClose({ to, periodEndMs }), {
-      timeoutMs:
-        ctx.deadlineMs != null
-          ? Math.max(1_000, Math.min(15_000, ctx.deadlineMs - Date.now()))
-          : undefined,
-    });
+    await sendMail(
+      mailScheduledClose({
+        to,
+        periodEndMs,
+        source: ctx.source === 'app' ? 'app' : 'portal',
+      }),
+      {
+        timeoutMs:
+          ctx.deadlineMs != null
+            ? Math.max(1_000, Math.min(15_000, ctx.deadlineMs - Date.now()))
+            : undefined,
+      },
+    );
   }
 
   console.log(

@@ -136,13 +136,22 @@ export function mailGrace(input: { to: string; graceExpiresAtMs: number }): Mail
   };
 }
 
-export function mailScheduledClose(input: { to: string; periodEndMs: number }): MailContent {
+export function mailScheduledClose(input: {
+  to: string;
+  periodEndMs: number;
+  /** `app` = baja pedida desde el Centro de Suscripción; el resto, genérico. */
+  source?: 'app' | 'portal' | 'legal';
+}): MailContent {
   const fecha = formatDateAR(input.periodEndMs) ?? '';
+  const origen =
+    input.source === 'app'
+      ? 'Pediste la baja desde la app'
+      : 'Pediste la baja de tu suscripción PRO';
   return {
     kind: 'cierre_programado',
     to: input.to,
     subject: `Cierre programado de tu suscripción PRO (${fecha})`,
-    html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Cierre programado</h2><p>Pediste la baja desde el Portal de Mercado Pago: tu plan sigue <strong>activo hasta el ${fecha}</strong> (fin del ciclo ya pago). Ese día vuelven los candados y NO se generan cobros extra (R9).</p><p style="margin-top:12px">Tus proyectos, assets y links guardados quedan intactos — siempre podés volver.</p></div>`,
+    html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Cierre programado</h2><p>${origen}: tu plan sigue <strong>activo hasta el ${fecha}</strong> (fin del ciclo ya pago). Ese día vuelven los candados y NO se generan cobros extra (R9).</p><p style="margin-top:12px">Tus proyectos, assets y links guardados quedan intactos — siempre podés volver.</p></div>`,
   };
 }
 

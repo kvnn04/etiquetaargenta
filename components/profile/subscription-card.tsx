@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, Mail, RefreshCw } from 'lucide-react';
+import { CircleX, ExternalLink, Mail, RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import {
   formatDateAR,
   formatPricePerMonth,
   graceDaysLeft,
+  isCancelableSubscriptionStatus,
   MERCADOPAGO_PORTAL_URL,
   nextCycleDateMs,
   cycleAnchorDayOfStr,
@@ -28,8 +29,9 @@ import type { Plan } from '@/lib/permissions';
  * "precio de tu alta" (grandfathering R4 visible), próxima fecha de cobro
  * (ancla R1, tz AR del core), historial con constancia MP (R6: la app guarda
  * receipt_url y lo expone — la factura ARCA la emite a mano el responsable) y
- * botón único del Portal de MP (R9: cancelar/tarjeta SOLO ahí; los botones
- * in-app lo abren y ya).
+ * acciones de baja: botón principal "Cancelar suscripción" (R9: baja directa,
+ * acceso hasta period_end) + link secundario al Portal de MP (actualizar
+ * tarjeta o vía alternativa).
  * Banners por estado (§4): gracia con días restantes; cierre programado con
  * fecha exacta. Retorno de Checkout: success activo → 🎉; success sin
  * webhook aún → "Activando…" + re-verificar; failure/pending honestos.
@@ -88,6 +90,17 @@ type VerifyState =
   | { kind: 'mp_down' }
   | { kind: 'error'; message: string };
 
+type CancelState =
+  | { kind: 'idle' }
+  | { kind: 'confirming' }
+  | { kind: 'sending' }
+  | {
+      kind: 'done';
+      periodEndMs: number | null;
+      warning: 'LOCAL_SYNC_PENDING' | null;
+    }
+  | { kind: 'error'; message: string };
+
 interface BadgeStyle {
   className: string;
   label: string;
@@ -113,14 +126,17 @@ function badgeFor(view: SubscriptionView): BadgeStyle {
       label: 'CERRADA',
     };
   }
-  if (view.status === 'activa' || view.plan === 'pro') {
-    return { className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', label: SUBSCRIPTION_STATUS_LABEL.activa };
+  /* El estado manda SIEMPRE sobre `plan`: en `programada_cierre` el usuario
+   * conserva PRO hasta `period_end` (R9), así que `plan === 'pro'` no debe
+   * pintar "Activa" una suscripción que ya no renueva. */
+  if (view.status === 'programada_cierre') {
+    return { className: 'bg-sky-500/15 text-sky-300 border-sky-500/30', label: SUBSCRIPTION_STATUS_LABEL.programada_cierre };
   }
   if (view.status === 'gracia' || view.plan === 'pro_grace') {
     return { className: 'bg-amber-500/15 text-amber-300 border-amber-500/30', label: SUBSCRIPTION_STATUS_LABEL.gracia };
   }
-  if (view.status === 'programada_cierre') {
-    return { className: 'bg-sky-500/15 text-sky-300 border-sky-500/30', label: SUBSCRIPTION_STATUS_LABEL.programada_cierre };
+  if (view.status === 'activa' || view.plan === 'pro') {
+    return { className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', label: SUBSCRIPTION_STATUS_LABEL.activa };
   }
   return { className: 'bg-white/5 text-stone-400 border-white/10', label: SUBSCRIPTION_STATUS_LABEL.inactiva };
 }
@@ -173,10 +189,22 @@ export default function SubscriptionCard({
   );
   const partialRefund = planPro && fundingPayment?.status === 'partially_refunded';
 
+  /* R9: baja directa sólo antes de programar el cierre. La fecha mostrada es
+   * la del fin del ciclo ya pagado (o la ventana de gracia si está en dunning). */
+  const canCancel =
+    sub != null &&
+    sub.status !== 'sin_suscripcion' &&
+    isCancelableSubscriptionStatus(sub.status);
+  const cancelAccessUntilMs =
+    sub?.status === 'gracia'
+      ? sub.graceExpiresMs
+      : sub?.periodEndMs ?? (anchorDay ? nextCycleDateMs(anchorDay, nowMs) : null);
+
   /* ------------------------------------------------------------------ */
   /* "Verifico de nuevo" REAL (R12.2/R12.3 + §3.5/§4)                    */
   /* ------------------------------------------------------------------ */
   const [verify, setVerify] = useState<VerifyState>({ kind: 'idle' });
+  const [cancel, setCancel] = useState<CancelState>({ kind: 'idle' });
   const [failedChecks, setFailedChecks] = useState(0);
   const [clockMs, setClockMs] = useState(nowMs);
   const [cooldownUntilMs, setCooldownUntilMs] = useState<number | null>(() =>
@@ -287,17 +315,102 @@ export default function SubscriptionCard({
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Baja directa (R9): POST sin body; el server resuelve el preapproval */
+  /* desde la sesión y aplica `programada_cierre` + `period_end`.        */
+  /* ------------------------------------------------------------------ */
+  async function cancelSubscription() {
+    if (cancel.kind === 'sending') return;
+    setCancel({ kind: 'sending' });
+
+    try {
+      const res = await fetch('/api/billing/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        periodEndMs?: number | null;
+        alreadyCancelled?: boolean;
+        warning?: string | null;
+      } | null;
+
+      if (res.status === 401) {
+        setCancel({
+          kind: 'error',
+          message: 'Tu sesión venció. Recargá la página para cancelar.',
+        });
+        return;
+      }
+      if (res.status === 409) {
+        const message =
+          data?.error === 'SIN_PREAPPROVAL'
+            ? 'No encontramos el débito automático asociado. Escribinos o gestioná la baja desde Mercado Pago.'
+            : data?.error === 'TITULARIDAD_NO_VALIDADA'
+              ? 'No pudimos validar que la suscripción sea tuya. No cancelamos nada; escribinos.'
+              : data?.error === 'SIN_SUSCRIPCION'
+                ? 'No tenés una suscripción PRO activa para cancelar.'
+                : 'La suscripción ya no está en un estado cancelable desde acá.';
+        setCancel({ kind: 'error', message });
+        return;
+      }
+      if (res.status === 502) {
+        setCancel({
+          kind: 'error',
+          message: 'Mercado Pago no respondió en este momento. Probá de nuevo en unos minutos.',
+        });
+        return;
+      }
+      if (res.status === 503) {
+        setCancel({
+          kind: 'error',
+          message:
+            'La cancelación no está disponible en este momento. Probá más tarde o usá Mercado Pago.',
+        });
+        return;
+      }
+      if (!res.ok || !data?.ok) {
+        setCancel({
+          kind: 'error',
+          message: 'No pudimos cancelar la suscripción. Probá de nuevo.',
+        });
+        return;
+      }
+
+      setCancel({
+        kind: 'done',
+        periodEndMs:
+          typeof data.periodEndMs === 'number' && Number.isFinite(data.periodEndMs)
+            ? data.periodEndMs
+            : null,
+        warning:
+          data.warning === 'LOCAL_SYNC_PENDING' ? 'LOCAL_SYNC_PENDING' : null,
+      });
+      router.refresh();
+    } catch {
+      setCancel({
+        kind: 'error',
+        message: 'No pudimos conectar con el servidor. Probá de nuevo.',
+      });
+    }
+  }
+
   const showSupport = !planPro && failedChecks >= 2;
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-4">
+    <section
+      id="suscripcion"
+      className="scroll-mt-24 rounded-xl border border-line bg-panel p-4"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-stone-400">
             Plan PRO
           </h2>
           <p className="mt-1 text-[11px] text-stone-500">
-            Tu ciclo de cobro: débito automático de tarjeta, cancelación desde el Portal.
+            Tu ciclo de cobro: débito automático de tarjeta. Podés cancelar cuando quieras
+            desde acá.
           </p>
         </div>
         <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${badge.className}`}>
@@ -521,7 +634,7 @@ export default function SubscriptionCard({
             vuelve al instante.
           </p>
           <div className="mt-2">
-            <PortalButton />
+            <PortalButton label="Actualizar tarjeta en Mercado Pago" />
           </div>
         </div>
       )}
@@ -589,14 +702,124 @@ export default function SubscriptionCard({
         </div>
       )}
 
+      {/* -------------------------------------------------------------- */}
+      {/* Baja de la suscripción (R9): confirmación + resultado           */}
+      {/* -------------------------------------------------------------- */}
+      {cancel.kind === 'confirming' && (
+        <div
+          className="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-3"
+          role="alertdialog"
+          aria-labelledby="cancel-sub-title"
+          aria-describedby="cancel-sub-desc"
+        >
+          <p id="cancel-sub-title" className="text-[12px] font-bold text-rose-200">
+            ¿Estás seguro de que querés cancelar?
+          </p>
+          <p id="cancel-sub-desc" className="mt-1 text-[11px] leading-relaxed text-stone-300">
+            No se te va a cobrar más. Seguís con PRO hasta{' '}
+            {cancelAccessUntilMs ? (
+              <b>el {formatDateAR(cancelAccessUntilMs)}</b>
+            ) : (
+              'el fin del ciclo ya pagado'
+            )}{' '}
+            y después tu cuenta vuelve a FREE sin perder proyectos, assets ni links.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setCancel({ kind: 'idle' })}>
+              Volver
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void cancelSubscription()}
+              className="border-rose-500/50 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+            >
+              <CircleX className="h-3.5 w-3.5" />
+              Sí, cancelar suscripción
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {cancel.kind === 'error' && (
+        <div
+          className="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200"
+          role="alert"
+        >
+          <p>{cancel.message}</p>
+          <button
+            type="button"
+            onClick={() => setCancel({ kind: 'idle' })}
+            className="mt-1 font-semibold underline decoration-rose-300/40 underline-offset-2"
+          >
+            Volver a intentar
+          </button>
+        </div>
+      )}
+
+      {cancel.kind === 'done' && sub?.status !== 'programada_cierre' && (
+        <div
+          className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-200"
+          role="status"
+        >
+          {cancel.warning === 'LOCAL_SYNC_PENDING' ? (
+            <>
+              Cancelamos el débito en Mercado Pago. Estamos actualizando tu estado local:
+              recargá en unos segundos para ver el cierre programado.{' '}
+              <button
+                type="button"
+                onClick={() => router.refresh()}
+                className="font-semibold underline decoration-emerald-300/40 underline-offset-2"
+              >
+                Actualizar estado
+              </button>
+            </>
+          ) : cancel.periodEndMs ? (
+            <>
+              Listo: no se generan más cobros. Seguís con PRO hasta el{' '}
+              <b>{formatDateAR(cancel.periodEndMs)}</b> y después tu cuenta vuelve a FREE.
+            </>
+          ) : (
+            <>Listo: no se generan más cobros sobre esta suscripción.</>
+          )}
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <PortalButton />
+        {canCancel && cancel.kind !== 'confirming' && cancel.kind !== 'done' && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCancel({ kind: 'confirming' })}
+            disabled={cancel.kind === 'sending'}
+            aria-busy={cancel.kind === 'sending'}
+            className="border-rose-500/30 text-rose-300 hover:border-rose-400 hover:text-rose-200"
+          >
+            <CircleX className="h-3 w-3" />
+            {cancel.kind === 'sending' ? 'Cancelando…' : 'Cancelar suscripción'}
+          </Button>
+        )}
         {planPro && (
           <p className="text-[10px] text-stone-500">
             {sub?.preapprovalId ? 'Suscripción MP ' + sub.preapprovalId.slice(-8) : null}
           </p>
         )}
       </div>
+
+      {(planPro || canCancel) && (
+        <p className="mt-2 text-[10px] leading-relaxed text-stone-500">
+          Si tenés algún problema, también podés gestionarlo desde{' '}
+          <a
+            href={MERCADOPAGO_PORTAL_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-white/20 underline-offset-2 hover:text-stone-300"
+          >
+            Mercado Pago
+          </a>
+          .
+        </p>
+      )}
     </section>
   );
 }
@@ -672,8 +895,12 @@ function supportWhatsapp(raw: string, accountEmail: string | null): string {
   return digits ? `https://wa.me/${digits}?text=${text}` : `https://wa.me/?text=${text}`;
 }
 
-/** R9: el ÚNICO acceso a cancelar/actualizar tarjeta es el portal oficial. */
-function PortalButton() {
+/** R9: el Portal es la vía alternativa para cancelar y la principal para la tarjeta. */
+function PortalButton({
+  label = 'Abrir Portal de Mercado Pago',
+}: {
+  label?: string;
+}) {
   return (
     <a
       href={MERCADOPAGO_PORTAL_URL}
@@ -681,7 +908,7 @@ function PortalButton() {
       rel="noopener noreferrer"
       className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-fit')}
     >
-      <ExternalLink className="h-3 w-3" /> Abrir Portal de Mercado Pago
+      <ExternalLink className="h-3 w-3" /> {label}
     </a>
   );
 }

@@ -27,3 +27,37 @@ export function publicRequestOrigin(input: {
   const trimmed = raw.replace(/\/+$/, '');
   return trimmed.replace(/^(https?):\/\/localhost(?=[:/]|$)/i, '$1://127.0.0.1');
 }
+
+/**
+ * Origin para el `back_url` del checkout de suscripción.
+ *
+ * Un preview de Vercel (`etiquetaargenta-<hash>-…vercel.app`) es efímero y
+ * puede pedir login: jamás debe ser el retorno de un pago. En producción se usa
+ * el Host real (alias canónico); en preview/local se prefiere el origin público
+ * configurado (`MP_PUBLIC_ORIGIN` o `NEXT_PUBLIC_SITE_URL`). Si no hay ninguno,
+ * cae al Host de la request como antes.
+ */
+export function checkoutBackUrlOrigin(
+  input: {
+    nextUrlOrigin: string;
+    nextUrlProtocol: string;
+    host: string | null;
+    forwardedProto: string | null;
+  },
+  env: Record<string, string | undefined> = process.env,
+): string {
+  if (env.VERCEL_ENV === 'production') {
+    return publicRequestOrigin(input);
+  }
+
+  const configured = (env.MP_PUBLIC_ORIGIN?.trim() || env.NEXT_PUBLIC_SITE_URL?.trim() || '')
+    .replace(/\/+$/, '');
+  if (configured) {
+    return configured.replace(
+      /^(https?):\/\/localhost(?=[:/]|$)/i,
+      '$1://127.0.0.1',
+    );
+  }
+
+  return publicRequestOrigin(input);
+}

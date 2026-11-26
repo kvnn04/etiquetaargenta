@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { publicRequestOrigin } from '@/lib/http/origin';
+import { checkoutBackUrlOrigin, publicRequestOrigin } from '@/lib/http/origin';
 
 /* ============================================================================
  * Origin para back_urls de MP (QA 23-nov-2026)
@@ -73,5 +73,46 @@ describe('publicRequestOrigin', () => {
         forwardedProto: null,
       }),
     ).toBe('http://localhost.evil.com');
+  });
+});
+
+describe('checkoutBackUrlOrigin', () => {
+  const request = {
+    nextUrlOrigin: 'https://preview-abc.vercel.app',
+    nextUrlProtocol: 'https:',
+    host: 'preview-abc.vercel.app',
+    forwardedProto: 'https',
+  };
+
+  it('en producción usa el Host real de la request (alias canónico)', () => {
+    expect(
+      checkoutBackUrlOrigin(request, {
+        VERCEL_ENV: 'production',
+        MP_PUBLIC_ORIGIN: 'https://viejo.example',
+      }),
+    ).toBe('https://preview-abc.vercel.app');
+  });
+
+  it('en preview prefiere MP_PUBLIC_ORIGIN para no volver a un deploy efímero', () => {
+    expect(
+      checkoutBackUrlOrigin(request, {
+        VERCEL_ENV: 'preview',
+        MP_PUBLIC_ORIGIN: 'https://etiquetaargenta-gilt.vercel.app/',
+        NEXT_PUBLIC_SITE_URL: 'https://etiquetaargenta.vercel.app',
+      }),
+    ).toBe('https://etiquetaargenta-gilt.vercel.app');
+  });
+
+  it('en local usa NEXT_PUBLIC_SITE_URL si MP_PUBLIC_ORIGIN está vacío', () => {
+    expect(
+      checkoutBackUrlOrigin(
+        { ...request, host: '127.0.0.1:3100', nextUrlOrigin: 'http://127.0.0.1:3100' },
+        { MP_PUBLIC_ORIGIN: '', NEXT_PUBLIC_SITE_URL: 'https://etiquetaargenta-gilt.vercel.app' },
+      ),
+    ).toBe('https://etiquetaargenta-gilt.vercel.app');
+  });
+
+  it('sin origin configurado cae al Host de la request', () => {
+    expect(checkoutBackUrlOrigin(request, {})).toBe('https://preview-abc.vercel.app');
   });
 });

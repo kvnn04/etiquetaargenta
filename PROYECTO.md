@@ -300,6 +300,7 @@ simulador-mates/
 │       ├── legal/baja/confirm/route.ts    ← POS 12: POST token de un solo uso ⇒ cancela el preapproval propio vía R9
 │       ├── legal/privacidad/route.ts      ← POS 12: POST público de derechos de datos (5 días hábiles)
 │       ├── billing/checkout/route.ts      ← POS 10B/12/13: POST alta (gates sesión/email/precio/viva/legal ⇒ preapproval + seed; permite `revocada` y cancela el preapproval viejo)
+│       ├── billing/cancel/route.ts        ← POS 10B/R9: POST baja de la suscripción propia (sin body; preapproval de la sesión ⇒ PUT cancelled + `programada_cierre`)
 │       ├── billing/refresh/route.ts       ← POS 11: POST "Verifico de nuevo" real (401/429/502/503/200)
 │       ├── links/route.ts                 ← POS 10A/14: POST publish + GET versiones/agregados/decisión/observación + DELETE de una versión propia
 │       ├── links/[linkId]/decision/route.ts     ← POS 14: POST pública de decisión (aprobado/rechazado, motivo obligatorio, 404/410/409)
@@ -375,7 +376,8 @@ simulador-mates/
 │   ├── payments/mercadopago.ts    ← POS 10B/13: REST v1 preapproval/payments/chargebacks + search por external_reference + cancelPreapproval
 │   ├── payments/webhook.ts        ← POS 10B/13: firma HMAC `id;request-id;ts` timing-safe + ruteo payment/preapproval/chargeback
 │   ├── payments/mail.ts           ← POS 10B/13: Resend fail-soft + recibo/gracia/cierre + reembolso total/parcial + contracargo + alerta interna
-│   ├── payments/apply.ts          ← POS 10B/11/13: camino ÚNICO pago/preapproval/refund/chargeback (webhook⇄sync⇄legal) + CAS + claim de email
+│   ├── payments/apply.ts          ← POS 10B/11/13: camino ÚNICO pago/preapproval/refund/chargeback (webhook⇄sync⇄legal⇄app) + CAS + claim de email
+│   ├── payments/cancel.ts         ← POS 10B/R9: baja in-app — preapproval desde la sesión, titularidad MP, `cancelPreapproval` + `applyPreapproval` (programada_cierre)
 │   ├── payments/sync.ts           ← POS 11/13: TTL/cooldown + ventana R12.4 + selección/orden/auditoría + refunds + preapproval + realineo
 │   ├── payments/reconcile.ts      ← POS 10B/11: dunning al-vuelo (ventanas + drift MP + realineo; `revocada` ⇒ free; modos local/sync)
 │   ├── store/editor.ts            ← zustand: estado del editor = snapshot de projects.state (color/diseño pos 5–6 + escala/espejo/inkEnvelope pos 7)
@@ -1221,15 +1223,19 @@ con chequeo anti `test_user`, dominio canónico, webhook entregado por MP, migra
 final, cobro real de verificación, Resend, deploy, observabilidad y rollback) + checklist por
 fases A–F con criterio de cierre cada una y DOD de go-live en §6.
 
-**Checkout con plan de MP (24-nov):** el alta PRO ya no crea un `preapproval` planless con
-`payer_email` (MP rechazaba cuando la cuenta que pagaba no coincidía con el email de Supabase).
-Ahora `POST /api/billing/checkout` crea un **`preapproval_plan`** por intento con
-`external_reference = user_id` y redirige a su checkout hospedado; MP pide la cuenta del
-pagador. El mapping `mp_preapproval_plans` (migración **`0011_preapproval_plans.sql`**, a
-aplicar a mano) es la clave de identidad del webhook; el pago sigue siendo la ÚNICA fuente que
-activa PRO (`applyPreapproval` solo vincula IDs). Se sumó el topic
-`subscription_authorized_payment` para recuperar cobros recurrentes por
-`GET /authorized_payments/{id}`. Spec: `../simulador_Mates/spec_pagos_plan_mp.md`.
+**Checkout con plan de MP (24-nov, corregido 26-nov):** el alta PRO ya no crea un
+`preapproval` planless con `payer_email` (MP rechazaba cuando la cuenta que pagaba no
+coincidía con el email de Supabase). `POST /api/billing/checkout` usa un
+**`preapproval_plan`** con `external_reference = user_id` y redirige a su checkout hospedado;
+MP pide la cuenta del pagador. **El plan se reutiliza** mientras siga `active`, sea del mismo
+usuario y conserve precio/moneda; antes se creaba uno por click y se cancelaba el anterior,
+lo que invalidaba un checkout abierto en otra pestaña/dominio y MP lo mandaba a
+`/subscription/redirect/expired` (“Algo salió mal”). Los planes viejos ya no se cancelan. El
+mapping `mp_preapproval_plans` (migración **`0011_preapproval_plans.sql`**, a aplicar a mano)
+es la clave de identidad del webhook; el pago sigue siendo la ÚNICA fuente que activa PRO
+(`applyPreapproval` solo vincula IDs). Se sumó el topic `subscription_authorized_payment`
+para recuperar cobros recurrentes por `GET /authorized_payments/{id}`. Spec:
+`../simulador_Mates/spec_pagos_plan_mp.md`.
 **Pendiente:** aplicar `0011`, configurar el topic nuevo en el panel de MP, deployar y hacer
 un alta real con una cuenta de MP cuyo email NO coincida con el de Supabase.
 
