@@ -313,7 +313,7 @@ export async function buildPaymentReceiptPdf(
   y = drawField(page, y, 'Importe', `${amountText} (${input.currency})`, fonts);
   y = drawField(page, y, 'Fecha de pago', formatDateTimeAR(input.occurredAtMs), fonts);
   y = drawField(page, y, 'Estado', STATUS_LABEL[input.status] ?? input.status, fonts);
-  y = drawField(page, y, 'ID de pago MP', String(input.mpPaymentId), fonts);
+  y = drawField(page, y, 'Número de operación (MP)', String(input.mpPaymentId), fonts);
   if (input.refundedAmountArs != null && input.refundedAmountArs > 0) {
     y = drawField(
       page,
@@ -323,7 +323,9 @@ export async function buildPaymentReceiptPdf(
       fonts,
     );
   }
-  y = drawField(page, y, 'Comprobante MP', input.receiptUrl ?? 'No disponible', fonts);
+  y = input.receiptUrl
+    ? drawField(page, y, 'Comprobante MP', input.receiptUrl, fonts)
+    : drawField(page, y, 'Medio de pago', 'Tarjeta (Mercado Pago)', fonts);
   y = drawField(page, y, 'ID de constancia', input.paymentId, fonts);
 
   /* Pie: aclaración fiscal + generación ----------------------------------- */
