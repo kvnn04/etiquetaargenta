@@ -41,16 +41,26 @@ export async function POST(request: NextRequest) {
   });
   if (!result.ok) return serviceFailure(result, 'arrepentimiento');
 
+  const noRefundReason =
+    result.autoRefundReason === 'no_payment'
+      ? 'no encontramos un pago aprobado a tu nombre'
+      : result.autoRefundReason === 'no_balance'
+        ? 'el pago ya fue devuelto en su totalidad'
+        : result.autoRefundReason === 'invalid_dates'
+          ? 'no pudimos verificar la fecha del pago'
+          : 'la fecha de pago queda fuera de los 10 días corridos';
   const message =
     result.autoRefund === 'processed'
       ? 'Arrepentimiento ejecutado: reembolso total procesado y plan PRO dado de baja.'
       : result.autoRefund === 'sync_pending'
-        ? 'Reembolso total procesado. Estamos actualizando el estado del plan; en unos minutos vas a ver el PRO inactivo.'
+        ? 'Reembolso total procesado. Estamos actualizando el estado del plan; si no se refleja en unos minutos, te contactamos.'
         : result.autoRefund === 'failed'
           ? 'Solicitud registrada. La renovación quedó cancelada, pero Mercado Pago no aceptó el reembolso en este intento: lo reintentamos y te contactamos.'
-          : validation.value.withinWindow
-            ? 'Solicitud registrada dentro de los 10 días corridos.'
-            : 'Solicitud registrada. La fecha informada queda fuera de los 10 días corridos: la revisamos igual.';
+          : result.autoRefund === 'scheduled'
+            ? `Solicitud registrada. No corresponde reembolso (${noRefundReason}). Cancelamos la renovación y tu PRO sigue hasta el fin del ciclo ya pago.`
+            : validation.value.withinWindow
+              ? 'Solicitud registrada dentro de los 10 días corridos.'
+              : 'Solicitud registrada. La fecha informada queda fuera de los 10 días corridos: la revisamos igual.';
 
   return okJson(
     {
@@ -61,6 +71,8 @@ export async function POST(request: NextRequest) {
       responseHours: LEGAL_RESPONSE_HOURS,
       autoRefund: result.autoRefund,
       autoRefundAmountArs: result.autoRefundAmountArs,
+      autoRefundReason: result.autoRefundReason,
+      autoRefundPeriodEndMs: result.autoRefundPeriodEndMs,
       message,
     },
     201,

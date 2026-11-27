@@ -5,8 +5,6 @@ import type {
   PaymentStatus,
   SubscriptionStatus,
 } from '@/lib/payments/core';
-import { cycleAnchorDayOfStr, nextCycleDateMs } from '@/lib/payments/core';
-import { quoteCancellationRefund } from '@/lib/payments/refunds';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { signedBrandingUrl } from '@/lib/supabase/service';
 import ProfilePanel from '@/components/profile/profile-panel';
@@ -154,30 +152,7 @@ export default async function ProfilePage({
     receiptUrl: (p.receipt_url as string | null) ?? null,
   }));
 
-  /* Baja inmediata (R9 + R11.5): la cotización que ve el usuario se calcula
-   * acá, con los datos del server. Es solo una estimación: la API recalcula y
-   * decide con la misma función pura antes de llamar a MP. */
   const nowMs = Date.now();
-  const fundingPayment =
-    payments.find(
-      (p) => p.status === 'approved' || p.status === 'partially_refunded',
-    ) ?? null;
-  const anchorDay = sub?.cycleAnchorDate
-    ? cycleAnchorDayOfStr(sub.cycleAnchorDate)
-    : null;
-  const paidAtMs = fundingPayment?.occurredMs ?? null;
-  const paidCycleEndMs =
-    sub?.periodEndMs ??
-    (anchorDay != null && paidAtMs != null
-      ? nextCycleDateMs(anchorDay, paidAtMs)
-      : null);
-  const refundQuote = quoteCancellationRefund({
-    paymentAmount: fundingPayment?.amount ?? null,
-    refundedAmount: fundingPayment?.refundedAmount ?? 0,
-    paidAtMs,
-    cycleEndMs: paidCycleEndMs,
-    nowMs,
-  });
 
   /* ------------------------------------------------------------------
    * POSICIÓN 12 (R13.7/R13.13): evidencia de aceptación VIGENTE.
@@ -235,7 +210,6 @@ export default async function ProfilePage({
           payments,
           pago: pagoValido,
           nowMs, // del server: el banner y los días corren con el PlanWatcher/refresh
-          refundQuote,
           lastSyncedAtMs: isoToMs(subResult.data?.last_synced_at ?? null),
           accountEmail: user.email ?? null,
           support: {

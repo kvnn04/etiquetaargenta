@@ -238,29 +238,23 @@ export function mailRefundPartial(input: {
 }
 
 /**
- * Baja INMEDIATA pedida por el usuario con reembolso (total o prorrateado).
- * El acceso ya se cortó; el texto NO promete plazos de acreditación del banco.
+ * Baja INMEDIATA por Botón de Arrepentimiento con reembolso TOTAL (≤ 10 días
+ * corridos). El acceso ya se cortó; el texto NO promete plazos de acreditación
+ * del banco. No existe reembolso proporcional: fuera de la ventana solo se
+ * programa el cierre y se conserva PRO hasta `period_end`.
  */
 export function mailCancellationRefund(input: {
   to: string;
   amountArs: number;
-  refundKind: 'full' | 'partial';
   occurredAtMs: number;
-  daysRemaining?: number | null;
 }): MailContent {
   const monto = formatArsExact(input.amountArs) ?? 'el monto del reembolso';
   const fecha = formatDateAR(input.occurredAtMs) ?? '';
-  const alcance =
-    input.refundKind === 'full'
-      ? 'Reembolsamos el <strong>100 %</strong> del saldo de tu último pago'
-      : `Reembolsamos <strong>${monto}</strong> por los días no usados de tu ciclo${
-          input.daysRemaining != null ? ` (${input.daysRemaining} día(s))` : ''
-        }`;
   return {
     kind: 'baja_con_reembolso',
     to: input.to,
-    subject: 'Baja confirmada y reembolso procesado — Plan PRO inactivo',
-    html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Baja confirmada</h2><p>Procesamos tu baja inmediata. ${alcance} del ${fecha}.</p><p>El plan PRO quedó <strong>inactivo</strong>. Tus proyectos, assets y links siguen guardados: podés reactivar PRO cuando quieras desde Perfil → Suscripción.</p><p style="margin-top:12px;color:#78716c">El reintegro se procesa por el mismo medio de pago. Los plazos de acreditación dependen de Mercado Pago y de tu banco: no prometemos fechas.</p></div>`,
+    subject: 'Arrepentimiento confirmado y reembolso total — Plan PRO inactivo',
+    html: `<div style="font-family:sans-serif;color:#1c1917"><h2 style="margin:0 0 8px">Arrepentimiento confirmado</h2><p>Procesamos tu solicitud dentro de los <strong>10 días corridos</strong> (Ley 24.240 art. 34) y reembolsamos el <strong>100 %</strong> de tu último pago: <strong>${monto}</strong> del ${fecha}.</p><p>El plan PRO quedó <strong>inactivo</strong>. Tus proyectos, assets y links siguen guardados: podés reactivar PRO cuando quieras desde Perfil → Suscripción.</p><p style="margin-top:12px;color:#78716c">El reintegro se procesa por el mismo medio de pago. Los plazos de acreditación dependen de Mercado Pago y de tu banco: no prometemos fechas.</p></div>`,
   };
 }
 

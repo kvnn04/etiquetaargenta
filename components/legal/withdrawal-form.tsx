@@ -25,8 +25,18 @@ interface SuccessState {
   code: string;
   emailSent: boolean;
   withinWindow: boolean;
-  autoRefund: 'processed' | 'sync_pending' | 'failed' | 'not_applicable';
+  autoRefund: 'processed' | 'sync_pending' | 'failed' | 'scheduled' | 'not_applicable';
   autoRefundAmountArs: number | null;
+  /** Motivo cuando la baja queda programada sin reembolso. */
+  autoRefundReason:
+    | 'full_window'
+    | 'outside_window'
+    | 'no_payment'
+    | 'no_balance'
+    | 'invalid_dates'
+    | null;
+  /** Fin del ciclo ya pago cuando la baja queda programada sin reembolso. */
+  autoRefundPeriodEndMs: number | null;
 }
 
 const INITIAL = {
@@ -97,8 +107,16 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
             code?: string;
             emailSent?: boolean;
             withinWindow?: boolean;
-            autoRefund?: 'processed' | 'sync_pending' | 'failed' | 'not_applicable';
+            autoRefund?: 'processed' | 'sync_pending' | 'failed' | 'scheduled' | 'not_applicable';
             autoRefundAmountArs?: number | null;
+            autoRefundReason?:
+              | 'full_window'
+              | 'outside_window'
+              | 'no_payment'
+              | 'no_balance'
+              | 'invalid_dates'
+              | null;
+            autoRefundPeriodEndMs?: number | null;
             message?: string;
             error?: string;
             fields?: Record<string, string>;
@@ -114,6 +132,11 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
           autoRefundAmountArs:
             typeof payload.autoRefundAmountArs === 'number'
               ? payload.autoRefundAmountArs
+              : null,
+          autoRefundReason: payload.autoRefundReason ?? null,
+          autoRefundPeriodEndMs:
+            typeof payload.autoRefundPeriodEndMs === 'number'
+              ? payload.autoRefundPeriodEndMs
               : null,
         });
         return;
@@ -146,12 +169,20 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
             maximumFractionDigits: 2,
           }).format(success.autoRefundAmountArs)
         : null;
+    const periodEndText =
+      success.autoRefundPeriodEndMs != null
+        ? new Date(success.autoRefundPeriodEndMs).toLocaleDateString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+          })
+        : null;
     return (
       <LegalSuccess
         title={
           success.autoRefund === 'processed' || success.autoRefund === 'sync_pending'
             ? 'Arrepentimiento ejecutado'
-            : 'Solicitud registrada'
+            : success.autoRefund === 'scheduled'
+              ? 'Baja programada'
+              : 'Solicitud registrada'
         }
         code={success.code}
         emailSent={success.emailSent}
@@ -176,8 +207,8 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
             <p>
               Tu pago estaba dentro de los <strong>10 días corridos</strong> y procesamos el
               reembolso de <strong>{refundText ?? 'el total del ciclo'}</strong> por el mismo medio
-              de pago. Estamos terminando de actualizar el estado de tu plan: en unos minutos vas a
-              ver el PRO inactivo.
+              de pago. Estamos terminando de actualizar el estado de tu plan; si no se refleja en
+              unos minutos, te contactamos.
             </p>
             <p>
               La acreditación final depende de Mercado Pago y del banco emisor. Tus proyectos,
@@ -193,6 +224,25 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
             </p>
             <p>Tus proyectos, assets y links se conservan.</p>
           </>
+        ) : success.autoRefund === 'scheduled' ? (
+          <>
+            <p>
+              {success.autoRefundReason === 'no_payment'
+                ? 'No encontramos un pago aprobado a tu nombre'
+                : success.autoRefundReason === 'no_balance'
+                  ? 'El pago ya fue devuelto en su totalidad'
+                  : success.autoRefundReason === 'invalid_dates'
+                    ? 'No pudimos verificar la fecha del pago'
+                    : 'La fecha de tu pago queda fuera de los 10 días corridos del arrepentimiento'}
+              , así que no corresponde un nuevo reembolso. Cancelamos el débito automático y no se
+              generan más cobros.
+            </p>
+            <p>
+              Tu acceso PRO sigue hasta{' '}
+              <strong>{periodEndText ?? 'el fin del ciclo ya pago'}</strong> y después tu cuenta
+              vuelve a FREE. Tus proyectos, assets y links se conservan.
+            </p>
+          </>
         ) : (
           <>
             <p>
@@ -202,12 +252,13 @@ export default function WithdrawalForm({ contactEmail }: { contactEmail: string 
             </p>
             <p>
               En un plazo máximo de <strong>24 horas</strong> te confirmamos el encuadre y el
-              reembolso. El reintegro se hace por el mismo medio de pago, por el total del ciclo, y
-              la acreditación final depende de Mercado Pago y del banco emisor.
+              resultado. Cuando corresponde, el reintegro se hace por el mismo medio de pago, por el
+              <strong>100 % del último pago</strong>, y la acreditación final depende de Mercado Pago
+              y del banco emisor.
             </p>
             <p>
-              Si corresponde, damos de baja el acceso al plan. Tus proyectos, assets y links se
-              conservan.
+              Si no corresponde reembolso, la baja opera al final del ciclo ya pago. Tus proyectos,
+              assets y links se conservan.
             </p>
           </>
         )}

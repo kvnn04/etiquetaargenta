@@ -119,28 +119,21 @@ export default async function TermsPage() {
         al email de la cuenta, válido por 24 horas.
       </p>
       <p>
-        Al confirmar la baja se cancela el débito automático y no se generan cobros posteriores.
-        Podés elegir entre dos modalidades:
+        Al confirmar la baja se cancela el débito automático y no se generan cobros posteriores. La
+        baja opera <strong>al final del ciclo ya pago</strong>: conservás el acceso PRO hasta esa
+        fecha y después la cuenta vuelve a FREE, sin reembolso. Tus proyectos, assets y enlaces
+        guardados se conservan.
       </p>
-      <ul>
-        <li>
-          <strong>Al final del ciclo:</strong> conservás el acceso PRO hasta el fin del ciclo ya
-          pago y después la cuenta vuelve a FREE, sin reembolso.
-        </li>
-        <li>
-          <strong>Baja inmediata con reembolso:</strong> devolvemos el saldo del último pago
-          aprobado y el acceso PRO se desactiva en el momento. Si el pago tiene{' '}
-          <strong>{LEGAL_WITHDRAWAL_DAYS} días corridos o menos</strong>, el reembolso es del 100 %.
-          Después de ese plazo, devolvemos la parte proporcional a los días no usados del ciclo
-          (monto pagado ÷ días del ciclo × días restantes). Si faltan menos de 24 horas para el fin
-          del ciclo, no hay pago aprobado o el saldo ya fue devuelto, no corresponde reembolso: se
-          cancela la renovación y el acceso sigue hasta el fin del ciclo.
-        </li>
-      </ul>
       <p>
-        El plan solo se da de baja cuando Mercado Pago confirma el reembolso. Si el reembolso falla,
-        cancelamos la renovación, mantenemos el acceso PRO hasta el fin del ciclo y reintentamos el
-        reintegro. Tus proyectos, assets y enlaces guardados se conservan en todos los casos.
+        La baja desde el Centro de Suscripción y el Botón de Baja no generan reembolsos. El reembolso
+        del <strong>100 % del último pago</strong> corresponde únicamente al{' '}
+        <Link href={LEGAL_LINKS.withdrawal}>Botón de Arrepentimiento</Link>, dentro de los{' '}
+        <strong>{LEGAL_WITHDRAWAL_DAYS} días corridos</strong> desde el pago.
+      </p>
+      <p>
+        En el arrepentimiento, el plan solo se da de baja cuando Mercado Pago confirma el reembolso.
+        Si el reembolso falla, cancelamos la renovación, mantenemos el acceso PRO hasta el fin del
+        ciclo y reintentamos el reintegro.
       </p>
 
       <h2>8. Arrepentimiento</h2>
@@ -153,11 +146,13 @@ export default async function TermsPage() {
       </p>
       <p>
         Si el pago real está dentro de los {LEGAL_WITHDRAWAL_DAYS} días corridos, ejecutamos el
-        arrepentimiento de forma automática: devolvemos el <strong>total del ciclo</strong>, incluso
-        si usaste el simulador, y damos de baja el acceso PRO en el momento. Las renovaciones tienen
-        el mismo derecho. Si el pago queda fuera de la ventana, revisamos la solicitud y respondemos
-        con una decisión fundada. El reintegro se hace por el mismo medio de pago y la acreditación
-        final depende de Mercado Pago y del banco emisor.
+        arrepentimiento de forma automática: devolvemos el <strong>100 % del último pago</strong>,
+        incluso si usaste el simulador, y damos de baja el acceso PRO en el momento. Las renovaciones
+        tienen el mismo derecho. Si el pago queda fuera de la ventana, <strong>no corresponde
+        reembolso</strong>: cancelamos la renovación y el acceso PRO sigue hasta el fin del ciclo ya
+        pago. La solicitud se revisa igual y respondemos con una decisión fundada. El reintegro se
+        hace por el mismo medio de pago y la acreditación final depende de Mercado Pago y del banco
+        emisor.
       </p>
 
       <h2>9. Reembolsos y contracargos</h2>

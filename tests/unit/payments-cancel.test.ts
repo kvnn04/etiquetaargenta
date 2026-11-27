@@ -1,10 +1,10 @@
 /* ============================================================================
- * BAJA INMEDIATA — helpers puros de `cancel.ts`
+ * BAJA — helpers puros de `cancel.ts`
  * ----------------------------------------------------------------------------
- * El fin del ciclo que financió el último pago es la base del prorrateo. La
- * regla: `period_end` manda si el cierre ya está programado; si no, se deriva
- * del ancla del ciclo y la fecha del cobro (R1), porque `period_end` solo se
- * escribe al programar el cierre.
+ * El fin del ciclo que financió el último pago es la fecha de acceso hasta la
+ * que se conserva PRO. La regla: `period_end` manda si el cierre ya está
+ * programado; si no, se deriva del ancla del ciclo y la fecha del cobro (R1),
+ * porque `period_end` solo se escribe al programar el cierre.
  * ========================================================================== */
 
 import { describe, expect, it } from 'vitest';

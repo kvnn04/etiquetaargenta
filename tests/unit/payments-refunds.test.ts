@@ -14,13 +14,14 @@ import {
   clampRefundedAmount,
   decideRefundImpact,
   effectiveRefundedAmount,
+  evaluateWithdrawalRefund,
   isChargebackReversal,
   isCurrentCyclePayment,
   isRefundLikeStatus,
   mergeRefundStatus,
-  quoteCancellationRefund,
   refundImpactKindFor,
   resolveRefundStatus,
+  WITHDRAWAL_REFUND_WINDOW_DAYS,
 } from '@/lib/payments/refunds';
 
 const T0 = Date.UTC(2026, 10, 20, 15, 0, 0); // 2026-11-20 12:00 AR
@@ -291,85 +292,80 @@ describe('R11.4/R11.6 — máquina de estados', () => {
 });
 
 /* ============================================================================
- * BAJA INMEDIATA CON REEMBOLSO — decisión del titular (2026-11-26)
+ * ARREPENTIMIENTO — reembolso TOTAL dentro de los 10 días (decisión 2026-11-27)
  * ----------------------------------------------------------------------------
- * · 10 días corridos o menos ⇒ 100 % del saldo no devuelto.
- * · Después ⇒ monto_pagado / días_totales_ciclo * días_restantes.
- * · Menos de 24 h para vencer / sin pago ⇒ no hay reembolso.
+ * · Día 0 a día 10 corridos inclusive ⇒ 100 % del saldo no devuelto.
+ * · Después del día 10 ⇒ NO hay reembolso (ni total ni proporcional): la baja
+ *   se programa y PRO sigue hasta period_end.
  * ========================================================================== */
 
-describe('baja inmediata — cotización del reembolso', () => {
+describe('arrepentimiento — elegibilidad del reembolso total', () => {
   const PAID = Date.UTC(2026, 10, 1, 15); // 01/11/2026 12:00 AR
-  const CYCLE_END = Date.UTC(2026, 11, 1, 3); // 01/12/2026 00:00 AR
 
-  const quote = (nowMs: number, amount = 20_000, refundedAmount = 0) =>
-    quoteCancellationRefund({
+  const evaluate = (nowMs: number, amount = 20_000, refundedAmount = 0) =>
+    evaluateWithdrawalRefund({
       paymentAmount: amount,
       refundedAmount,
       paidAtMs: PAID,
-      cycleEndMs: CYCLE_END,
       nowMs,
     });
 
+  it('la ventana legal es de 10 días corridos', () => {
+    expect(WITHDRAWAL_REFUND_WINDOW_DAYS).toBe(10);
+  });
+
   it('día 10 inclusive ⇒ reembolso total del saldo', () => {
     const day10 = Date.UTC(2026, 10, 11, 15); // 11/11 12:00 AR
-    expect(quote(day10)).toMatchObject({
-      kind: 'full',
+    expect(evaluate(day10)).toMatchObject({
+      eligible: true,
       amountArs: 20_000,
       daysSincePayment: 10,
       reason: 'full_window',
     });
   });
 
-  it('día 11 ⇒ prorrateo por días restantes (19 de 30)', () => {
+  it('día 11 ⇒ sin reembolso y sin prorrateo', () => {
     const day11 = Date.UTC(2026, 10, 12, 15); // 12/11 12:00 AR
-    expect(quote(day11)).toMatchObject({
-      kind: 'partial',
-      amountArs: 12_666.67,
-      daysSincePayment: 11,
-      daysRemaining: 19,
-      cycleDays: 30,
-      reason: 'prorated',
-    });
-    expect(quote(day11, 10_000).amountArs).toBe(6_333.33);
-  });
-
-  it('menos de 24 h para vencer ⇒ no hay reembolso', () => {
-    const lastDay = Date.UTC(2026, 10, 30, 15); // 30/11 12:00 AR
-    expect(quote(lastDay)).toMatchObject({
-      kind: 'none',
+    expect(evaluate(day11)).toMatchObject({
+      eligible: false,
       amountArs: 0,
-      reason: 'less_than_one_day',
+      daysSincePayment: 11,
+      reason: 'outside_window',
     });
+    expect(evaluate(day11, 10_000).amountArs).toBe(0);
   });
 
-  it('ciclo vencido o sin pago ⇒ no hay reembolso', () => {
-    expect(quote(Date.UTC(2026, 11, 2, 3))).toMatchObject({
-      kind: 'none',
-      reason: 'cycle_expired',
-    });
+  it('sin pago aprobado ⇒ no hay reembolso', () => {
     expect(
-      quoteCancellationRefund({
+      evaluateWithdrawalRefund({
         paymentAmount: null,
         paidAtMs: null,
-        cycleEndMs: null,
         nowMs: PAID,
       }),
-    ).toMatchObject({ kind: 'none', amountArs: 0, reason: 'no_payment' });
+    ).toMatchObject({ eligible: false, amountArs: 0, reason: 'no_payment' });
   });
 
   it('un reembolso previo se descuenta y nunca se devuelve dos veces', () => {
     const day5 = Date.UTC(2026, 10, 6, 15);
-    expect(quote(day5, 20_000, 5_000)).toMatchObject({
-      kind: 'full',
+    expect(evaluate(day5, 20_000, 5_000)).toMatchObject({
+      eligible: true,
       amountArs: 15_000,
       refundedBefore: 5_000,
       availableArs: 15_000,
     });
-    expect(quote(day5, 20_000, 20_000)).toMatchObject({
-      kind: 'none',
+    expect(evaluate(day5, 20_000, 20_000)).toMatchObject({
+      eligible: false,
       amountArs: 0,
       reason: 'no_balance',
+    });
+  });
+
+  it('fecha de pago futura ⇒ fechas inválidas, sin reembolso', () => {
+    const beforePayment = Date.UTC(2026, 9, 31, 15);
+    expect(evaluate(beforePayment)).toMatchObject({
+      eligible: false,
+      amountArs: 0,
+      reason: 'invalid_dates',
     });
   });
 

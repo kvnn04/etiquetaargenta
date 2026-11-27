@@ -729,7 +729,7 @@ export async function getPayment(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Reembolsos de un pago (R9 + R11.5 — baja inmediata)                         */
+/* Reembolsos de un pago (R9/R11.5 + Botón de Arrepentimiento)                 */
 /* -------------------------------------------------------------------------- */
 
 /** Respuesta de `POST /v1/payments/{id}/refunds` (total o parcial). */

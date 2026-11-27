@@ -15,6 +15,7 @@
 
 import { formatArs, formatDateAR } from '@/lib/payments/core';
 import { sendMail, type MailContent, type MailOutcome } from '@/lib/payments/mail';
+import type { WithdrawalRefundReason } from '@/lib/payments/refunds';
 import {
   escapeHtml,
   escapeHtmlMultiline,
@@ -48,12 +49,44 @@ export function mailWithdrawalAck(input: {
   purchaseDateMs: number | null;
   withinWindow: boolean;
   amountArs?: number | null;
+  /** Resultado ya ejecutado por el server (si lo hubo). */
+  outcome?: 'processed' | 'sync_pending' | 'failed' | 'scheduled' | null;
+  /** Motivo del cierre sin reembolso (solo cuando `outcome='scheduled'`). */
+  scheduledReason?: WithdrawalRefundReason | null;
+  periodEndMs?: number | null;
 }): MailContent {
   const nombre = escapeHtml(input.fullName);
   const fecha = input.purchaseDateMs ? formatDateAR(input.purchaseDateMs) : null;
+  const fin = input.periodEndMs ? formatDateAR(input.periodEndMs) : null;
   const plazo = input.withinWindow
-    ? `<p>Tu solicitud queda dentro de los <strong>10 días corridos</strong> del arrepentimiento (Ley 24.240 art. 34 y Disposición 954/2025).</p>`
-    : `<p>Registramos la solicitud aunque la fecha informada queda fuera de los 10 días corridos. La revisamos igual y te respondemos con una decisión fundada.</p>`;
+    ? `<p>Tu solicitud queda dentro de los <strong>10 días corridos</strong> del arrepentimiento (Ley 24.240 art. 34 y Disposición 954/2025). Si el pago real también está dentro de la ventana, el reembolso es del <strong>100 %</strong> del último pago.</p>`
+    : `<p>Registramos la solicitud aunque la fecha informada queda fuera de los 10 días corridos. Si el pago real también está fuera, <strong>no corresponde reembolso</strong>: cancelamos la renovación y el acceso sigue hasta el fin del ciclo ya pago.</p>`;
+  const sinReembolso =
+    input.scheduledReason === 'no_payment'
+      ? 'No hay un pago aprobado asociado a la cuenta'
+      : input.scheduledReason === 'no_balance'
+        ? 'El pago ya fue devuelto en su totalidad'
+        : input.scheduledReason === 'invalid_dates'
+          ? 'La fecha del pago no permite verificar la ventana'
+          : 'El pago real queda <strong>fuera de los 10 días corridos</strong>';
+  const resolution =
+    input.outcome === 'processed'
+      ? `<p>Procesamos el reembolso del <strong>100 %</strong> del último pago por el mismo medio de pago y el plan PRO quedó <strong>inactivo</strong>.</p>`
+      : input.outcome === 'sync_pending'
+        ? `<p>Procesamos el reembolso del <strong>100 %</strong> del último pago por el mismo medio de pago. Estamos terminando de actualizar el estado del plan; si no se refleja en unos minutos, te contactamos.</p>`
+        : input.outcome === 'failed'
+          ? `<p>Cancelamos la renovación, pero Mercado Pago no aceptó el reembolso en este intento: lo reintentamos y te contactamos. Tu PRO sigue ${fin ? `hasta el <strong>${fin}</strong>` : 'hasta el fin del ciclo ya pago'}.</p>`
+          : input.outcome === 'scheduled'
+            ? `<p>${sinReembolso}: no corresponde reembolso. Cancelamos la renovación y tu PRO sigue ${fin ? `hasta el <strong>${fin}</strong>` : 'hasta el fin del ciclo ya pago'}.</p>`
+            : `<p>En un plazo máximo de <strong>24 horas</strong> te confirmamos el encuadre y el resultado. Cuando corresponde, el reintegro se hace por el mismo medio de pago, por el <strong>100 %</strong> del último pago (${priceText(input.amountArs ?? null)}), y el acceso PRO se da de baja; la acreditación final depende de Mercado Pago y del banco emisor.</p>`;
+  const cierre =
+    input.outcome === 'processed' || input.outcome === 'sync_pending'
+      ? '<p>Tus proyectos, assets y links se conservan: podés reactivar PRO cuando quieras.</p>'
+      : input.outcome === 'failed'
+        ? '<p>Mientras tanto, tus proyectos, assets y links se conservan y la renovación quedó cancelada.</p>'
+        : input.outcome === 'scheduled'
+          ? '<p>Tus proyectos, assets y links se conservan; al terminar el ciclo vuelven los límites del plan FREE.</p>'
+          : '<p>Si no corresponde reembolso, la baja opera al final del ciclo ya pago. Tus proyectos, assets y links se conservan.</p>';
   return {
     kind: 'solicitud_legal',
     to: input.to,
@@ -63,8 +96,8 @@ export function mailWithdrawalAck(input: {
       `<p>Hola ${nombre}: tu solicitud quedó registrada con el código <strong>${escapeHtml(input.code)}</strong>.</p>
        ${fecha ? `<p>Fecha de compra informada: <strong>${fecha}</strong>.</p>` : ''}
        ${plazo}
-       <p>En un plazo máximo de <strong>24 horas</strong> te confirmamos el encuadre y el reembolso. El reintegro se hace por el mismo medio de pago, por el total del ciclo (${priceText(input.amountArs ?? null)}); la acreditación final depende de Mercado Pago y del banco emisor.</p>
-       <p>Si el reembolso avanza, damos de baja el acceso al plan. Tus proyectos, assets y links se conservan.</p>
+       ${resolution}
+       ${cierre}
        <p style="${MUTED_STYLE}">Guardá este código para cualquier consulta. Respondé este email si necesitás agregar información.</p>`,
     ),
   };

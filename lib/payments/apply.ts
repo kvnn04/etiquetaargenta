@@ -717,9 +717,9 @@ async function applyRefundEvent(
     rawStatus?: string | null;
     precomputed?: { subBefore: SubRow | null; validation: PaymentValidationOk };
     /**
-     * Baja inmediata con reembolso: el caller ya confirmó la solicitud. Fuerza
-     * la revocación aunque el reembolso sea PARCIAL (excepción a R11.5) y usa
-     * `closure_reason='cancel'` (no `refund`).
+     * Reembolso total del Botón de Arrepentimiento: el caller ya confirmó la
+     * solicitud. Fuerza la revocación y usa `closure_reason='cancel'` (no
+     * `refund`), porque el dinero volvió por una baja pedida por el usuario.
      */
     forceCancellation?: boolean;
   } = {},
@@ -763,10 +763,10 @@ async function applyRefundEvent(
   const rawStatus = opts.rawStatus ?? statusDetail ?? pay.status;
   const chargeMs = isoToMs(pay.dateApproved) ?? isoToMs(pay.dateCreated) ?? occurredMs;
 
-  /* Baja inmediata: la solicitud se reclama ANTES de llamar a MP, así el
+  /* Arrepentimiento: la solicitud se reclama ANTES de llamar a MP, así el
    * webhook que llegue en paralelo ya ve la intención y revoca con motivo
-   * `cancel` aunque el reembolso sea parcial. Si la migración 0012 no está
-   * aplicada, el lookup devuelve null y R11 sigue funcionando igual. */
+   * `cancel`. Si la migración 0012 no está aplicada, el lookup devuelve null y
+   * R11 sigue funcionando igual. */
   const cancellationRequest: RefundRequestRow | null =
     kind === 'refund'
       ? await findCancellationRefundForPayment(service, ctx.userId, pay.id)
@@ -1118,9 +1118,7 @@ async function applyRefundEvent(
             mailCancellationRefund({
               to,
               amountArs: refundedNow,
-              refundKind: cancellationRequest.refund_kind,
               occurredAtMs: occurredMs,
-              daysRemaining: cancellationRequest.days_remaining,
             }),
             {
               timeoutMs:
@@ -1235,17 +1233,18 @@ export interface ConfirmedCancellationRefundInput {
 }
 
 /**
- * Fold LOCAL de una baja inmediata cuyo reembolso MP ya devolvió 200/201.
+ * Fold LOCAL de un reembolso total del Botón de Arrepentimiento cuyo MP ya
+ * devolvió 200/201.
  *
- * El caller (API de baja o Botón de Arrepentimiento) ya:
+ * El caller (Botón de Arrepentimiento) ya:
  *   1. canceló el preapproval;
  *   2. reclamó la fila de `refund_requests` (idempotency key);
  *   3. ejecutó `POST /v1/payments/{id}/refunds`.
  *
  * Acá se construye el pago sintético con el refund REAL y se reutiliza el fold
- * de R11 con `forceCancellation`: aunque el monto sea parcial, revoca ya y
- * deja `closure_reason='cancel'`. Si el webhook ganó la carrera, el fold es
- * idempotente y el email sale una sola vez (claim en `refund_requests`).
+ * de R11 con `forceCancellation`: revoca ya y deja `closure_reason='cancel'`.
+ * Si el webhook ganó la carrera, el fold es idempotente y el email sale una
+ * sola vez (claim en `refund_requests`).
  */
 export async function applyConfirmedCancellationRefund(
   input: ConfirmedCancellationRefundInput,

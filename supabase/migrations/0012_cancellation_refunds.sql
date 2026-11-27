@@ -1,16 +1,17 @@
 -- ============================================================================
--- 0012_cancellation_refunds.sql — BAJA INMEDIATA CON REEMBOLSO
+-- 0012_cancellation_refunds.sql — ARREPENTIMIENTO CON REEMBOLSO TOTAL
 -- ----------------------------------------------------------------------------
--- Fuente: decisión del titular (2026-11-26) + spec_pagos.md R9 +
--- spec_reembolsos_y_contracargos.md R11.5 (excepción de baja inmediata).
+-- Fuente: decisión del titular (2026-11-27) + spec_pagos.md R9 +
+-- spec_reembolsos_y_contracargos.md R11.5/R13.5.
 --
 -- Esta migración es ADITIVA y se corre A MANO en Supabase (el proyecto no usa
 -- DATABASE_URL ni migraciones automáticas). No hay DROP TABLE ni pérdida de
 -- datos.
 --
 --   refund_requests : auditoría e idempotencia de CADA intento de reembolso
---                     iniciado por la app (cancelación) o por el Botón de
---                     Arrepentimiento (withdrawal).
+--                     iniciado por el Botón de Arrepentimiento (withdrawal).
+--                     `cancellation` se conserva para filas históricas de la
+--                     baja inmediata retirada el 2026-11-27.
 --
 -- Reglas que sostiene la tabla:
 --   · una sola solicitud ACTIVA por (user_id, mp_payment_id): pending,
@@ -19,17 +20,18 @@
 --     en cada reintento: un fetch repetido devuelve el mismo reembolso.
 --   · `applied_at` NULL + status approved ⇒ MP devolvió el dinero pero falta
 --     converger el estado local; el webhook/sync lo repara.
---   · `email_sent_at` es el claim del email de baja+reembolso: un solo envío
---     por solicitud, aunque el webhook y la API corran a la vez.
+--   · `email_sent_at` es el claim del email de arrepentimiento+reembolso: un
+--     solo envío por solicitud, aunque el webhook y la API corran a la vez.
 -- ============================================================================
 
 create table if not exists public.refund_requests (
   id                 uuid primary key default gen_random_uuid(),
   user_id            uuid not null references public.users (id) on delete cascade,
   mp_payment_id      bigint not null,
-  -- Origen de la solicitud: la app o el Botón de Arrepentimiento público.
+  -- Origen de la solicitud: `withdrawal` (Botón de Arrepentimiento) o
+  -- `cancellation` (fila histórica de la baja inmediata retirada).
   kind               text not null check (kind in ('cancellation', 'withdrawal')),
-  -- full = 100 % del saldo; partial = prorrateo por días no usados.
+  -- full = 100 % del saldo (única modalidad vigente); partial = histórico.
   refund_kind        text not null check (refund_kind in ('full', 'partial')),
   status             text not null default 'pending'
                      check (status in ('pending', 'processing', 'approved', 'failed')),
@@ -90,10 +92,10 @@ grant select on public.refund_requests to authenticated;
 -- Comentarios operativos
 -- ---------------------------------------------------------------------------
 comment on table public.refund_requests is
-  'Auditoría e idempotencia de reembolsos por baja inmediata (app) y arrepentimiento (público). Una solicitud activa por pago.';
+  'Auditoría e idempotencia del reembolso total del Botón de Arrepentimiento (≤ 10 días). Una solicitud activa por pago; `cancellation` es histórico.';
 comment on column public.refund_requests.idempotency_key is
   'X-Idempotency-Key enviada a MP. Se reutiliza en cada reintento para no devolver dos veces.';
 comment on column public.refund_requests.applied_at is
   'NULL con status approved ⇒ MP devolvió el dinero pero falta converger payments/subscriptions/users.';
 comment on column public.refund_requests.email_sent_at is
-  'Claim del email de baja+reembolso: un solo envío por solicitud.';
+  'Claim del email de arrepentimiento+reembolso: un solo envío por solicitud.';

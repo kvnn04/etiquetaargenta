@@ -31,31 +31,28 @@ describe('mailScheduledClose — origen de la baja (R9)', () => {
   });
 });
 
-describe('mailCancellationRefund — baja inmediata con reembolso (R9/R11)', () => {
-  it('reembolso total: informa el 100 % y el PRO inactivo sin prometer fechas del banco', () => {
+describe('mailCancellationRefund — arrepentimiento con reembolso total (R13.5)', () => {
+  it('informa el 100 % y el PRO inactivo sin prometer fechas del banco', () => {
     const mail = mailCancellationRefund({
       to: 'taller@example.com',
       amountArs: 36_799,
-      refundKind: 'full',
       occurredAtMs: Date.UTC(2026, 10, 20, 15),
     });
-    expect(mail.subject).toContain('Baja confirmada');
+    expect(mail.subject).toContain('Arrepentimiento confirmado');
     expect(mail.html).toContain('100 %');
     expect(mail.html).toContain('inactivo');
     expect(mail.html).not.toMatch(/acreditad[oa] (el|en) \d/);
     expect(mail.html).toContain('dependen de Mercado Pago');
   });
 
-  it('reembolso parcial: muestra el monto prorrateado y los días no usados', () => {
+  it('no menciona prorrateo ni días no usados: no existe reembolso parcial', () => {
     const mail = mailCancellationRefund({
       to: 'taller@example.com',
       amountArs: 12_345.67,
-      refundKind: 'partial',
       occurredAtMs: Date.UTC(2026, 10, 20, 15),
-      daysRemaining: 11,
     });
     expect(mail.html).toContain('12.345,67');
-    expect(mail.html).toContain('11 día(s)');
-    expect(mail.html).not.toContain('100 %');
+    expect(mail.html).toContain('10 días corridos');
+    expect(mail.html).not.toMatch(/prorrat|días no usados|día\(s\)/i);
   });
 });

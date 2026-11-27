@@ -136,8 +136,8 @@ export function formatPricePerMonth(amount: number, currency = 'ARS'): string | 
 }
 
 /**
- * `$ 12.666,67` — montos de reembolso con centavos. El prorrateo se calcula a
- * 2 decimales y la constancia/email deben mostrar EXACTAMENTE lo devuelto.
+ * `$ 12.666,67` — montos de reembolso con centavos. La constancia/email deben
+ * mostrar EXACTAMENTE lo devuelto por MP.
  */
 export function formatArsExact(amount: number, currency = 'ARS'): string | null {
   if (!Number.isFinite(amount)) return null;
@@ -319,7 +319,7 @@ export type SubscriptionEvent =
   /** Contracargo del ciclo vigente (R11.6): suspensión inmediata. */
   | { kind: 'contracargo'; occurredAtMs: number }
   /**
-   * Baja INMEDIATA pedida por el usuario con reembolso (total o prorrateado).
+   * Reembolso total confirmado por el Botón de Arrepentimiento (≤ 10 días).
    * No es un reembolso originado en MP: el motivo del cierre es `cancel` y la
    * UI lo distingue de `refund` (R11.4) y `chargeback` (R11.6).
    */

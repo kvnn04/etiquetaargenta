@@ -35,10 +35,12 @@ export default async function WithdrawalPage() {
           Botón de Arrepentimiento
         </h1>
         <p className="mt-3 text-xs leading-relaxed text-stone-400">
-          Si contrataste el Plan PRO y te arrepentiste, podés pedir la devolución dentro de los{' '}
+          Si contrataste el Plan PRO y te arrepentiste, podés pedir la devolución del{' '}
+          <strong className="text-stone-200">100 %</strong> dentro de los{' '}
           <strong className="text-stone-200">{LEGAL_WITHDRAWAL_DAYS} días corridos</strong> desde la
           celebración del contrato o la entrega. Es un derecho legal: no tenés que justificar el
-          motivo, no hace falta login y no perdés tus proyectos.
+          motivo, no hace falta login y no perdés tus proyectos. Fuera de esa ventana no corresponde
+          reembolso, pero podés cancelar la renovación en cualquier momento.
         </p>
       </header>
 
@@ -46,8 +48,9 @@ export default async function WithdrawalPage() {
         <h2 className="text-base font-bold text-cream">Solicitar el arrepentimiento</h2>
         <p className="mt-1 text-xs leading-relaxed text-stone-400">
           Completá tus datos. Recibís un código en pantalla y un acuse por email. La solicitud se
-          registra aunque la fecha informada quede fuera de los 10 días: la revisamos igual y
-          respondemos con una decisión fundada.
+          registra aunque la fecha informada quede fuera de los 10 días. Si el pago real también
+          está fuera de la ventana, <strong className="text-stone-300">no corresponde reembolso</strong>:
+          cancelamos la renovación y el acceso sigue hasta el fin del ciclo ya pago.
         </p>
         <div className="mt-4">
           <WithdrawalForm contactEmail={LEGAL_ENTITY.email} />
@@ -64,16 +67,18 @@ export default async function WithdrawalPage() {
         </li>
         <li>
           <strong>Respondemos en {LEGAL_RESPONSE_HOURS} horas.</strong> Confirmamos el encuadre del
-          arrepentimiento y el reembolso del ciclo completo por el mismo medio de pago.
+          arrepentimiento. Si el pago real está dentro de la ventana, el reembolso es del{' '}
+          <strong>100 %</strong> por el mismo medio de pago.
         </li>
         <li>
-          <strong>Reintegro.</strong> Devolvemos el total del ciclo, incluso si usaste el
-          simulador. La acreditación final depende de Mercado Pago y del banco emisor; no
-          prometemos plazos bancarios que no controlamos. La comisión de Mercado Pago la absorbe la
-          plataforma: no se descuenta del reintegro.
+          <strong>Reintegro (dentro de la ventana).</strong> Devolvemos el total del último pago,
+          incluso si usaste el simulador. La acreditación final depende de Mercado Pago y del banco
+          emisor; no prometemos plazos bancarios que no controlamos. La comisión de Mercado Pago la
+          absorbe la plataforma: no se descuenta del reintegro.
         </li>
         <li>
-          <strong>Acceso.</strong> Si el reembolso avanza, damos de baja el plan. Tus proyectos,
+          <strong>Acceso.</strong> Si corresponde reembolso, damos de baja el plan en el momento. Si
+          el pago está fuera de la ventana, la baja opera al final del ciclo ya pago. Tus proyectos,
           assets y enlaces se conservan; después del ciclo vuelven los límites del plan FREE.
         </li>
       </ol>
@@ -81,9 +86,11 @@ export default async function WithdrawalPage() {
       <h2>Alcance y precio</h2>
       <p>
         El derecho alcanza a la contratación inicial y a las renovaciones automáticas. El plan PRO
-        se ofrece por {priceLegend}. Si el arrepentimiento se ejerce después de un cobro de
-        renovación, se devuelve ese ciclo completo. El plazo se cuenta en días corridos y el día de
-        la compra es el día 0; el día {LEGAL_WITHDRAWAL_DAYS} todavía está dentro.
+        se ofrece por {priceLegend}. Si el arrepentimiento se ejerce dentro de la ventana después de
+        un cobro de renovación, se devuelve ese ciclo completo. El plazo se cuenta en días corridos y
+        el día de la compra es el día 0; el día {LEGAL_WITHDRAWAL_DAYS} todavía está dentro. Pasado
+        ese plazo no corresponde reembolso: solo se cancela la renovación y el acceso sigue hasta el
+        fin del ciclo ya pago.
       </p>
       <p>
         Este botón no reemplaza ni limita los demás derechos de la Ley 24.240. Podés reclamar ante

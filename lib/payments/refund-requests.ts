@@ -81,9 +81,9 @@ export async function findLatestRefundRequest(
 }
 
 /**
- * Webhook/sync: ¿este pago tiene una baja inmediata con reembolso en curso o
- * aprobada? Si sí, el fold debe revocar con `closure_reason='cancel'` aunque
- * el reembolso sea parcial (excepción a R11.5).
+ * Webhook/sync: ¿este pago tiene un reembolso total del Botón de
+ * Arrepentimiento en curso o aprobado? Si sí, el fold debe revocar con
+ * `closure_reason='cancel'`.
  */
 export async function findCancellationRefundForPayment(
   service: Service,
