@@ -1095,8 +1095,8 @@ async function applyRefundEvent(
   if (applied.error) console.error('[mp apply refund applied_at]:', applied.error.message);
 
   /* 6) Emails: SOLO con novedad nueva. Un reintento no reenvía (R11.9).
-   * La baja inmediata tiene su propio email y su propio claim: el webhook y
-   * la API pueden foldear el mismo reembolso y solo uno lo manda. */
+   * El reembolso del arrepentimiento tiene su propio email y su propio claim:
+   * el webhook y la API pueden foldear el mismo reembolso y solo uno lo manda. */
   let email: ApplyEmailOutcome = 'skipped';
   const cancellationEmail =
     cancellationRefund && impact !== 'audit' && cancellationRequest != null;
@@ -1216,7 +1216,7 @@ async function applyRefundEvent(
 }
 
 /* -------------------------------------------------------------------------- */
-/* applyConfirmedCancellationRefund — baja inmediata ya reembolsada en MP     */
+/* applyConfirmedCancellationRefund — arrepentimiento ya reembolsado en MP     */
 /* -------------------------------------------------------------------------- */
 
 export interface ConfirmedCancellationRefundInput {

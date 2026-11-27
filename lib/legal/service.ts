@@ -442,7 +442,7 @@ export async function createWithdrawal(input: {
             responded_at: new Date(nowMs).toISOString(),
             resolution_note: `Arrepentimiento dentro de los 10 días: reembolso total de ${
               auto.amountArs
-            } ARS (MP ${auto.refundId ?? 's/d'}) y baja inmediata del PRO.`,
+            } ARS (MP ${auto.refundId ?? 's/d'}) y revocación inmediata del PRO.`,
           })) ?? inserted.row;
       } else {
         /* MP YA devolvió el dinero; falta converger el estado local. No se
@@ -508,7 +508,7 @@ export async function createWithdrawal(input: {
     finalRow,
     autoRefundNote ??
       (autoRefund === 'processed'
-        ? 'Arrepentimiento dentro de 10 días: reembolso total y baja inmediata ejecutados.'
+        ? 'Arrepentimiento dentro de 10 días: reembolso total y revocación inmediata ejecutados.'
         : null),
   );
   const notified = await sendLegalNotifications({

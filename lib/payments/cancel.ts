@@ -497,7 +497,7 @@ async function closeWithoutRefund(input: {
  * Ejecuta el Botón de Arrepentimiento. La ventana se mide contra el pago REAL
  * (no contra la fecha tipeada):
  *
- *   · ≤ 10 días corridos ⇒ reembolso del 100 % del saldo + baja inmediata;
+ *   · ≤ 10 días corridos ⇒ reembolso del 100 % del saldo + revocación inmediata;
  *   · > 10 días ⇒ sin reembolso: cancela la renovación y PRO hasta `period_end`;
  *   · sin pago / saldo ya devuelto ⇒ sin reembolso, mismo cierre programado.
  *
