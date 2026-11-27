@@ -25,6 +25,7 @@ describe('catálogo R1 (registro central)', () => {
       'camionero',
       'imperial',
       'termo-media-manija-1l',
+      'termo-system-1l',
     ]);
     expect(CATALOG.every((p) => !p.pro)).toBe(true); // ambos demos FREE
   });

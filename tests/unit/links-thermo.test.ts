@@ -112,6 +112,16 @@ describe('payload del termo — bloque congelado', () => {
     expect(view.variants[0]!.scalePct).toBe(45);
   });
 
+  it('el System se resuelve con sus medidas fijas y familia thermo', () => {
+    const payload = thermoPayload({ model: 'termo-system-1l' });
+    const view = buildPublicView(payload);
+    expect(view.mate.modelId).toBe('termo-system-1l');
+    expect(view.mate.family).toBe('thermo');
+    expect(view.mate.extDiameter).toBeCloseTo(84.96, 2);
+    expect(view.mate.intDiameter).toBeCloseTo(84.96, 2);
+    expect(view.mate.thermo).toEqual({ offsetYPct: 20, invert: true, finish: 'satin' });
+  });
+
   it('escala ausente en el payload ⇒ default del termo (45 %), no 100 %', () => {
     const payload = thermoPayload();
     const withoutScale = {

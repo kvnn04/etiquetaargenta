@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { THERMO_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
+import { THERMO_MODEL_ID, THERMO_SYSTEM_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
 import { normalizeState } from '@/lib/projects/persistence';
+import {
+  buildThermoBodyGeometry,
+  buildThermoCollarGeometry,
+  buildThermoLidGeometry,
+  buildThermoSeamGeometry,
+  thermoHandleLinks,
+  thermoHandleMounts,
+} from '@/three/thermo-builder';
 import {
   clampThermoRotation,
   evaluateThermoOverflow,
@@ -51,6 +59,51 @@ describe('termo — geometría derivada del prototipo', () => {
     expect(bounds.minDeg).toBeLessThan(0);
     expect(bounds.maxDeg).toBeGreaterThan(0);
     expect(clampThermoRotation(spec, 0, spec.defaultScalePct, 1)).toBe(0);
+  });
+});
+
+const systemSpec = resolveThermoProduct(THERMO_SYSTEM_MODEL_ID).thermo;
+
+describe('termo System — geometría y límites', () => {
+  it('mide 1 L: radio 42.48 mm y alto total 262.8 mm', () => {
+    expect(systemSpec.geometry).toBe('system');
+    expect(systemSpec.radiusMm).toBeCloseTo(42.48, 2);
+    expect(systemSpec.totalHeightMm).toBeCloseTo(262.8, 2);
+  });
+
+  it('zona de grabado: 23.76–172.8 mm y radio 42.57 mm', () => {
+    expect(systemSpec.engraveMinYMm).toBeCloseTo(23.76, 2);
+    expect(systemSpec.engraveMaxYMm).toBeCloseTo(172.8, 2);
+    expect(thermoSurface(systemSpec).heightMm).toBeCloseTo(149.04, 2);
+    expect(systemSpec.engraveRadiusMm).toBeCloseTo(42.57, 2);
+  });
+
+  it('la manija vive en +X y bloquea ~41°', () => {
+    expect(systemSpec.handleAngleRad).toBeCloseTo(Math.PI / 2, 6);
+    expect((systemSpec.handleBlockedArcRad * 180) / Math.PI).toBeCloseTo(41.25, 1);
+    const bounds = thermoAngleBounds(systemSpec, 45, 1);
+    expect(bounds.centerDeg).toBeCloseTo(270, 5);
+    expect(clampThermoRotation(systemSpec, 0, 45, 1)).toBe(0);
+    expect(clampThermoRotation(systemSpec, 90, 45, 1)).not.toBe(90);
+  });
+
+  it('la geometría procedural respeta el perfil del prototipo', () => {
+    const body = buildThermoBodyGeometry(systemSpec);
+    body.computeBoundingBox();
+    expect(body.boundingBox!.max.x).toBeCloseTo(systemSpec.radiusMm, 2);
+    expect(body.boundingBox!.max.y).toBeCloseTo(systemSpec.shoulderTopMm, 2);
+
+    const lid = buildThermoLidGeometry(systemSpec);
+    lid.computeBoundingBox();
+    expect(lid.boundingBox!.max.y).toBeCloseTo(systemSpec.totalHeightMm, 2);
+
+    // Sin collarín negro: el System usa un aro de junta bajo la tapa-vaso.
+    expect(buildThermoCollarGeometry(systemSpec).getAttribute('position')?.count ?? 0).toBe(0);
+    expect(
+      buildThermoSeamGeometry(systemSpec).getAttribute('position')?.count ?? 0,
+    ).toBeGreaterThan(0);
+    expect(thermoHandleMounts(systemSpec)).toHaveLength(2);
+    expect(thermoHandleLinks(systemSpec)).toHaveLength(4);
   });
 });
 
@@ -128,6 +181,17 @@ describe('termo — persistencia del proyecto', () => {
     expect(
       normalizeState({ mateModel: THERMO_MODEL_ID, design: { rotation: 0 } }).design.scale,
     ).toBe(45);
+  });
+
+  it('el System conserva su id y su escala default al recargar', () => {
+    const state = normalizeState({
+      mateModel: THERMO_SYSTEM_MODEL_ID,
+      design: { rotation: 0 },
+      thermo: { offsetYPct: -10, invert: false, finish: 'brushed' },
+    });
+    expect(state.mateModel).toBe(THERMO_SYSTEM_MODEL_ID);
+    expect(state.design.scale).toBe(45);
+    expect(state.thermo).toEqual({ offsetYPct: -10, invert: false, finish: 'brushed' });
   });
 
   it('un mate conserva su propio rango [70,110]', () => {

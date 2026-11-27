@@ -2,8 +2,8 @@
  * TERMO MATERO MEDIA MANIJA 1 L — estado, límites y materiales
  * ----------------------------------------------------------------------------
  * El termo NO comparte la semántica del mate: el grabado vive en la pared
- * lateral pintada (no en la corona) y la media manija bloquea un arco del
- * costado izquierdo. Este módulo concentra:
+ * lateral pintada (no en la corona) y la manija lateral bloquea un arco del
+ * cuerpo. Este módulo concentra:
  *   · el estado persistible propio (`thermo`: posición vertical, invertido y
  *     acabado) — rotación/escala/espejo siguen viviendo en `design`;
  *   · la paleta y los PBR del cuerpo/acabado;

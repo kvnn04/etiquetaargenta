@@ -37,6 +37,9 @@ import {
   buildThermoGrooveGeometry,
   buildThermoHandleGeometry,
   buildThermoLidGeometry,
+  buildThermoSeamGeometry,
+  thermoHandleLinks,
+  thermoHandleMounts,
 } from '@/three/thermo-builder';
 
 const ENGRAVING_WIDTH_PX = 2048;
@@ -115,14 +118,43 @@ export default function ThermoProduct({
   fade,
 }: ThermoProductProps) {
   const spec = product.thermo;
+  const isSystem = spec.geometry === 'system';
   const surface = useMemo(() => thermoSurface(spec), [spec]);
   const bodyGeo = useMemo(() => buildThermoBodyGeometry(spec), [spec]);
   const baseGeo = useMemo(() => buildThermoBaseGeometry(spec), [spec]);
-  const collarGeo = useMemo(() => buildThermoCollarGeometry(spec), [spec]);
+  const collarGeo = useMemo(
+    () => (isSystem ? null : buildThermoCollarGeometry(spec)),
+    [isSystem, spec],
+  );
   const lidGeo = useMemo(() => buildThermoLidGeometry(spec), [spec]);
   const handleGeo = useMemo(() => buildThermoHandleGeometry(spec), [spec]);
-  const grooveGeo = useMemo(() => buildThermoGrooveGeometry(spec), [spec]);
+  const grooveGeo = useMemo(
+    () => (isSystem ? null : buildThermoGrooveGeometry(spec)),
+    [isSystem, spec],
+  );
+  const seamGeo = useMemo(
+    () => (isSystem ? buildThermoSeamGeometry(spec) : null),
+    [isSystem, spec],
+  );
   const engraveGeo = useMemo(() => buildThermoEngravingGeometry(spec), [spec]);
+
+  const systemHandle = useMemo(() => {
+    if (!isSystem) return null;
+    const up = new THREE.Vector3(0, 1, 0);
+    const links = thermoHandleLinks(spec).map((l) => {
+      const start = new THREE.Vector3(l.xMm, l.y1Mm, l.z1Mm);
+      const end = new THREE.Vector3(l.xMm, l.y2Mm, l.z2Mm);
+      const dir = end.clone().sub(start);
+      const mid = start.clone().addScaledVector(dir, 0.5);
+      return {
+        mid,
+        quaternion: new THREE.Quaternion().setFromUnitVectors(up, dir.clone().normalize()),
+        lengthMm: dir.length(),
+        radiusMm: l.radiusMm,
+      };
+    });
+    return { mounts: thermoHandleMounts(spec), links };
+  }, [isSystem, spec]);
 
   const pbr = useMemo(() => thermoBodyPbr(finish, bodyColor), [finish, bodyColor]);
   const burn = useMemo(() => thermoLaserBurn(bodyColor), [bodyColor]);
@@ -347,35 +379,69 @@ export default function ThermoProduct({
         <SteelMaterial />
       </mesh>
 
-      {/* Collarín negro + ranuras */}
-      <mesh geometry={collarGeo} castShadow receiveShadow>
-        <CollarMaterial />
-      </mesh>
-      {[-1.26, 0, 1.26].map((dy) => (
-        <mesh
-          key={dy}
-          geometry={grooveGeo}
-          position={[0, 2.16 * 36 + 3.38 * 36 + dy, 0]}
-          rotation={[Math.PI / 2, 0, -Math.PI * 0.72]}
-        >
-          <meshStandardMaterial color="#0B0C0E" roughness={0.7} />
+      {/* Collarín negro + ranuras (Media Manija) */}
+      {!isSystem && collarGeo && (
+        <mesh geometry={collarGeo} castShadow receiveShadow>
+          <CollarMaterial />
         </mesh>
-      ))}
+      )}
+      {!isSystem &&
+        grooveGeo &&
+        [-1.26, 0, 1.26].map((dy) => (
+          <mesh
+            key={dy}
+            geometry={grooveGeo}
+            position={[0, spec.collarBottomMm + 7.56 + dy, 0]}
+            rotation={[Math.PI / 2, 0, -Math.PI * 0.72]}
+          >
+            <meshStandardMaterial color="#0B0C0E" roughness={0.7} />
+          </mesh>
+        ))}
 
       {/* Tapa-vaso de acero */}
       <mesh geometry={lidGeo} castShadow receiveShadow>
         <SteelMaterial />
       </mesh>
 
-      {/* Media manija */}
+      {/* Junta tapa-vaso/cuerpo (System: sin collarín) */}
+      {isSystem && seamGeo && (
+        <mesh geometry={seamGeo} position={[0, spec.lidBottomMm, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <CollarMaterial />
+        </mesh>
+      )}
+
+      {/* Manija lateral */}
       <group rotation={[0, spec.handleAngleRad, 0]}>
         <mesh geometry={handleGeo} castShadow receiveShadow>
           <CollarMaterial />
         </mesh>
-        <mesh position={[0, 2.15 * 36 + 3.38 * 36, spec.radiusMm - 0.035 * 36 + 0.02 * 36]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.11 * 36, 0.11 * 36, 0.24 * 36, 24]} />
-          <CollarMaterial />
-        </mesh>
+
+        {/* Media Manija: perilla frontal */}
+        {!isSystem && (
+          <mesh
+            position={[0, spec.collarBottomMm + 7.2, spec.radiusMm - 0.015 * 36]}
+            rotation={[Math.PI / 2, 0, 0]}
+          >
+            <cylinderGeometry args={[0.11 * 36, 0.11 * 36, 0.24 * 36, 24]} />
+            <CollarMaterial />
+          </mesh>
+        )}
+
+        {/* System: soportes y barras metálicas de la manija táctica */}
+        {systemHandle &&
+          systemHandle.mounts.map((m, i) => (
+            <mesh key={`mount-${i}`} position={[0, m.yMm, m.zMm]} castShadow receiveShadow>
+              <boxGeometry args={m.sizeMm} />
+              <CollarMaterial />
+            </mesh>
+          ))}
+        {systemHandle &&
+          systemHandle.links.map((l, i) => (
+            <mesh key={`link-${i}`} position={l.mid} quaternion={l.quaternion} castShadow>
+              <cylinderGeometry args={[l.radiusMm, l.radiusMm, l.lengthMm, 16]} />
+              <SteelMaterial />
+            </mesh>
+          ))}
       </group>
 
       {/* Grabado lateral (cilindro transparente) */}

@@ -91,7 +91,7 @@ export function thermoFramingMm(spec: ThermoSpec): {
 } {
   const centerYMm = spec.totalHeightMm / 2;
   const maxRadiusMm = Math.max(
-    spec.radiusMm + 0.55 * THERMO_MM_PER_UNIT, // manija en -X
+    spec.radiusMm + 0.55 * THERMO_MM_PER_UNIT, // manija lateral (X)
     spec.radiusMm,
   );
   const halfSpanY = spec.totalHeightMm / 2;

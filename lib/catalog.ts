@@ -10,11 +10,12 @@
  *   x = radio relativo a la boca (x=1.00 ⇒ R_boca = D_int/2)
  *   y = altura absoluta en mm desde la costura de la boca (0) a la base.
  *
- * Coordenadas del termo: mm absolutos desde la base apoyada en Y=0. El perfil
- * se deriva del HTML `3d_termo_matero_media_manija.html` con escala 36 mm/unidad.
+ * Coordenadas del termo: mm absolutos desde la base apoyada en Y=0. Los perfiles
+ * se derivan de `3d_termo_matero_media_manija.html` y `termo_system_1L_3d.html`
+ * con escala 36 mm/unidad.
  * ============================================================================ */
 
-export const CATALOG_VERSION = 2;
+export const CATALOG_VERSION = 3;
 
 export type ProductFamily = 'mate' | 'thermo';
 
@@ -35,7 +36,7 @@ export interface ProductCategory {
 /** Orden de presentación del catálogo. Las categorías vacías no se muestran. */
 export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   { id: 'mates', label: 'Mates', description: 'Camionero e Imperial' },
-  { id: 'termos', label: 'Termos', description: 'Acero, media manija y grabado lateral' },
+  { id: 'termos', label: 'Termos', description: 'Acero, manija lateral y grabado' },
   { id: 'vasos', label: 'Vasos térmicos', description: 'Próximamente' },
   { id: 'botellas', label: 'Botellas', description: 'Próximamente' },
   { id: 'tablas', label: 'Tablas de asado', description: 'Próximamente' },
@@ -61,8 +62,13 @@ export interface MateShape {
   points: MateShapePoint[];
 }
 
+/** Variante de geometría procedural del termo. */
+export type ThermoGeometry = 'media-manija' | 'system';
+
 /** Contrato geométrico del termo, en mm desde la base apoyada en Y=0. */
 export interface ThermoSpec {
+  /** Variante de perfil/manija que construye `three/thermo-builder`. */
+  geometry: ThermoGeometry;
   /** Radio del cuerpo pintado. */
   radiusMm: number;
   /** Altura total (base inferior → centro del domo de la tapa). */
@@ -226,6 +232,7 @@ const THERMO_ENGRAVE_MIN_U = THERMO_UNIT.bodyBottom + THERMO_UNIT.marginY;
 const THERMO_ENGRAVE_MAX_U = THERMO_UNIT.bodyTop - THERMO_UNIT.marginY;
 
 const THERMO_SPEC: ThermoSpec = {
+  geometry: 'media-manija',
   radiusMm: THERMO_UNIT.radius * THERMO_MM_PER_UNIT,
   totalHeightMm: (THERMO_UNIT.lidTop - THERMO_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
   baseBottomMm: 0,
@@ -242,6 +249,60 @@ const THERMO_SPEC: ThermoSpec = {
   handleAngleRad: THERMO_UNIT.handleAngle,
   handleBlockedArcRad: THERMO_UNIT.handleBlockedArc,
   engraveRadiusMm: THERMO_UNIT.engraveRadius * THERMO_MM_PER_UNIT,
+  defaultScalePct: 45,
+  minScalePct: 10,
+  maxScalePct: 100,
+};
+
+/* -------------------------------------------------------------------------- */
+/* Termo Matero System 1 L                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Misma escala del prototipo `termo_system_1L_3d.html`: 1 unidad = 36 mm. */
+const THERMO_SYSTEM_UNIT = {
+  radius: 1.18,
+  baseBottom: -3.38,
+  baseTop: -2.95,
+  bodyBottom: -2.86,
+  bodyTop: 1.56,
+  shoulderTop: 1.92,
+  lidBottom: 1.9,
+  lidTop: 3.92,
+  marginY: 0.14,
+  handleAngle: Math.PI / 2,
+  handleBlockedArc: 0.72,
+  engraveRadius: 1.1825,
+} as const;
+
+const THERMO_SYSTEM_ENGRAVE_MIN_U = THERMO_SYSTEM_UNIT.bodyBottom + THERMO_SYSTEM_UNIT.marginY;
+const THERMO_SYSTEM_ENGRAVE_MAX_U = THERMO_SYSTEM_UNIT.bodyTop - THERMO_SYSTEM_UNIT.marginY;
+
+const THERMO_SYSTEM_SPEC: ThermoSpec = {
+  geometry: 'system',
+  radiusMm: THERMO_SYSTEM_UNIT.radius * THERMO_MM_PER_UNIT,
+  totalHeightMm: (THERMO_SYSTEM_UNIT.lidTop - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  baseBottomMm: 0,
+  baseTopMm: (THERMO_SYSTEM_UNIT.baseTop - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  bodyBottomMm:
+    (THERMO_SYSTEM_UNIT.bodyBottom - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  bodyTopMm: (THERMO_SYSTEM_UNIT.bodyTop - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  shoulderTopMm:
+    (THERMO_SYSTEM_UNIT.shoulderTop - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  // El System no tiene collarín negro: la tapa-vaso apoya directo en el hombro.
+  collarBottomMm:
+    (THERMO_SYSTEM_UNIT.lidBottom - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  collarTopMm:
+    (THERMO_SYSTEM_UNIT.lidBottom - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  lidBottomMm:
+    (THERMO_SYSTEM_UNIT.lidBottom - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  lidTopMm: (THERMO_SYSTEM_UNIT.lidTop - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  engraveMinYMm:
+    (THERMO_SYSTEM_ENGRAVE_MIN_U - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  engraveMaxYMm:
+    (THERMO_SYSTEM_ENGRAVE_MAX_U - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  handleAngleRad: THERMO_SYSTEM_UNIT.handleAngle,
+  handleBlockedArcRad: THERMO_SYSTEM_UNIT.handleBlockedArc,
+  engraveRadiusMm: THERMO_SYSTEM_UNIT.engraveRadius * THERMO_MM_PER_UNIT,
   defaultScalePct: 45,
   minScalePct: 10,
   maxScalePct: 100,
@@ -276,6 +337,15 @@ const RAW_CATALOG: MateCatalog = {
       family: 'thermo',
       category: 'termos',
       thermo: THERMO_SPEC,
+    },
+    {
+      id: 'termo-system-1l',
+      label: 'Termo Matero System 1L',
+      description: 'Cuerpo alto, tapa-vaso y manija táctica',
+      pro: false,
+      family: 'thermo',
+      category: 'termos',
+      thermo: THERMO_SYSTEM_SPEC,
     },
   ],
 };
@@ -383,8 +453,9 @@ export function getProduct(id: MateModelId): MateProduct | null {
 /** Fallback del catálogo: producto por defecto de un proyecto nuevo. */
 export const DEFAULT_MATE_MODEL: MateModelId = 'camionero';
 
-/** Id del termo (atajo para el editor y la UI). */
+/** Ids de los termos (atajo para el editor y la UI). */
 export const THERMO_MODEL_ID = 'termo-media-manija-1l';
+export const THERMO_SYSTEM_MODEL_ID = 'termo-system-1l';
 
 /**
  * Resuelve cualquier producto del catálogo. Un id de termo devuelve el termo;
@@ -464,25 +535,48 @@ function thermoSilhouette(product: ThermoProduct, width: number, height: number,
   const xPx = (x: number) => width / 2 + (x / maxR) * (usableW / 2);
   const r = t.radiusMm;
   const shoulder = t.bodyTopMm;
-  const pts: Array<[number, number]> = [
-    [-r, t.baseBottomMm + 8],
-    [-r, t.bodyBottomMm],
-    [-r, shoulder],
-    [-r * 0.72, t.shoulderTopMm],
-    [-r * 0.72, t.collarTopMm],
-    [-r * 0.92, t.lidBottomMm],
-    [-r * 0.92, t.lidTopMm - 18],
-    [-r * 0.62, t.lidTopMm],
-    [0, t.lidTopMm],
-    [r * 0.62, t.lidTopMm],
-    [r * 0.92, t.lidTopMm - 18],
-    [r * 0.92, t.lidBottomMm],
-    [r * 0.72, t.collarTopMm],
-    [r * 0.72, t.shoulderTopMm],
-    [r, shoulder],
-    [r, t.bodyBottomMm],
-    [r, t.baseBottomMm + 8],
-  ];
+  const pts: Array<[number, number]> =
+    t.geometry === 'system'
+      ? [
+          [-r * 0.99, t.baseBottomMm + 6],
+          [-r * 0.99, t.bodyBottomMm],
+          [-r, t.bodyBottomMm],
+          [-r, shoulder],
+          [-r * 0.85, t.shoulderTopMm],
+          [-r * 0.82, t.lidBottomMm],
+          [-r * 0.885, t.lidBottomMm],
+          [-r * 0.82, t.lidBottomMm + 12.6],
+          [-r * 0.593, t.lidTopMm],
+          [0, t.lidTopMm],
+          [r * 0.593, t.lidTopMm],
+          [r * 0.82, t.lidBottomMm + 12.6],
+          [r * 0.885, t.lidBottomMm],
+          [r * 0.82, t.lidBottomMm],
+          [r * 0.85, t.shoulderTopMm],
+          [r, shoulder],
+          [r, t.bodyBottomMm],
+          [r * 0.99, t.bodyBottomMm],
+          [r * 0.99, t.baseBottomMm + 6],
+        ]
+      : [
+          [-r, t.baseBottomMm + 8],
+          [-r, t.bodyBottomMm],
+          [-r, shoulder],
+          [-r * 0.72, t.shoulderTopMm],
+          [-r * 0.72, t.collarTopMm],
+          [-r * 0.92, t.lidBottomMm],
+          [-r * 0.92, t.lidTopMm - 18],
+          [-r * 0.62, t.lidTopMm],
+          [0, t.lidTopMm],
+          [r * 0.62, t.lidTopMm],
+          [r * 0.92, t.lidTopMm - 18],
+          [r * 0.92, t.lidBottomMm],
+          [r * 0.72, t.collarTopMm],
+          [r * 0.72, t.shoulderTopMm],
+          [r, shoulder],
+          [r, t.bodyBottomMm],
+          [r, t.baseBottomMm + 8],
+        ];
   const path = `M ${pts.map(([x, y]) => `${xPx(x).toFixed(2)},${yPx(y).toFixed(2)}`).join(' L ')} Z`;
   return { path, viewBox: `0 0 ${width} ${height}`, usedWidthPx: usableW };
 }

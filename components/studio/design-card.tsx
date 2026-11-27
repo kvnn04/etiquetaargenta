@@ -522,7 +522,10 @@ export default function DesignCard() {
         <div className="flex items-center justify-between gap-2">
           {thermoSpec ? (
             <span className="text-[10px] text-stone-600">
-              La media manija bloquea el costado izquierdo: el diseño se mueve dentro del arco libre.
+              {thermoSpec.geometry === 'system'
+                ? 'La manija táctica bloquea el costado derecho'
+                : 'La media manija bloquea el costado izquierdo'}
+              : el diseño se mueve dentro del arco libre.
             </span>
           ) : (
             <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
