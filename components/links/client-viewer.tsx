@@ -35,6 +35,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { canonicalSiteOrigin } from '@/lib/http/origin';
+import { isThermoProduct, resolveProduct } from '@/lib/catalog';
+import { normalizeThermoConfig, thermoColorName, thermoFinishLabel } from '@/lib/thermo';
 import type { PublicLinkView, PublicVariantView } from '@/lib/links/view-shape';
 import { isLinkVariantId, type LinkVariantId } from '@/lib/links/payload';
 import { approvalCode, canonicalLinkUrl, whatsappApprovalHref } from '@/lib/links/states';
@@ -53,7 +55,7 @@ import {
   type LinkChannel,
   type PublicLinkResponse,
 } from '@/lib/links/responses';
-import { formatModeloCard, formatVirolaCard, formatCuerpoCard } from '@/lib/quote/snapshot';
+import { formatModeloCard, formatVirolaCard, formatCuerpoCard, formatMmCard } from '@/lib/quote/snapshot';
 
 /* La escena R3F NO puede SSR: lazy + client-only (mismo patrón de la shell). */
 const ViewerScene = dynamic(() => import('@/components/links/viewer-scene'), {
@@ -687,9 +689,34 @@ export default function ClientViewer({
     );
   }
 
+  const product = resolveProduct(view.mate.modelId);
+  const isThermo = isThermoProduct(product);
+  const thermoConfig = normalizeThermoConfig(view.mate.thermo);
   const modelo = formatModeloCard(view.mate.modelId);
   const virola = formatVirolaCard(view.mate.metal, view.mate.virolaColor);
   const cuerpo = formatCuerpoCard(view.mate.cupMaterial, view.mate.cupColor);
+  /* R7: el acordeón NO expone escala/rotación/margen; el termo cambia virola
+   * por sus medidas fijas y su acabado propio. */
+  const summaryRows = isThermo
+    ? [
+        { title: 'Modelo', body: modelo.etiqueta },
+        {
+          title: 'Medidas',
+          body: `1.0 L · ${formatMmCard(product.thermo.totalHeightMm) ?? '—'} de alto · Ø ${formatMmCard(product.thermo.radiusMm * 2) ?? '—'} de cuerpo`,
+        },
+        {
+          title: 'Acabado',
+          body: `${thermoFinishLabel(thermoConfig.finish)} · ${thermoColorName(view.mate.cupColor)}`,
+        },
+      ]
+    : [
+        { title: 'Modelo', body: modelo.etiqueta },
+        {
+          title: 'Virola (mm)',
+          body: `${virola} · Ø ${view.mate.extDiameter} mm ext. / Ø ${view.mate.intDiameter} mm int.`,
+        },
+        { title: 'Cuerpo', body: cuerpo },
+      ];
   const sendingDecision = decisionStatus === 'sending';
   const sendingObservation = observationStatus === 'sending';
 
@@ -774,14 +801,7 @@ export default function ClientViewer({
 
         {/* Acordeón de resumen: Modelo / Virola (mm) / Cuerpo — SOLO eso (R7) */}
         <div className="text-[11px]">
-          {[
-            { title: 'Modelo', body: modelo.etiqueta },
-            {
-              title: 'Virola (mm)',
-              body: `${virola} · Ø ${view.mate.extDiameter} mm ext. / Ø ${view.mate.intDiameter} mm int.`,
-            },
-            { title: 'Cuerpo', body: cuerpo },
-          ].map((row) => (
+          {summaryRows.map((row) => (
             <details key={row.title} className="group rounded-lg border border-white/10 bg-white/[0.04]">
               <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 font-bold text-stone-200 [&::-webkit-details-marker]:hidden">
                 {row.title}

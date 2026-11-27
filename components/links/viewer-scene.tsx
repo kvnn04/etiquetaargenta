@@ -24,10 +24,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { resolveMateModel } from '@/lib/catalog';
+import { resolveMateModel, resolveProduct, isThermoProduct } from '@/lib/catalog';
 import { adaptiveLaserBurn, resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
 import { composeEngravingCanvas, composeEngravingHeightCanvas } from '@/lib/compose-engraving';
+import { normalizeThermoConfig, clampThermoRotation } from '@/lib/thermo';
+import { thermoAssetAspect } from '@/lib/compose-thermo-engraving';
 import { rpmToRadPerSec } from '@/lib/virola';
+import ThermoProductView from '@/components/thermo/thermo-product';
 import {
   buildBodyGeometry,
   buildVirolaTopGeometry,
@@ -47,6 +50,7 @@ import {
   CAMERA_TARGET_Y_MM,
   fitCameraDistanceMm,
   productFramingMm,
+  thermoFramingMm,
 } from '@/three/framing';
 import { StudioEnvironment } from '@/three/studio-environment';
 import { woodGrainTexture } from '@/three/wood-grain';
@@ -299,27 +303,24 @@ function ViewerSpin({ enabled, groupRef }: { enabled: boolean; groupRef: React.R
 /* -------------------------------------------------------------------------- */
 
 function ViewerCameraFit({
-  product,
-  intDiameter,
-  extDiameter,
+  sphereRadiusMm,
+  targetY,
 }: {
-  product: ReturnType<typeof resolveMateModel>;
-  intDiameter: number;
-  extDiameter: number;
+  sphereRadiusMm: number;
+  targetY: number;
 }) {
   const { camera, size } = useThree();
   const fitted = useRef(false);
 
   useEffect(() => {
     if (fitted.current || size.width < 2 || size.height < 2) return;
-    const { sphereRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
-    const target = new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
+    const target = new THREE.Vector3(0, targetY, 0);
     const dir = new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
     camera.position
       .copy(target)
       .addScaledVector(dir, fitCameraDistanceMm(sphereRadiusMm, size.width / size.height));
     fitted.current = true;
-  }, [camera, size.width, size.height, product, intDiameter, extDiameter]);
+  }, [camera, size.width, size.height, sphereRadiusMm, targetY]);
 
   return null;
 }
@@ -343,19 +344,69 @@ export default function ViewerScene({ view, layer, fadeLayer, onUserInteracted }
    * dedo apoyado y el ritmo REANUDA al soltar — la órbita jamás se resetea. */
   const [spinning, setSpinning] = useState(true);
 
-  const product = useMemo(() => resolveMateModel(view.mate.modelId), [view.mate.modelId]);
+  /* Familia congelada en el payload: el termo reusa su modelo compartido y su
+   * propio encuadre vertical; el mate conserva el pipeline de siempre. */
+  const catalogProduct = useMemo(() => resolveProduct(view.mate.modelId), [view.mate.modelId]);
+  const thermo = isThermoProduct(catalogProduct) ? catalogProduct : null;
+  const mateProduct = useMemo(
+    () => (thermo ? null : resolveMateModel(view.mate.modelId)),
+    [thermo, view.mate.modelId],
+  );
+  const thermoConfig = useMemo(() => normalizeThermoConfig(view.mate.thermo), [view.mate.thermo]);
+  /* El payload pudo congelarse con un ángulo viejo fuera del arco libre: el
+   * visor lo lleva al límite antes de componer (nunca tapa la manija). */
+  const activeAspect = useMemo(() => thermoAssetAspect(layer.asset), [layer.asset]);
+  const fadeAspect = useMemo(
+    () => thermoAssetAspect(fadeLayer?.asset ?? null),
+    [fadeLayer?.asset],
+  );
+  /* El termo arranca mostrando el GRABADO: se orienta el producto para llevar
+   * el centro del diseño al frente (+Z) y el auto-giro sigue desde ahí. Sin
+   * esto, un diseño a 90° quedaba de canto y tardaba medio minuto en entrar.
+   * Se congela al primer render: un swap A/B/C no debe saltar la cámara. */
+  const [initialRotationY] = useState(() => {
+    if (!thermo || !layer.variant) return 0;
+    const deg = clampThermoRotation(
+      thermo.thermo,
+      layer.variant.rotationDeg,
+      layer.variant.scalePct,
+      activeAspect,
+    );
+    return (-deg * Math.PI) / 180;
+  });
+  const groupRotation = useMemo<[number, number, number]>(
+    () => [0, initialRotationY, 0],
+    [initialRotationY],
+  );
+
+  const framing = useMemo(() => {
+    if (thermo) {
+      const f = thermoFramingMm(thermo.thermo);
+      return { sphereRadiusMm: f.sphereRadiusMm, targetY: f.centerYMm };
+    }
+    const f = productFramingMm(
+      mateProduct ?? resolveMateModel(null),
+      view.mate.intDiameter,
+      view.mate.extDiameter,
+    );
+    return { sphereRadiusMm: f.sphereRadiusMm, targetY: CAMERA_TARGET_Y_MM };
+  }, [thermo, mateProduct, view.mate.intDiameter, view.mate.extDiameter]);
+
+  const orbitTarget = useMemo(
+    () => [0, framing.targetY, 0] as [number, number, number],
+    [framing.targetY],
+  );
 
   /* Posición inicial estimada (aspecto 1); ViewerCameraFit la corrige con el
    * aspecto real del contenedor antes del primer frame visible. */
   const camPos = useMemo(() => {
-    const { sphereRadiusMm } = productFramingMm(product, view.mate.intDiameter, view.mate.extDiameter);
-    const target = new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
+    const target = new THREE.Vector3(0, framing.targetY, 0);
     const dir = new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
     return target
       .clone()
-      .addScaledVector(dir, fitCameraDistanceMm(sphereRadiusMm, 1))
+      .addScaledVector(dir, fitCameraDistanceMm(framing.sphereRadiusMm, 1))
       .toArray() as [number, number, number];
-  }, [product, view.mate.intDiameter, view.mate.extDiameter]);
+  }, [framing]);
 
   return (
     <Canvas
@@ -371,10 +422,51 @@ export default function ViewerScene({ view, layer, fadeLayer, onUserInteracted }
       <directionalLight position={[-220, 90, -160]} intensity={0.5} color="#9fb4d8" />
       <pointLight position={[0, 40, 170]} intensity={250} distance={600} color="#ffd9a0" />
 
-      <group ref={groupRef}>
-        <ViewerBody view={view} />
-        <ViewerVirola view={view} />
-        <ViewerEngraving view={view} layers={fadeLayer ? [layer, fadeLayer] : [layer]} />
+      <group ref={groupRef} rotation={groupRotation}>
+        {thermo ? (
+          <ThermoProductView
+            product={thermo}
+            bodyColor={view.mate.cupColor}
+            finish={thermoConfig.finish}
+            rotationDeg={
+              layer.variant
+                ? clampThermoRotation(
+                    thermo.thermo,
+                    layer.variant.rotationDeg,
+                    layer.variant.scalePct,
+                    activeAspect,
+                  )
+                : 0
+            }
+            scalePct={layer.variant?.scalePct ?? thermo.thermo.defaultScalePct}
+            mirror={layer.variant?.mirror ?? false}
+            offsetYPct={thermoConfig.offsetYPct}
+            invert={thermoConfig.invert}
+            asset={layer.asset}
+            fade={
+              fadeLayer?.asset && fadeLayer.variant
+                ? {
+                    asset: fadeLayer.asset,
+                    rotationDeg: clampThermoRotation(
+                      thermo.thermo,
+                      fadeLayer.variant.rotationDeg,
+                      fadeLayer.variant.scalePct,
+                      fadeAspect,
+                    ),
+                    scalePct: fadeLayer.variant.scalePct,
+                    mirror: fadeLayer.variant.mirror,
+                    alpha: fadeLayer.alpha,
+                  }
+                : null
+            }
+          />
+        ) : (
+          <>
+            <ViewerBody view={view} />
+            <ViewerVirola view={view} />
+            <ViewerEngraving view={view} layers={fadeLayer ? [layer, fadeLayer] : [layer]} />
+          </>
+        )}
       </group>
 
       {/* Suelo invisible (mismo color que el fondo, sin tonemapping): no deja
@@ -385,16 +477,12 @@ export default function ViewerScene({ view, layer, fadeLayer, onUserInteracted }
       </mesh>
 
       <ViewerSpin enabled={spinning} groupRef={groupRef} />
-      <ViewerCameraFit
-        product={product}
-        intDiameter={view.mate.intDiameter}
-        extDiameter={view.mate.extDiameter}
-      />
+      <ViewerCameraFit sphereRadiusMm={framing.sphereRadiusMm} targetY={framing.targetY} />
       <OrbitControls
         makeDefault
         enablePan
         enableDamping
-        target={[0, CAMERA_TARGET_Y_MM, 0]}
+        target={orbitTarget}
         onStart={() => {
           setSpinning(false);
           onUserInteracted?.();

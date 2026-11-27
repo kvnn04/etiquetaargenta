@@ -11,7 +11,8 @@
  * producto entra completo tanto en el panel ancho del editor como en la ficha.
  * ============================================================================ */
 
-import type { MateProduct } from '@/lib/catalog';
+import type { MateProduct, ThermoSpec } from '@/lib/catalog';
+import { THERMO_MM_PER_UNIT } from '@/lib/catalog';
 
 export const CAMERA_FOV_DEG = 34;
 
@@ -73,6 +74,30 @@ export function productFramingMm(
   return {
     maxRadiusMm,
     heightTopMm,
+    sphereRadiusMm: Math.hypot(maxRadiusMm, halfSpanY),
+  };
+}
+
+/**
+ * Encuadre del TERMO: sujeto vertical (alto total) con la manija sobresaliendo
+ * del radio del cuerpo. Devuelve el centro y el radio de la esfera envolvente
+ * respecto del punto de mira (centro del producto), listo para
+ * `fitCameraDistanceMm`.
+ */
+export function thermoFramingMm(spec: ThermoSpec): {
+  centerYMm: number;
+  maxRadiusMm: number;
+  sphereRadiusMm: number;
+} {
+  const centerYMm = spec.totalHeightMm / 2;
+  const maxRadiusMm = Math.max(
+    spec.radiusMm + 0.55 * THERMO_MM_PER_UNIT, // manija en -X
+    spec.radiusMm,
+  );
+  const halfSpanY = spec.totalHeightMm / 2;
+  return {
+    centerYMm,
+    maxRadiusMm,
     sphereRadiusMm: Math.hypot(maxRadiusMm, halfSpanY),
   };
 }

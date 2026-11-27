@@ -33,6 +33,8 @@ import { canonicalSiteOrigin } from '@/lib/http/origin';
 import { gate, type Plan } from '@/lib/permissions';
 import { resolveBranding } from '@/lib/branding';
 import { useEditorStore } from '@/lib/store/editor';
+import { isThermoProduct, resolveProduct } from '@/lib/catalog';
+import { thermoAssetAspect } from '@/lib/compose-thermo-engraving';
 import {
   captureFichaSnapshot,
   currentOverflowCheck,
@@ -170,6 +172,7 @@ export default function QuoteModal({
   /* ── R1: captura del snapshot (Abrir / Actualizar) ─────────────────────── */
   const captureNow = useCallback((): FichaSnapshot | null => {
     const s = useEditorStore.getState();
+    const product = resolveProduct(s.mateModel);
     const brand = resolveBranding(
       {
         brandName: profile.brandName,
@@ -189,8 +192,10 @@ export default function QuoteModal({
         bodyColor: s.bodyColor,
         virolaColor: s.virolaColor,
         design: s.design,
+        thermo: s.thermo,
       },
       designAssetPresent: s.designAsset != null,
+      designAspect: thermoAssetAspect(s.designAsset?.canvas ?? null),
       hasProject: s.projectId != null,
       overflow: currentOverflowCheck({
         hasDesignAsset: s.designAsset != null,
@@ -200,6 +205,13 @@ export default function QuoteModal({
         extDiameterMm: s.extDiameter,
         intDiameterMm: s.intDiameter,
         scalePct: s.design.scale,
+        thermo: isThermoProduct(product)
+          ? {
+              spec: product.thermo,
+              offsetYPct: s.thermo.offsetYPct,
+              aspect: thermoAssetAspect(s.designAsset?.canvas ?? null),
+            }
+          : null,
       }),
       inkDegraded: s.inkScanDegraded,
       brand,
@@ -239,6 +251,7 @@ export default function QuoteModal({
         mirror: s.design.mirror,
         scalePct: s.design.scale,
         designAsset: s.designAsset?.canvas ?? null,
+        thermo: s.thermo,
         widthCss: 430,
         heightCss: 470,
       });
@@ -530,9 +543,25 @@ export default function QuoteModal({
               <SectionLabel>Producto</SectionLabel>
               <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
                 <FichaCard title="Modelo" value={snapshot.modeloEtiqueta} />
-                <FichaCard title="Diámetro Exterior" value={dash(formatMmCard(snapshot.extDiameterMm))} />
-                <FichaCard title="Diámetro Interior" value={dash(formatMmCard(snapshot.intDiameterMm))} />
-                <FichaCard title="Ancho de Banda" value={dash(formatMmCard(snapshot.bandaMm))} />
+                {snapshot.family === 'thermo' && snapshot.thermo ? (
+                  <>
+                    <FichaCard title="Capacidad" value={snapshot.thermo.capacidadEtiqueta} />
+                    <FichaCard title="Altura Total" value={snapshot.thermo.altoEtiqueta} />
+                    <FichaCard title="Diámetro del Cuerpo" value={snapshot.thermo.diametroEtiqueta} />
+                  </>
+                ) : (
+                  <>
+                    <FichaCard
+                      title="Diámetro Exterior"
+                      value={dash(formatMmCard(snapshot.extDiameterMm))}
+                    />
+                    <FichaCard
+                      title="Diámetro Interior"
+                      value={dash(formatMmCard(snapshot.intDiameterMm))}
+                    />
+                    <FichaCard title="Ancho de Banda" value={dash(formatMmCard(snapshot.bandaMm))} />
+                  </>
+                )}
               </div>
 
               <SectionLabel>Grabado</SectionLabel>
@@ -543,9 +572,19 @@ export default function QuoteModal({
                   <FichaCard title="Escala" value={snapshot.escalaEtiqueta} />
                 )}
                 {snapshot.grabadoSinDiseno ? (
-                  <FichaCard title="Rotación" value="Sin diseño cargado" />
+                  <FichaCard
+                    title={snapshot.family === 'thermo' ? 'Posición' : 'Rotación'}
+                    value="Sin diseño cargado"
+                  />
                 ) : (
-                  <FichaCard title="Rotación" value={snapshot.rotacionEtiqueta} />
+                  <FichaCard
+                    title={snapshot.family === 'thermo' ? 'Posición' : 'Rotación'}
+                    value={
+                      snapshot.family === 'thermo'
+                        ? (snapshot.thermo?.posicionEtiqueta ?? '—')
+                        : snapshot.rotacionEtiqueta
+                    }
+                  />
                 )}
                 {snapshot.grabadoSinDiseno ? (
                   <FichaCard title="Margen" value="Sin diseño cargado" />
@@ -561,7 +600,14 @@ export default function QuoteModal({
 
               <SectionLabel>Acabados</SectionLabel>
               <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
-                <FichaCard title="Virola" value={snapshot.virolaEtiqueta} />
+                <FichaCard
+                  title={snapshot.family === 'thermo' ? 'Acabado' : 'Virola'}
+                  value={
+                    snapshot.family === 'thermo'
+                      ? (snapshot.thermo?.acabadoEtiqueta ?? '—')
+                      : snapshot.virolaEtiqueta
+                  }
+                />
                 <FichaCard title="Color / Cuerpo" value={snapshot.cuerpoEtiqueta} />
               </div>
             </div>

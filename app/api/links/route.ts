@@ -3,6 +3,8 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { planOf, type ExportsPlan } from '@/lib/exports/ticket-server';
 import { normalizeScale } from '@/lib/overflow';
+import { normalizeThermoConfig, normalizeThermoScale } from '@/lib/thermo';
+import { isThermoProduct, resolveProduct } from '@/lib/catalog';
 import {
   PUBLISH_VARIANTS_MAX,
   isLinkVariantId,
@@ -110,6 +112,7 @@ interface ProjectStateRow {
   virolaColor?: unknown;
   bodyPreset?: unknown;
   bodyColor?: unknown;
+  thermo?: unknown;
 }
 
 function buildMateConfigFromState(state: unknown): LinkMateConfigBlock {
@@ -120,15 +123,24 @@ function buildMateConfigFromState(state: unknown): LinkMateConfigBlock {
     typeof v === 'string' && v.startsWith('#') ? v.toUpperCase() : null;
   const preset = (v: unknown, fallback: string): string =>
     typeof v === 'string' && v.length > 0 ? v : fallback;
+  const product = resolveProduct(preset(s.mateModel, 'camionero'));
+  const thermo = isThermoProduct(product);
+  const thermoConfig = normalizeThermoConfig(s.thermo);
   return {
-    model: preset(s.mateModel, 'camionero'), // R4/R8: desconocido ⇒ camionero en el visor
-    extDiameter: num(s.extDiameter, 123),
-    intDiameter: num(s.intDiameter, 95),
+    model: product.id, // R4/R8: desconocido ⇒ camionero en el visor
+    extDiameter: thermo
+      ? Number((product.thermo.radiusMm * 2).toFixed(2))
+      : num(s.extDiameter, 123),
+    intDiameter: thermo
+      ? Number((product.thermo.radiusMm * 2).toFixed(2))
+      : num(s.intDiameter, 95),
     metal: preset(s.metalPreset, 'alpaca'),
     virolaColor: hex(s.virolaColor), // null ⇒ el visor cae al preset (compat R6 pos 5)
     topFaceColor: null, // campo de compat con payload legacy: los nuevos SIEMPRE lo traen null
     cupMaterial: preset(s.bodyPreset, 'algarrobo'),
     cupColor: hex(s.bodyColor),
+    family: product.family,
+    thermo: thermo ? { ...thermoConfig } : null,
   };
 }
 
@@ -171,8 +183,14 @@ export async function POST(request: NextRequest) {
     {
       id: candidate.id as LinkVariantId,
       label: normalizeVariantLabel(candidate.label),
-      // % canónico del editor (normalizeScale re-fija [70..110] paso 0.5%)
-      scalePct: normalizeScale(candidate.scalePct),
+      // Se normaliza recién cuando se conoce la FAMILIA desde la DB
+      // (mate [70..110] · termo [10..100]); acá viaja el valor crudo.
+      // Ausente ⇒ NaN: cada familia aplica SU default al normalizar
+      // (mate 100 % · termo 45 %), no el 100 % del mate.
+      scalePct:
+        typeof candidate.scalePct === 'number' && Number.isFinite(candidate.scalePct)
+          ? candidate.scalePct
+          : Number.NaN,
       rotationDeg: rotationDegPayload(candidate.rotationDeg),
       mirror: Boolean(candidate.mirror),
     },
@@ -309,6 +327,15 @@ export async function POST(request: NextRequest) {
 
   /* ── Payload R4 + fila inmutable ──────────────────────────────────────── */
   const nowMs = Date.now();
+  const mateConfig = buildMateConfigFromState(owned.data.state); // desde la DB, jamás del cliente
+  const family = mateConfig.family ?? 'mate';
+  const normalizedDrafts = drafts.map((draft) => ({
+    ...draft,
+    scalePct:
+      family === 'thermo'
+        ? normalizeThermoScale(draft.scalePct)
+        : normalizeScale(draft.scalePct),
+  }));
   const payload = buildLinkPayload({
     linkId,
     nowMs,
@@ -319,8 +346,8 @@ export async function POST(request: NextRequest) {
       whatsapp: (profile?.whatsapp_e164 ?? '').replace(/[^0-9]/g, '') || null,
       instagram: profile?.instagram_handle?.trim() || null,
     },
-    mateConfig: buildMateConfigFromState(owned.data.state), // desde la DB, jamás del cliente
-    variants: drafts,
+    mateConfig,
+    variants: normalizedDrafts,
     assetUrl,
   });
 

@@ -32,7 +32,12 @@
  * ============================================================================ */
 
 import * as THREE from 'three';
-import { resolveMateModel } from '@/lib/catalog';
+import {
+  isThermoProduct,
+  resolveMateModel,
+  resolveProduct,
+  type ThermoProduct,
+} from '@/lib/catalog';
 import {
   adaptiveLaserBurn,
   resolveBodyPbr,
@@ -42,11 +47,32 @@ import {
 } from '@/lib/color';
 import { composeEngravingCanvas, composeEngravingHeightCanvas } from '@/lib/compose-engraving';
 import {
+  composeThermoEngravingCanvas,
+  thermoAssetAspect,
+  thermoCanvasHeight,
+} from '@/lib/compose-thermo-engraving';
+import {
+  clampThermoRotation,
+  normalizeThermoConfig,
+  thermoBodyPbr,
+  thermoLaserBurn,
+  thermoSurface,
+} from '@/lib/thermo';
+import {
   buildBodyGeometry,
   buildVirolaTopGeometry,
   buildVirolaOuterWallGeometry,
   buildVirolaInnerWallGeometry,
 } from '@/three/lathe-builder';
+import {
+  buildThermoBaseGeometry,
+  buildThermoBodyGeometry,
+  buildThermoCollarGeometry,
+  buildThermoEngravingGeometry,
+  buildThermoGrooveGeometry,
+  buildThermoHandleGeometry,
+  buildThermoLidGeometry,
+} from '@/three/thermo-builder';
 import {
   VIROLA_SKIRT_HEIGHT_MM,
   VIROLA_INNER_DROP_MM,
@@ -58,6 +84,7 @@ import {
   TOP_VIEW_OFFSET_MM,
   fitCameraDistanceMm,
   productFramingMm,
+  thermoFramingMm,
 } from '@/three/framing';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { woodGrainTexture } from '@/three/wood-grain';
@@ -113,6 +140,8 @@ export interface MateViewInput {
   scalePct: number;
   /** ráster de trabajo del diseño (asset de sesión 1024²) o null ⇒ corona lisa */
   designAsset: HTMLCanvasElement | null;
+  /** Termo: estado propio del producto (los mates lo ignoran). */
+  thermo?: { offsetYPct: number; invert: boolean; finish: string } | null;
   /** tamaño CSS del encuadre; el framebuffer es CSS × dpr (2× por defecto) */
   widthCss: number;
   heightCss: number;
@@ -131,6 +160,11 @@ export interface MateViewInput {
  */
 export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
+
+  const catalogProduct = resolveProduct(input.mateModel);
+  if (isThermoProduct(catalogProduct)) {
+    return renderThermoView(input, catalogProduct);
+  }
 
   const product = resolveMateModel(input.mateModel);
   const intDiameter = input.intDiameterMm;
@@ -305,6 +339,204 @@ export function renderMateView(input: MateViewInput): HTMLCanvasElement | null {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Render offscreen del TERMO (Ficha / Foto HD)                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Mismo encuadre 3/4 que el editor, con el grabado lateral re-proyectado a
+ * ≥2048 px de ancho. Sin guías, sin watermark: la ficha imprime exactamente lo
+ * que el tallerista ve en el estudio.
+ */
+function renderThermoView(
+  input: MateViewInput,
+  product: ThermoProduct,
+): HTMLCanvasElement | null {
+  const spec = product.thermo;
+  const config = normalizeThermoConfig(input.thermo ?? {});
+  const aspect = thermoAssetAspect(input.designAsset);
+  /* La ficha/Foto HD muestra SIEMPRE el grabado: se gira el producto para
+   * llevar el centro del diseño al frente (+Z), con el ángulo ya clampado al
+   * arco libre. Es el equivalente lateral de la vista cenital del mate. */
+  const rotationDeg = clampThermoRotation(spec, input.rotationDeg, input.scalePct, aspect);
+  const dpr = input.dpr ?? 2;
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: false,
+    preserveDrawingBuffer: true,
+  });
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(input.widthCss, input.heightCss, true);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#0b0b0d');
+
+  const camera = new THREE.PerspectiveCamera(
+    FIELD_OF_VIEW_DEG,
+    input.widthCss / input.heightCss,
+    1,
+    4000,
+  );
+  const framing = thermoFramingMm(spec);
+  const target = new THREE.Vector3(0, framing.centerYMm, 0);
+  const dir = new THREE.Vector3(0, 40, 260).normalize();
+  const dist = fitCameraDistanceMm(
+    framing.sphereRadiusMm,
+    input.widthCss / input.heightCss,
+    FIELD_OF_VIEW_DEG,
+    1.08,
+  );
+  camera.position.copy(target).addScaledVector(dir, dist);
+  camera.lookAt(target);
+
+  scene.add(new THREE.HemisphereLight('#fff4e0', '#14100c', 0.55));
+  const key = new THREE.DirectionalLight('#ffe9c4', 1.15);
+  key.position.set(200, 260, 220);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight('#9fb4d8', 0.5);
+  fill.position.set(-220, 90, -160);
+  scene.add(fill);
+  const warm = new THREE.PointLight('#ffd9a0', 250, 600);
+  warm.position.set(0, 40, 170);
+  scene.add(warm);
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const room = new RoomEnvironment();
+  const envTarget = pmrem.fromScene(room, 0.04);
+  scene.environment = envTarget.texture;
+  scene.environmentIntensity = 0.85;
+  room.dispose();
+  pmrem.dispose();
+
+  const group = new THREE.Group();
+  group.rotation.y = (-rotationDeg * Math.PI) / 180;
+  scene.add(group);
+  const disposables: Array<{ dispose(): void }> = [];
+
+  const pbr = thermoBodyPbr(config.finish, input.bodyColor);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(pbr.color),
+    metalness: pbr.metalness,
+    roughness: pbr.roughness,
+  });
+  group.add(new THREE.Mesh(buildThermoBodyGeometry(spec), bodyMat));
+  disposables.push(bodyMat);
+
+  const steelMat = new THREE.MeshStandardMaterial({
+    color: '#E6EBF0',
+    metalness: 0.92,
+    roughness: 0.22,
+    envMapIntensity: 0.9,
+  });
+  const collarMat = new THREE.MeshStandardMaterial({
+    color: '#16181D',
+    metalness: 0.15,
+    roughness: 0.48,
+  });
+  group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
+  group.add(new THREE.Mesh(buildThermoLidGeometry(spec), steelMat));
+  group.add(new THREE.Mesh(buildThermoCollarGeometry(spec), collarMat));
+  disposables.push(steelMat, collarMat);
+
+  const grooveGeo = buildThermoGrooveGeometry(spec);
+  const grooveMat = new THREE.MeshStandardMaterial({ color: '#0B0C0E', roughness: 0.7 });
+  disposables.push(grooveMat);
+  for (const dy of [-1.26, 0, 1.26]) {
+    const groove = new THREE.Mesh(grooveGeo, grooveMat);
+    groove.position.set(0, 2.16 * 36 + 3.38 * 36 + dy, 0);
+    groove.rotation.set(Math.PI / 2, 0, -Math.PI * 0.72);
+    group.add(groove);
+  }
+
+  const handleGroup = new THREE.Group();
+  handleGroup.rotation.y = spec.handleAngleRad;
+  handleGroup.add(new THREE.Mesh(buildThermoHandleGeometry(spec), collarMat));
+  const knobGeo = new THREE.CylinderGeometry(0.11 * 36, 0.11 * 36, 0.24 * 36, 24);
+  const knob = new THREE.Mesh(knobGeo, collarMat);
+  knob.position.set(0, 2.15 * 36 + 3.38 * 36, spec.radiusMm - 0.035 * 36 + 0.02 * 36);
+  knob.rotation.x = Math.PI / 2;
+  handleGroup.add(knob);
+  group.add(handleGroup);
+  disposables.push(knobGeo);
+
+  if (input.designAsset) {
+    const burn = thermoLaserBurn(input.bodyColor);
+    const texCanvas = document.createElement('canvas');
+    texCanvas.width = ENGRAVING_HD_PX;
+    texCanvas.height = thermoCanvasHeight(spec, ENGRAVING_HD_PX);
+    const heightCanvas = document.createElement('canvas');
+    heightCanvas.width = texCanvas.width;
+    heightCanvas.height = texCanvas.height;
+    composeThermoEngravingCanvas(
+      texCanvas,
+      input.designAsset,
+      {
+        rotationDeg,
+        scalePct: input.scalePct,
+        mirror: input.mirror,
+        offsetYPct: config.offsetYPct,
+        invert: config.invert,
+      },
+      spec,
+      burn,
+    );
+    composeEngravingHeightCanvas(heightCanvas, texCanvas);
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+    const tex = new THREE.CanvasTexture(texCanvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = maxAnisotropy;
+    tex.needsUpdate = true;
+    const heightTex = new THREE.CanvasTexture(heightCanvas);
+    heightTex.colorSpace = THREE.NoColorSpace;
+    heightTex.anisotropy = maxAnisotropy;
+    heightTex.needsUpdate = true;
+    const engraveMat = new THREE.MeshStandardMaterial({
+      map: tex,
+      bumpMap: heightTex,
+      bumpScale: -0.018,
+      transparent: true,
+      opacity: burn.opacity,
+      depthWrite: false,
+      metalness: 0.72,
+      roughness: 0.34,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    const surface = thermoSurface(spec);
+    const engraveMesh = new THREE.Mesh(buildThermoEngravingGeometry(spec), engraveMat);
+    engraveMesh.position.set(0, surface.centerYMm, 0);
+    engraveMesh.renderOrder = 1;
+    group.add(engraveMesh);
+    disposables.push(engraveMat, tex, heightTex);
+  }
+
+  const floorGeo = new THREE.CircleGeometry(1200, 64);
+  const floorMat = new THREE.MeshBasicMaterial({ color: '#0b0b0d', toneMapped: false });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+  disposables.push(floorGeo, floorMat);
+
+  try {
+    renderer.render(scene, camera);
+    const out = document.createElement('canvas');
+    out.width = Math.round(input.widthCss * dpr);
+    out.height = Math.round(input.heightCss * dpr);
+    const octx = out.getContext('2d');
+    if (!octx) return null;
+    octx.drawImage(renderer.domElement, 0, 0, out.width, out.height);
+    return out;
+  } catch (err) {
+    console.error('[ficha] render termo HD:', err instanceof Error ? err.message : err);
+    return null;
+  } finally {
+    for (const d of disposables) d.dispose();
+    envTarget.dispose();
+    renderer.dispose();
+    renderer.forceContextLoss();
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Utilidades de dibujo                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -431,18 +663,21 @@ export async function makeQuoteCanvas(input: QuoteCanvasInput): Promise<HTMLCanv
   const rowValueLines = (vs: (string | null)[], cw: number, maxLines: number): number =>
     Math.max(...vs.map((v) => valueLines(v, cw, maxLines)));
 
-  const prodValues: Array<string | null> = [
-    fmtMm(s.extDiameterMm),
-    fmtMm(s.intDiameterMm),
-    fmtMm(s.bandaMm),
-  ];
+  const isThermo = s.family === 'thermo' && s.thermo !== null;
+  const prodValues: Array<string | null> = isThermo
+    ? [s.thermo!.capacidadEtiqueta, s.thermo!.altoEtiqueta, s.thermo!.diametroEtiqueta]
+    : [fmtMm(s.extDiameterMm), fmtMm(s.intDiameterMm), fmtMm(s.bandaMm)];
   const prodCH =
     CARD_PAD * 2 + CARD_TITLE + TITLE_GAP + CARD_LINE * rowValueLines(prodValues, prodCardW, 2);
 
   const gEmpty = s.grabadoSinDiseno;
   const grabValues: Array<string | null> = [
     gEmpty ? 'Sin diseño cargado' : s.escalaEtiqueta,
-    gEmpty ? 'Sin diseño cargado' : s.rotacionEtiqueta,
+    gEmpty
+      ? 'Sin diseño cargado'
+      : isThermo
+        ? (s.thermo?.posicionEtiqueta ?? '—')
+        : s.rotacionEtiqueta,
     gEmpty ? 'Sin diseño cargado' : (s.margenEtiqueta ?? '—'),
   ];
   const grabCH =
@@ -679,12 +914,19 @@ export async function makeQuoteCanvas(input: QuoteCanvasInput): Promise<HTMLCanv
   const py = cursor + 14;
   cursor = py + prodCH;
   let cx = PAD;
-  const prodCards: Array<[string, string | null]> = [
-    ['Modelo', s.modeloEtiqueta],
-    ['Diámetro Exterior', prodValues[0] ?? null],
-    ['Diámetro Interior', prodValues[1] ?? null],
-    ['Ancho de Banda', prodValues[2] ?? null],
-  ];
+  const prodCards: Array<[string, string | null]> = isThermo
+    ? [
+        ['Modelo', s.modeloEtiqueta],
+        ['Capacidad', prodValues[0] ?? null],
+        ['Altura Total', prodValues[1] ?? null],
+        ['Diámetro del Cuerpo', prodValues[2] ?? null],
+      ]
+    : [
+        ['Modelo', s.modeloEtiqueta],
+        ['Diámetro Exterior', prodValues[0] ?? null],
+        ['Diámetro Interior', prodValues[1] ?? null],
+        ['Ancho de Banda', prodValues[2] ?? null],
+      ];
   for (const [t, v] of prodCards) {
     sectionCard(cx, py, prodCardW, prodCH, t, v, 'plain');
     cx += prodCardW + gap;
@@ -705,7 +947,11 @@ export async function makeQuoteCanvas(input: QuoteCanvasInput): Promise<HTMLCanv
         : 'plain';
   const grabCards: Array<[string, string | null, CardState]> = [
     ['Escala', gEmpty ? 'Sin diseño cargado' : s.escalaEtiqueta, 'plain'],
-    ['Rotación', gEmpty ? 'Sin diseño cargado' : s.rotacionEtiqueta, 'plain'],
+    [
+      isThermo ? 'Posición' : 'Rotación',
+      gEmpty ? 'Sin diseño cargado' : isThermo ? (s.thermo?.posicionEtiqueta ?? '—') : s.rotacionEtiqueta,
+      'plain',
+    ],
     ['Margen', gEmpty ? 'Sin diseño cargado' : s.margenEtiqueta, margenState],
   ];
   for (const [t, v, st] of grabCards) {
@@ -728,10 +974,15 @@ export async function makeQuoteCanvas(input: QuoteCanvasInput): Promise<HTMLCanv
   const ay = cursor + 26;
   cursor = ay + acaCH;
   cx = PAD;
-  const acaCards: Array<[string, string | null]> = [
-    ['Virola', s.virolaEtiqueta],
-    ['Color / Cuerpo', s.cuerpoEtiqueta],
-  ];
+  const acaCards: Array<[string, string | null]> = isThermo
+    ? [
+        ['Acabado', s.thermo?.acabadoEtiqueta ?? null],
+        ['Color / Cuerpo', s.cuerpoEtiqueta],
+      ]
+    : [
+        ['Virola', s.virolaEtiqueta],
+        ['Color / Cuerpo', s.cuerpoEtiqueta],
+      ];
   for (const [t, v] of acaCards) {
     sectionCard(cx, ay, acaCardW, acaCH, t, v, 'plain');
     cx += acaCardW + gap;

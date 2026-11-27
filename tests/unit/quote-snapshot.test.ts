@@ -23,6 +23,8 @@ import {
 import { evaluateOverflow } from '@/lib/overflow';
 import type { ResolvedBranding } from '@/lib/branding';
 import type { InkEnvelope } from '@/lib/overflow';
+import { THERMO_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
+import { clampThermoRotation } from '@/lib/thermo';
 
 /* t0 fijo: 05-nov-2026 18:00 UTC — capturedAt determinista (el hash NO lo usa). */
 const T0 = Date.UTC(2026, 10, 5, 18, 0, 0);
@@ -304,5 +306,32 @@ describe('R1/R8 — snapshot completo (recorrido del QA1 de la spec)', () => {
     expect(snap.hasProject).toBe(true);
     expect(snap.hasDesign).toBe(true);
     expect(snap.observaciones).toBe('Grabar el nombre SOFI en el frente');
+  });
+});
+
+describe('termo — la ficha etiqueta lo que realmente se dibuja', () => {
+  const spec = resolveThermoProduct(THERMO_MODEL_ID).thermo;
+
+  it('la posición usa el ángulo CLAMPEADO al arco libre (no el valor viejo)', () => {
+    const snap = captureFichaSnapshot(
+      baseInput({
+        state: {
+          mateModel: THERMO_MODEL_ID,
+          extDiameter: null,
+          intDiameter: null,
+          bodyPreset: null,
+          metalPreset: null,
+          bodyColor: '#181A1F',
+          virolaColor: null,
+          design: { rotation: 300, scale: 100, mirror: false },
+          thermo: { offsetYPct: 0, invert: false, finish: 'matte' },
+        },
+        designAspect: 1,
+      }),
+    );
+    const dibujado = clampThermoRotation(spec, 300, 100, 1);
+    expect(snap.family).toBe('thermo');
+    expect(snap.thermo?.posicionEtiqueta).toBe(`${formatDegCard(dibujado)} · 0%`);
+    expect(snap.escalaEtiqueta).toBe('100%');
   });
 });

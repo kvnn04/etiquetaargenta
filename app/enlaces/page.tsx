@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
-import { getProduct } from '@/lib/catalog';
+import { formatModeloCard } from '@/lib/quote/snapshot';
 import LinksManager from '@/components/links/links-manager';
 import type { LinkManagementRow } from '@/lib/links/management';
 import {
@@ -135,7 +135,7 @@ export default async function LinksPage() {
 
     const modelId =
       typeof payload.mateConfig?.model === 'string' ? payload.mateConfig.model : null;
-    const mateModel = modelId ? getProduct(modelId)?.label ?? modelId : null;
+    const mateModel = modelId ? formatModeloCard(modelId).etiqueta : null;
 
     const firstVariant = Array.isArray(payload.variants)
       ? (payload.variants[0] as { label?: unknown } | undefined)

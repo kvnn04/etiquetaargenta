@@ -29,14 +29,22 @@
  *    que dura el estado — overlay encima de esta capa de guías.
  * ============================================================================ */
 
-import { useEffect, useMemo, useRef } from 'react';
-import type { ComponentRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ComponentRef, RefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { resolveMateModel } from '@/lib/catalog';
+import { resolveMateModel, resolveProduct, isThermoProduct, type ThermoProduct } from '@/lib/catalog';
 import { useEditorStore } from '@/lib/store/editor';
 import { adaptiveLaserBurn, resolveBodyPbr, resolveVirolaPbr } from '@/lib/color';
+import {
+  clampThermoRotation,
+  normalizeThermoOffset,
+  thermoDesignSizeMm,
+  thermoSurface,
+} from '@/lib/thermo';
+import { thermoAssetAspect } from '@/lib/compose-thermo-engraving';
+import ThermoProductView from '@/components/thermo/thermo-product';
 import { EDITOR_AUTO_SPIN_RPM, rpmToRadPerSec } from '@/lib/virola';
 import { evaluateOverflow } from '@/lib/overflow';
 import { composeEngravingCanvas, composeEngravingHeightCanvas } from '@/lib/compose-engraving';
@@ -67,9 +75,11 @@ import {
   CAMERA_FOV_DEG,
   CAMERA_OFFSET_MM,
   CAMERA_TARGET_Y_MM,
+  ENGRAVING_VIEW_FIT_MARGIN,
   engravingViewPoseMm,
   fitCameraDistanceMm,
   productFramingMm,
+  thermoFramingMm,
 } from '@/three/framing';
 import { StudioEnvironment } from '@/three/studio-environment';
 import { woodGrainTexture } from '@/three/wood-grain';
@@ -544,10 +554,36 @@ interface CameraAnim {
   durationMs: number;
 }
 
-function CameraDirector({ engravingView }: { engravingView: boolean }) {
+interface EngravingPose {
+  target: [number, number, number];
+  /** Posición ABSOLUTA de cámara con el grupo producto en 0° (mm). */
+  position: [number, number, number];
+  distance: number;
+  /** Termo: la cámara acompaña el giro del grupo para no perder el grabado. */
+  followGroupSpin: boolean;
+}
+
+/** Dirección cámara→target; en el termo suma el ángulo actual del auto-giro. */
+function engravingDirection(pose: EngravingPose, spinRad: number): THREE.Vector3 {
+  const dir = new THREE.Vector3(...pose.position).sub(new THREE.Vector3(...pose.target));
+  if (pose.followGroupSpin) dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), spinRad);
+  return dir.normalize();
+}
+
+function CameraDirector({
+  engravingView,
+  groupRef,
+}: {
+  engravingView: boolean;
+  groupRef: RefObject<THREE.Group | null>;
+}) {
   const mateModel = useEditorStore((s) => s.mateModel);
   const intDiameter = useEditorStore((s) => s.intDiameter);
   const extDiameter = useEditorStore((s) => s.extDiameter);
+  const rotation = useEditorStore((s) => s.design.rotation);
+  const scale = useEditorStore((s) => s.design.scale);
+  const designAsset = useEditorStore((s) => s.designAsset);
+  const offsetYPct = useEditorStore((s) => s.thermo.offsetYPct);
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as unknown as OrbitLikeControls | null;
   const size = useThree((s) => s.size);
@@ -555,20 +591,54 @@ function CameraDirector({ engravingView }: { engravingView: boolean }) {
   const modeRef = useRef(engravingView);
   modeRef.current = engravingView;
 
+  const catalogProduct = useMemo(() => resolveProduct(mateModel), [mateModel]);
+  const thermo = isThermoProduct(catalogProduct) ? catalogProduct : null;
   const product = useMemo(() => resolveMateModel(mateModel), [mateModel]);
   const aspect = size.height > 0 ? size.width / size.height : 1;
+  const productTargetY = thermo ? thermoFramingMm(thermo.thermo).centerYMm : CAMERA_TARGET_Y_MM;
 
-  /* Distancia de producto: centro visual común del catálogo (mm sobre la base). */
+  /* Distancia de producto: centro visual de la FAMILIA (mate o termo). */
   const productDistance = useMemo(() => {
-    const { sphereRadiusMm } = productFramingMm(product, intDiameter, extDiameter);
+    const sphereRadiusMm = thermo
+      ? thermoFramingMm(thermo.thermo).sphereRadiusMm
+      : productFramingMm(product, intDiameter, extDiameter).sphereRadiusMm;
     return fitCameraDistanceMm(sphereRadiusMm, aspect);
-  }, [product, intDiameter, extDiameter, aspect]);
+  }, [thermo, product, intDiameter, extDiameter, aspect]);
 
-  /* Pose cenital sobre la corona: encuadra el anillo, no el producto entero. */
-  const crownPose = useMemo(
-    () => engravingViewPoseMm(product, extDiameter, aspect),
-    [product, extDiameter, aspect],
-  );
+  /* Pose de grabado: en el mate es la corona; en el termo, la pared lateral.
+   * El termo ENFRENTA el diseño (su ángulo puede ser cualquiera del arco libre)
+   * y centra la mirada en la posición vertical elegida, no siempre en el frente
+   * +Z ni en el centro de la zona. */
+  const crownPose = useMemo<EngravingPose>(() => {
+    if (thermo) {
+      const spec = thermo.thermo;
+      const surface = thermoSurface(spec);
+      const assetAspect = thermoAssetAspect(designAsset?.canvas ?? null);
+      const size = thermoDesignSizeMm(spec, assetAspect, scale);
+      const slackY = Math.max(0, (surface.heightMm - size.heightMm) / 2);
+      const targetY =
+        surface.centerYMm + (normalizeThermoOffset(offsetYPct) / 100) * slackY;
+      const angleRad = (clampThermoRotation(spec, rotation, scale, assetAspect) * Math.PI) / 180;
+      const distance = fitCameraDistanceMm(
+        Math.max(surface.heightMm / 2, size.widthMm / 2, spec.radiusMm * 0.9),
+        aspect,
+        CAMERA_FOV_DEG,
+        ENGRAVING_VIEW_FIT_MARGIN,
+      );
+      const dir = new THREE.Vector3(Math.sin(angleRad), 0.18, Math.cos(angleRad)).normalize();
+      return {
+        target: [0, targetY, 0],
+        position: [
+          dir.x * distance,
+          targetY + dir.y * distance,
+          dir.z * distance,
+        ] as [number, number, number],
+        distance,
+        followGroupSpin: true,
+      };
+    }
+    return { ...engravingViewPoseMm(product, extDiameter, aspect), followGroupSpin: false };
+  }, [thermo, product, extDiameter, aspect, rotation, scale, designAsset, offsetYPct]);
 
   /* Los efectos de transición leen la pose vigente sin re-dispararse por
    * cambios de tamaño/producto (esos los cubre el segundo efecto). */
@@ -581,9 +651,9 @@ function CameraDirector({ engravingView }: { engravingView: boolean }) {
     const { productDistance: fitDist, crownPose: crown } = poseRef.current;
     const toTarget = engravingView
       ? new THREE.Vector3(...crown.target)
-      : new THREE.Vector3(0, CAMERA_TARGET_Y_MM, 0);
+      : new THREE.Vector3(0, productTargetY, 0);
     const dir = engravingView
-      ? new THREE.Vector3(...crown.position).sub(toTarget).normalize()
+      ? engravingDirection(crown, groupRef.current?.rotation.y ?? 0)
       : new THREE.Vector3(...CAMERA_OFFSET_MM).normalize();
     const distance = engravingView ? crown.distance : fitDist;
     animRef.current = {
@@ -594,17 +664,22 @@ function CameraDirector({ engravingView }: { engravingView: boolean }) {
       start: performance.now(),
       durationMs: 520,
     };
-  }, [engravingView, controls, camera]);
+  }, [engravingView, controls, camera, productTargetY, groupRef]);
 
   // Cambio de producto / diámetros / tamaño del panel: en la vista de grabado
   // re-encuadra la corona; en la de producto conserva la órbita del usuario y
   // solo corrige la distancia (misma regla del refit: anima si supera el 2 %).
+  // Si cambió el CENTRO vertical (mate ⇄ termo) el efecto de vista ya animó
+  // target + posición: acá no se debe pisar con el target viejo.
+  const prevTargetYRef = useRef(productTargetY);
   useEffect(() => {
-    if (!controls) return;
+    const targetYChanged = prevTargetYRef.current !== productTargetY;
+    prevTargetYRef.current = productTargetY;
+    if (!controls || targetYChanged) return;
     const { productDistance: fitDist, crownPose: crown } = poseRef.current;
     if (modeRef.current) {
       const toTarget = new THREE.Vector3(...crown.target);
-      const dir = new THREE.Vector3(...crown.position).sub(toTarget).normalize();
+      const dir = engravingDirection(crown, groupRef.current?.rotation.y ?? 0);
       animRef.current = {
         fromPos: camera.position.clone(),
         toPos: toTarget.clone().addScaledVector(dir, crown.distance),
@@ -628,7 +703,7 @@ function CameraDirector({ engravingView }: { engravingView: boolean }) {
         durationMs: 320,
       };
     }
-  }, [productDistance, crownPose, controls, camera]);
+  }, [productDistance, crownPose, controls, camera, groupRef, productTargetY]);
 
   useFrame(() => {
     const anim = animRef.current;
@@ -767,6 +842,66 @@ function WatermarkLayer() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Producto TERMO en el estudio: mismo modelo que el visor, con arrastre      */
+/* -------------------------------------------------------------------------- */
+
+function ThermoStudioProduct({
+  product,
+  onInteract,
+  onDraggingChange,
+}: {
+  product: ThermoProduct;
+  /** Pausa el auto-giro al agarrar el grabado (misma regla que la órbita). */
+  onInteract?: () => void;
+  /** Bloquea OrbitControls mientras se arrastra el grabado sobre el cuerpo. */
+  onDraggingChange?: (dragging: boolean) => void;
+}) {
+  const bodyColor = useEditorStore((s) => s.bodyColor);
+  const finish = useEditorStore((s) => s.thermo.finish);
+  const rotation = useEditorStore((s) => s.design.rotation);
+  const scale = useEditorStore((s) => s.design.scale);
+  const mirror = useEditorStore((s) => s.design.mirror);
+  const offsetYPct = useEditorStore((s) => s.thermo.offsetYPct);
+  const invert = useEditorStore((s) => s.thermo.invert);
+  const asset = useEditorStore((s) => s.designAsset);
+  const setDesignRotation = useEditorStore((s) => s.setDesignRotation);
+  const setThermoOffset = useEditorStore((s) => s.setThermoOffset);
+
+  const aspect = useMemo(() => thermoAssetAspect(asset?.canvas ?? null), [asset]);
+
+  const handleDrag = useCallback(
+    (patch: { rotationDeg?: number; offsetYPct?: number }) => {
+      if (typeof patch.rotationDeg === 'number') {
+        setDesignRotation(
+          clampThermoRotation(product.thermo, patch.rotationDeg, scale, aspect),
+        );
+      }
+      if (typeof patch.offsetYPct === 'number') setThermoOffset(patch.offsetYPct);
+    },
+    [product.thermo, scale, aspect, setDesignRotation, setThermoOffset],
+  );
+
+  return (
+    <ThermoProductView
+      product={product}
+      bodyColor={bodyColor}
+      finish={finish}
+      rotationDeg={rotation}
+      scalePct={scale}
+      mirror={mirror}
+      offsetYPct={offsetYPct}
+      invert={invert}
+      asset={asset?.canvas ?? null}
+      onDrag={handleDrag}
+      onDragStateChange={(dragging) => {
+        onDraggingChange?.(dragging);
+        if (dragging) onInteract?.();
+      }}
+    />
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Escena completa                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -788,11 +923,27 @@ export default function StudioScene({
   engravingView = false,
 }: StudioSceneProps) {
   const groupRef = useRef<THREE.Group | null>(null);
+  const mateModel = useEditorStore((s) => s.mateModel);
+  const catalogProduct = useMemo(() => resolveProduct(mateModel), [mateModel]);
+  const thermo = isThermoProduct(catalogProduct) ? catalogProduct : null;
+  /* Mientras se mueve el grabado con el dedo, la cámara no orbita: el diseño
+   * sigue al puntero y no al revés. */
+  const [thermoDragging, setThermoDragging] = useState(false);
+  /* Punto de mira INICIAL congelado: si el prop `target` cambiara al cruzar de
+   * familia, R3F lo aplicaría en el commit (antes de los efectos) y la cámara
+   * saltaría. CameraDirector anima el target cuando el producto cambia. */
+  const initialTargetYRef = useRef<number | null>(null);
+  if (initialTargetYRef.current === null) {
+    initialTargetYRef.current = thermo
+      ? thermoFramingMm(thermo.thermo).centerYMm
+      : CAMERA_TARGET_Y_MM;
+  }
+  const initialTargetY = initialTargetYRef.current;
   /* Identidad ESTABLE: el OrbitControls no debe re-aplicar el target en cada
    * render (pisaría el punto de mira animado por CameraDirector). */
   const defaultOrbitTarget = useMemo(
-    () => [0, CAMERA_TARGET_Y_MM, 0] as [number, number, number],
-    [],
+    () => [0, initialTargetY, 0] as [number, number, number],
+    [initialTargetY],
   );
 
   return (
@@ -801,7 +952,7 @@ export default function StudioScene({
         fov: CAMERA_FOV_DEG,
         position: [
           CAMERA_OFFSET_MM[0],
-          CAMERA_TARGET_Y_MM + CAMERA_OFFSET_MM[1],
+          initialTargetY + CAMERA_OFFSET_MM[1],
           CAMERA_OFFSET_MM[2],
         ],
         near: 1,
@@ -821,10 +972,20 @@ export default function StudioScene({
       {/* El producto (cuerpo + 3 mallas de virola + guías) es UN grupo: el auto-giro (R7) y
           el re-anclaje R3 comparten él — las guías giran con la virola (R4). */}
       <group ref={groupRef}>
-        <MateBodyMesh />
-        <VirolaGroup />
-        <DesignEngravingLayer />
-        <GuidesLayer />
+        {thermo ? (
+          <ThermoStudioProduct
+            product={thermo}
+            onInteract={onUserInteracted}
+            onDraggingChange={setThermoDragging}
+          />
+        ) : (
+          <>
+            <MateBodyMesh />
+            <VirolaGroup />
+            <DesignEngravingLayer />
+            <GuidesLayer />
+          </>
+        )}
       </group>
 
       {/* Suelo invisible: mismo color que el fondo para que no aparezca el
@@ -835,7 +996,7 @@ export default function StudioScene({
       </mesh>
 
       <AutoSpin enabled={spinning} groupRef={groupRef} />
-      <CameraDirector engravingView={engravingView} />
+      <CameraDirector engravingView={engravingView} groupRef={groupRef} />
       {/* Pos 8 R4: el sello MODO DEMO SOLO para plan free (prop de la shell:
           gate('render.no-watermark') es falso ⇒ prop false ⇒ sin overlay). */}
       {watermark && <WatermarkLayer />}
@@ -843,6 +1004,7 @@ export default function StudioScene({
         makeDefault
         enablePan
         enableDamping
+        enabled={!(thermo && thermoDragging)}
         target={defaultOrbitTarget}
         onStart={onUserInteracted}
       />

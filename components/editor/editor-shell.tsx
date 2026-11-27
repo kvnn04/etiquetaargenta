@@ -20,7 +20,8 @@ import {
   type Plan,
 } from '@/lib/permissions';
 import { resolveBranding } from '@/lib/branding';
-import { resolveMateModel } from '@/lib/catalog';
+import { isThermoProduct, resolveProduct } from '@/lib/catalog';
+import { thermoAssetAspect } from '@/lib/compose-thermo-engraving';
 import { overflowBannerText, type OverflowCheck } from '@/lib/overflow';
 import { captureFichaSnapshot, currentOverflowCheck } from '@/lib/quote/snapshot';
 import TopBar from '@/components/editor/top-bar';
@@ -31,6 +32,7 @@ import PlanWatcher from '@/components/session/plan-watcher';
 import ProductSelector from '@/components/studio/product-selector';
 import DimensionsCard from '@/components/studio/dimensions-card';
 import ColorPickerCard from '@/components/studio/color-picker-card';
+import ThermoColorCard from '@/components/studio/thermo-color-card';
 import DesignCard from '@/components/studio/design-card';
 import VariantsCard from '@/components/links/variants-card';
 import LinkModal from '@/components/links/link-modal';
@@ -211,6 +213,8 @@ export default function EditorShell({
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const mateModel = useEditorStore((s) => s.mateModel);
   const setMateModel = useEditorStore((s) => s.setMateModel);
+  const product = useMemo(() => resolveProduct(mateModel), [mateModel]);
+  const thermo = isThermoProduct(product);
   const dirty = useEditorStore((s) => s.dirty);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const offlineDraft = useEditorStore((s) => s.offlineDraft);
@@ -388,6 +392,8 @@ export default function EditorShell({
     if (fotoBusy) return;
     setActionHint(null);
     const s = useEditorStore.getState();
+    const activeProduct = resolveProduct(s.mateModel);
+    const activeThermo = isThermoProduct(activeProduct) ? activeProduct : null;
     const brand = resolveBranding(
       {
         brandName: profile.brandName,
@@ -405,6 +411,13 @@ export default function EditorShell({
       extDiameterMm: s.extDiameter,
       intDiameterMm: s.intDiameter,
       scalePct: s.design.scale,
+      thermo: activeThermo
+        ? {
+            spec: activeThermo.thermo,
+            offsetYPct: s.thermo.offsetYPct,
+            aspect: thermoAssetAspect(s.designAsset?.canvas ?? null),
+          }
+        : null,
     });
     /* Hash ligado al contenido VIGENTE (R7): el mismo contrato de captura de
      * la ficha, sin observaciones (la foto no imprime texto). */
@@ -418,8 +431,10 @@ export default function EditorShell({
         bodyColor: s.bodyColor,
         virolaColor: s.virolaColor,
         design: s.design,
+        thermo: s.thermo,
       },
       designAssetPresent: s.designAsset != null,
+      designAspect: thermoAssetAspect(s.designAsset?.canvas ?? null),
       hasProject: s.projectId != null,
       overflow: check,
       inkDegraded: s.inkScanDegraded,
@@ -442,11 +457,12 @@ export default function EditorShell({
           mirror: s.design.mirror,
           scalePct: s.design.scale,
           designAsset: s.designAsset?.canvas ?? null,
+          thermo: s.thermo,
         },
         check,
         snapshotHash: snap.hash,
         tallerTitle: brand.title,
-        productId: resolveMateModel(s.mateModel).id,
+        productId: activeProduct.id,
         confirmOverflow: askOverflowConfirm,
         onPaywallRequest: () => setPaywallOpen(true),
         onError: (msg) => setActionHint(msg),
@@ -525,9 +541,20 @@ export default function EditorShell({
               + atajo de cámara "Ver grabado"/"Vista general". */}
           <AutoGiroBar
             spinning={spinning}
-            onToggle={() => setSpinning((v) => !v)}
+            onToggle={() => {
+              /* Termo: el grabado vive al costado. Girar mientras "Ver grabado"
+               * está activo lo saca de cuadro; el giro devuelve la vista
+               * general (en los mates la corona se ve girar igual). */
+              if (!spinning && thermo) setEngravingView(false);
+              setSpinning((v) => !v);
+            }}
             engravingView={engravingView}
-            onToggleEngravingView={() => setEngravingView((v) => !v)}
+            onToggleEngravingView={() => {
+              /* Termo: congelar el giro al entrar al encuadre del grabado
+               * (la cámara no puede seguir el giro sin anularlo). */
+              if (!engravingView && thermo) setSpinning(false);
+              setEngravingView((v) => !v);
+            }}
           />
         </section>
 
@@ -548,8 +575,11 @@ export default function EditorShell({
                   Configuración del Producto
                 </h3>
                 <p className="mt-1 text-[10px] leading-relaxed text-stone-600">
-                  La virola conserva diámetros, guías y grabado al cambiar (R3 de{' '}
-                  <span className="font-mono">spec_tipo_de_mate</span>).
+                  {thermo
+                    ? 'El termo conserva su color, acabado, grabado y posición al cambiar de producto.'
+                    : 'La virola conserva diámetros, guías y grabado al cambiar (R3 de '}
+                  {!thermo && <span className="font-mono">spec_tipo_de_mate</span>}
+                  {!thermo && ').'}
                 </p>
               </div>
               <SaveChip dirty={dirty} lastSavedAt={lastSavedAt} />
@@ -570,11 +600,13 @@ export default function EditorShell({
             )}
           </div>
 
-          {/* SEGUNDA tarjeta (§4 spec_tecnica_geometrica): Medidas y Geometría */}
-          <DimensionsCard />
+          {/* SEGUNDA tarjeta (§4 spec_tecnica_geometrica): Medidas y Geometría.
+              El termo es 1 L con medidas fijas: no muestra la virola. */}
+          {!thermo && <DimensionsCard />}
 
-          {/* TERCERA tarjeta (§5 spec_seleccion_de_color): Materiales y Acabados */}
-          <ColorPickerCard />
+          {/* TERCERA tarjeta (§5 spec_seleccion_de_color): Materiales y Acabados.
+              El termo tiene paleta y acabados propios (cuerpo pintado/acero). */}
+          {thermo ? <ThermoColorCard /> : <ColorPickerCard />}
 
           {/* CUARTA tarjeta (§4 spec_rotacion + spec_escala): Cargar Archivo / Edición del Vector */}
           <DesignCard />

@@ -33,6 +33,8 @@ import {
   type LinkDecision,
 } from '@/lib/links/responses';
 import { useEditorStore } from '@/lib/store/editor';
+import { resolveProduct } from '@/lib/catalog';
+import { thermoAssetAspect } from '@/lib/compose-thermo-engraving';
 import { currentOverflowCheck } from '@/lib/quote/snapshot';
 import type { OverflowCheck } from '@/lib/overflow';
 import type { DesignAsset } from '@/lib/design';
@@ -149,6 +151,7 @@ export default function LinkModal({
       scale: s.design.scale,
       rotation: s.design.rotation,
       mirror: s.design.mirror,
+      family: resolveProduct(s.mateModel).family,
     });
 
     setBusy(true);
@@ -162,6 +165,18 @@ export default function LinkModal({
         extDiameterMm: s.extDiameter,
         intDiameterMm: s.intDiameter,
         scalePct: variant.scalePct,
+        thermo: (() => {
+          const p = resolveProduct(s.mateModel);
+          return p.family === 'thermo'
+            ? {
+                spec: p.thermo,
+                offsetYPct: s.thermo.offsetYPct,
+                // Aspecto REAL del trazado (sin márgenes transparentes), el
+                // mismo que usa el editor para clamar el arco libre.
+                aspect: thermoAssetAspect(designAsset.canvas),
+              }
+            : null;
+        })(),
       });
       if (check?.status === 'overflow') {
         const ok = await onPublishConfirm(check, PUBLISH_CONFIRM_CTAS);

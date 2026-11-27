@@ -32,3 +32,6 @@ Thumbs.db
 
 # supabase cli (cache local, nunca se commitea)
 supabase/.temp/
+
+# prototipo de referencia local (no se sube al repo)
+/3d_termo_matero_media_manija.html

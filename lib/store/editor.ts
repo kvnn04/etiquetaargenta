@@ -49,7 +49,13 @@
  * ============================================================================ */
 
 import { create } from 'zustand';
-import { DEFAULT_MATE_MODEL, type MateModelId } from '@/lib/catalog';
+import {
+  DEFAULT_MATE_MODEL,
+  isThermoProduct,
+  resolveProduct,
+  type MateModelId,
+  type ThermoProduct,
+} from '@/lib/catalog';
 import { DEFAULT_GUIDES_STATE, type GuidesState } from '@/lib/virola';
 import { DEFAULT_EXT_DIAMETER_MM, DEFAULT_INT_DIAMETER_MM } from '@/three/visual-skeleton';
 import {
@@ -61,6 +67,15 @@ import {
 import { normalizeRotation, DEFAULT_DESIGN_STATE, type DesignState, type DesignAsset } from '@/lib/design';
 import { normalizeScale } from '@/lib/overflow';
 import type { InkEnvelope } from '@/lib/overflow';
+import {
+  DEFAULT_THERMO_CONFIG,
+  normalizeThermoConfig,
+  normalizeThermoFinish,
+  normalizeThermoOffset,
+  normalizeThermoScale,
+  type ThermoConfig,
+  type ThermoFinish,
+} from '@/lib/thermo';
 import type { StoredVariantRow } from '@/lib/links/payload';
 
 /** Recurso del diseño cargado en sesión (canvas rasterizado 2048², R8). */
@@ -78,6 +93,11 @@ export interface EditorStateSnapshot {
   recentColors: { body: string[]; virola: string[] };
   /** pos 6 (R3/R7): rotación del grabado en grados canónicos [0°, 360°). */
   design: DesignState;
+  /**
+   * Termo (familia thermo): estado propio del producto. Los mates ignoran
+   * estas claves; rotación/escala/espejo siguen viviendo en `design`.
+   */
+  thermo: ThermoConfig;
   /**
    * pos 10A: borrador de Variantes del Enlace (A–C con included) — persiste
    * en projects.state (spec shareable-link §5: la configuración del link es
@@ -139,6 +159,12 @@ export interface EditorStore extends EditorStateSnapshot {
   setDesignScale: (scalePct: number) => void;
   /** pos 7: alterna el espejo horizontal (R2 spec_rotacion: pipeline central). */
   setDesignMirror: (on: boolean) => void;
+  /** Termo: posición vertical del centro del grabado (-100 abajo … 100 arriba). */
+  setThermoOffset: (pct: number) => void;
+  /** Termo: grabado invertido (negative space). */
+  setThermoInvert: (on: boolean) => void;
+  /** Termo: acabado del cuerpo pintado. */
+  setThermoFinish: (finish: ThermoFinish) => void;
   /**
    * pos 6: carga/limpia (null) el archivo de diseño en SESIÓN — el asset NO
    * se persiste ni marca dirty: no cambia nada del estado contractual.
@@ -172,6 +198,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
   virolaColor: null,
   recentColors: { body: [], virola: [] },
   design: { ...DEFAULT_DESIGN_STATE },
+  thermo: { ...DEFAULT_THERMO_CONFIG },
   linkDraft: [],
   projectId: null,
   dirty: false,
@@ -192,6 +219,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
       virolaColor: s.virolaColor ?? null,
       recentColors: s.recentColors ?? { body: [], virola: [] },
       design: s.design ?? { ...DEFAULT_DESIGN_STATE },
+      thermo: normalizeThermoConfig((s as { thermo?: unknown }).thermo),
       // pos 10A: el draft de variantes llegó normalizado desde el jsonb.
       linkDraft: s.linkDraft ?? [],
       projectId,
@@ -205,7 +233,29 @@ export const useEditorStore = create<EditorStore>((set) => ({
       inkScanDegraded: false,
     })),
 
-  setMateModel: (id) => set((prev) => ({ ...prev, mateModel: id, dirty: true })),
+  setMateModel: (id) =>
+    set((prev) => {
+      const next = resolveProduct(id);
+      const wasThermo = isThermoProduct(resolveProduct(prev.mateModel));
+      const isThermo = isThermoProduct(next);
+      // Escala por familia: los rangos NO son compatibles (mate 70–110,
+      // termo 10–100). Al cruzar de familia se parte del default de la nueva.
+      const scale =
+        isThermo && !wasThermo
+          ? next.thermo.defaultScalePct
+          : !isThermo && wasThermo
+            ? DEFAULT_DESIGN_STATE.scale
+            : prev.design.scale;
+      return {
+        ...prev,
+        mateModel: next.id,
+        design: {
+          ...prev.design,
+          scale: isThermo ? normalizeThermoScale(scale) : normalizeScale(scale),
+        },
+        dirty: true,
+      };
+    }),
 
   setDiameters: (d) =>
     set((prev) => ({ ...prev, extDiameter: d.extDiameter, intDiameter: d.intDiameter, dirty: true })),
@@ -246,17 +296,42 @@ export const useEditorStore = create<EditorStore>((set) => ({
       dirty: true,
     })),
 
-  // pos 7 (R8): SIEMPRE la representación canónica [70, 110] paso 0.5%.
+  // pos 7 (R8): SIEMPRE la representación canónica de la FAMILIA vigente
+  // (mate [70,110] · termo [10,100]) paso 0.5%.
   setDesignScale: (scalePct) =>
-    set((prev) => ({
-      ...prev,
-      design: { ...prev.design, scale: normalizeScale(scalePct) },
-      dirty: true,
-    })),
+    set((prev) => {
+      const product = resolveProduct(prev.mateModel);
+      const scale = isThermoProduct(product)
+        ? normalizeThermoScale(scalePct)
+        : normalizeScale(scalePct);
+      return {
+        ...prev,
+        design: { ...prev.design, scale },
+        dirty: true,
+      };
+    }),
 
   // pos 7 (R2 de spec_rotacion): el espejo es parte del pipeline canónico.
   setDesignMirror: (on) =>
     set((prev) => ({ ...prev, design: { ...prev.design, mirror: on }, dirty: true })),
+
+  // Termo: estado propio del producto (persiste en projects.state.thermo).
+  setThermoOffset: (pct) =>
+    set((prev) => ({
+      ...prev,
+      thermo: { ...prev.thermo, offsetYPct: normalizeThermoOffset(pct) },
+      dirty: true,
+    })),
+
+  setThermoInvert: (on) =>
+    set((prev) => ({ ...prev, thermo: { ...prev.thermo, invert: on }, dirty: true })),
+
+  setThermoFinish: (finish) =>
+    set((prev) => ({
+      ...prev,
+      thermo: { ...prev.thermo, finish: normalizeThermoFinish(finish) },
+      dirty: true,
+    })),
 
   // pos 6: el asset no es contractual — no marca dirty (el autosave dedupea
   // por payload igual; esto evita autosaves con payload idéntico).
@@ -291,6 +366,7 @@ export function snapshotOf(store: EditorStore): EditorStateSnapshot {
       virola: [...store.recentColors.virola],
     },
     design: { ...store.design },
+    thermo: { ...store.thermo },
     linkDraft: store.linkDraft.map((r) => ({ ...r })),
   };
 }

@@ -12,7 +12,12 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { EditorStateSnapshot } from '@/lib/store/editor';
-import { resolveMateModel, DEFAULT_MATE_MODEL, type MateModelId } from '@/lib/catalog';
+import {
+  DEFAULT_MATE_MODEL,
+  isThermoProduct,
+  resolveProduct,
+  type MateModelId,
+} from '@/lib/catalog';
 import { DEFAULT_GUIDES_STATE, normalizeGuidesState, reconcileDiameters } from '@/lib/virola';
 import { DEFAULT_EXT_DIAMETER_MM, DEFAULT_INT_DIAMETER_MM } from '@/three/visual-skeleton';
 import {
@@ -23,6 +28,11 @@ import {
 } from '@/lib/color';
 import { normalizeDesignState } from '@/lib/design';
 import type { DesignSourceRef } from '@/lib/design';
+import {
+  DEFAULT_THERMO_CONFIG,
+  normalizeThermoConfig,
+  normalizeThermoScale,
+} from '@/lib/thermo';
 import { normalizeVariantRows } from '@/lib/links/payload';
 
 const DRAFT_KEY = 'mocap:project-draft';
@@ -89,6 +99,7 @@ export function defaultSnapshot(): EditorStateSnapshot {
     recentColors: { body: [], virola: [] },
     // pos 6 (R8) + pos 7 (R8): sin design en el jsonb ⇒ 0° / 100% / espejo OFF
     design: { rotation: 0, scale: 100, mirror: false },
+    thermo: { ...DEFAULT_THERMO_CONFIG },
     // pos 10A: sin linkDraft en el jsonb ⇒ sin filas de variantes (borrador vacío)
     linkDraft: [],
   };
@@ -149,16 +160,34 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
       : { body: [], virola: [] };
 
   // Pos 6 + 7: design.rotation/scale/mirror — rotación a la R3 (módulo 360°,
-  // 0.5°), escala R8 de spec_escala ([70,110] paso 0.5%) y espejo bool; el
-  // normalizador tolerante aplica defaults contractuales a los faltantes.
-  const design = normalizeDesignState((raw as Record<string, unknown>).design);
+  // 0.5°), escala canónica de la FAMILIA (mate [70,110] · termo [10,100]) y
+  // espejo bool; el normalizador tolerante aplica defaults a los faltantes.
+  const product = resolveProduct(model);
+  const rawDesign = (raw as Record<string, unknown>).design;
+  const design = normalizeDesignState(rawDesign);
+  if (isThermoProduct(product)) {
+    /* OJO: `normalizeDesignState` clampa al rango del MATE [70,110]; leer la
+     * escala CRUDA para no convertir el 45 % del termo en 70 % al recargar.
+     * Ausente/basura ⇒ default del termo (45 %), nunca el 100 % del mate. */
+    const rawScale =
+      rawDesign !== null && typeof rawDesign === 'object' && !Array.isArray(rawDesign)
+        ? (rawDesign as { scale?: unknown }).scale
+        : undefined;
+    design.scale = normalizeThermoScale(rawScale);
+  }
+
+  // Termo: posición vertical, invertido y acabado (los mates lo ignoran).
+  const thermo = normalizeThermoConfig((raw as Record<string, unknown>).thermo);
 
   // Pos 10A: linkDraft (variantes del Enlace) — tolerante: ≤3 filas A–C,
   // ids únicos, labels ≤40 con truncado, escala/rotación canónicas.
-  const linkDraft = normalizeVariantRows((raw as Record<string, unknown>).linkDraft);
+  const linkDraft = normalizeVariantRows(
+    (raw as Record<string, unknown>).linkDraft,
+    isThermoProduct(product) ? 'thermo' : 'mate',
+  );
 
   return {
-    mateModel: resolveMateModel(model)?.id ?? base.mateModel as MateModelId,
+    mateModel: product.id as MateModelId,
     extDiameter: reconciled.extDiameter,
     intDiameter: reconciled.intDiameter,
     guidesState: normalizeGuidesState(s.guidesState), // R6: triada de guías (default true×3)
@@ -168,6 +197,7 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
     virolaColor,
     recentColors,
     design, // pos 6
+    thermo,
     linkDraft, // pos 10A
   };
 }

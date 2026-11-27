@@ -21,7 +21,11 @@ import { useEditorStore } from '@/lib/store/editor';
 
 describe('catálogo R1 (registro central)', () => {
   it('trajo Camionero e Imperial del texto de la spec', () => {
-    expect(CATALOG.map((p) => p.id)).toEqual(['camionero', 'imperial']);
+    expect(CATALOG.map((p) => p.id)).toEqual([
+      'camionero',
+      'imperial',
+      'termo-media-manija-1l',
+    ]);
     expect(CATALOG.every((p) => !p.pro)).toBe(true); // ambos demos FREE
   });
 
@@ -99,6 +103,7 @@ describe('R8 — fallback a camionero', () => {
       recentColors: { body: [], virola: [] },
       design: { rotation: 0, scale: 100, mirror: false }, // pos 6+7 (R8: sin design ⇒ defaults)
       linkDraft: [], // pos 10A (R8: sin borrador ⇒ sin variantes)
+      thermo: { offsetYPct: 0, invert: false, finish: 'matte' },
     });
   });
 });

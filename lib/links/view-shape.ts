@@ -21,11 +21,13 @@ import {
   normalizeVariantLabel,
   isLinkVariantId,
   type LinkPayload,
+  type LinkProductFamily,
   type LinkVariantId,
 } from '@/lib/links/payload';
 import { normalizeScale } from '@/lib/overflow';
 import { normalizeRotation } from '@/lib/design';
-import { resolveMateModel } from '@/lib/catalog';
+import { isThermoProduct, resolveProduct, resolveMateModel } from '@/lib/catalog';
+import { normalizeThermoConfig, normalizeThermoScale } from '@/lib/thermo';
 import type { BodyPresetId, MetalPresetId } from '@/lib/color';
 
 /* Diámetros de la spec geométrica (defaults si el jsonb trae basura). */
@@ -42,7 +44,7 @@ export interface PublicVariantView {
   assetUrl: string;
   /** true si el payload trae assetUrl utilizable (el CLIENTE valida que la imagen cargue). */
   healthy: boolean;
-  /** % canónico [70..110] (fracción del payload re-arbitrada ×100). */
+  /** % canónico de la familia (mate [70..110] · termo [10..100]). */
   scalePct: number;
   /** Grados módulo 360 (re-arbitrados). */
   rotationDeg: number;
@@ -61,12 +63,16 @@ export interface PublicLinkView {
   mate: {
     /** id del catálogo SIEMPRE válido (fallback camionero, QA/R4). */
     modelId: string;
+    /** Familia del producto congelada en el payload (ausente ⇒ mate). */
+    family: LinkProductFamily;
     extDiameter: number;
     intDiameter: number;
     metal: MetalPresetId;
     virolaColor: string | null;
     cupMaterial: BodyPresetId;
     cupColor: string | null;
+    /** Estado propio del termo (null en mates). */
+    thermo: { offsetYPct: number; invert: boolean; finish: 'matte' | 'satin' | 'brushed' } | null;
   };
   variants: PublicVariantView[];
 }
@@ -94,10 +100,14 @@ function bodyPresetOf(v: unknown): BodyPresetId {
     : 'algarrobo';
 }
 
-/** Fracción 0–1.10 del payload ⇒ % canónico. Basura ⇒ 100%. */
-function scalePctFromFraction(v: unknown): number {
-  const frac = typeof v === 'number' && Number.isFinite(v) ? v : 1;
-  return normalizeScale(frac * 100);
+/** Fracción 0–1.10 del payload ⇒ % canónico de la FAMILIA. Basura ⇒ default. */
+function scalePctFromFraction(v: unknown, family: LinkProductFamily = 'mate'): number {
+  const valid = typeof v === 'number' && Number.isFinite(v);
+  if (family === 'thermo') {
+    // Sin escala en el payload ⇒ default del termo (45 %), no el 100 % mate.
+    return normalizeThermoScale(valid ? (v as number) * 100 : undefined);
+  }
+  return normalizeScale(valid ? (v as number) * 100 : 100);
 }
 
 function normalizeWorkshop(raw: unknown): PublicLinkView['workshop'] {
@@ -118,6 +128,7 @@ function normalizeWorkshop(raw: unknown): PublicLinkView['workshop'] {
 function buildVariant(
   id: LinkVariantId,
   candidate: { label?: unknown; assetUrl?: unknown; scale?: unknown; rotation?: unknown; mirror?: unknown },
+  family: LinkProductFamily = 'mate',
 ): PublicVariantView {
   const assetUrl = typeof candidate.assetUrl === 'string' && /^https?:\/\//.test(candidate.assetUrl)
     ? candidate.assetUrl
@@ -127,18 +138,28 @@ function buildVariant(
     label: normalizeVariantLabel(candidate.label) || `Opción ${id}`,
     assetUrl,
     healthy: assetUrl.length > 0,
-    scalePct: scalePctFromFraction(candidate.scale),
+    scalePct: scalePctFromFraction(candidate.scale, family),
     rotationDeg: normalizeRotation(candidate.rotation),
     mirror: Boolean(candidate.mirror),
   };
 }
 
-/** Versión 2 (contrato actual): usa las clauses tal cual están congeladas. */
+/** Versión 2 (contrato actual): usa las cláusulas tal cual están congeladas. */
 function fromModernPayload(payload: LinkPayload): PublicLinkView {
   const mc = payload.mateConfig ?? ({} as Record<string, unknown>);
-  const extDiameter = positiveMm(mc.extDiameter, DEFAULT_EXT_MM);
-  let intDiameter = positiveMm(mc.intDiameter, DEFAULT_INT_MM);
-  if (intDiameter >= extDiameter) intDiameter = DEFAULT_INT_MM; // 1:1 geométrica R1: hueco NUNCA ≥ corona
+  const product = resolveProduct(typeof mc.model === 'string' ? mc.model : null);
+  /* El MODELO del catálogo es la fuente de verdad: un payload manipulado no
+   * puede declarar familia thermo con un modelo mate (ni al revés). */
+  const family: LinkProductFamily = product.family;
+  const thermo = isThermoProduct(product);
+
+  const extDiameter = thermo
+    ? Number((product.thermo.radiusMm * 2).toFixed(2))
+    : positiveMm(mc.extDiameter, DEFAULT_EXT_MM);
+  let intDiameter = thermo
+    ? extDiameter
+    : positiveMm(mc.intDiameter, DEFAULT_INT_MM);
+  if (!thermo && intDiameter >= extDiameter) intDiameter = DEFAULT_INT_MM; // 1:1 geométrica R1
 
   const rawVariants = Array.isArray(payload.variants) ? payload.variants : [];
   const variants: PublicVariantView[] = [];
@@ -154,21 +175,25 @@ function fromModernPayload(payload: LinkPayload): PublicLinkView {
     };
     if (!isLinkVariantId(candidate.id) || seen.has(candidate.id)) continue;
     seen.add(candidate.id);
-    variants.push(buildVariant(candidate.id, candidate));
+    variants.push(buildVariant(candidate.id, candidate, family));
   }
+
+  const thermoConfig = normalizeThermoConfig(mc.thermo);
 
   return {
     linkId: typeof payload.linkId === 'string' ? payload.linkId : '',
     workshop: normalizeWorkshop(payload.workshop),
     mate: {
-      // R4/QA: desconocido ⇒ camionero (resolveMateModel ya cae al fallback)
-      modelId: resolveMateModel(mc.model ?? null).id,
+      // R4/QA: desconocido ⇒ camionero (resolveProduct ya cae al fallback)
+      modelId: product.id,
+      family,
       extDiameter,
       intDiameter,
       metal: metalPresetOf(mc.metal),
       virolaColor: hexOrNull(mc.virolaColor),
       cupMaterial: bodyPresetOf(mc.cupMaterial),
       cupColor: hexOrNull(mc.cupColor),
+      thermo: thermo ? { ...thermoConfig } : null,
     },
     variants,
   };
@@ -210,12 +235,14 @@ function fromLegacyPayload(raw: unknown): PublicLinkView {
     workshop: normalizeWorkshop(undefined), // legacy no congelaba branding
     mate: {
       modelId: resolveMateModel(typeof legacy.mateModel === 'string' ? legacy.mateModel : null).id,
+      family: 'mate',
       extDiameter,
       intDiameter,
       metal: metalPresetOf(legacy.metalPreset),
       virolaColor: hexOrNull(legacy.virolaColor),
       cupMaterial: bodyPresetOf(legacy.bodyPreset),
       cupColor: hexOrNull(legacy.bodyColor),
+      thermo: null,
     },
     variants: [
       {

@@ -59,9 +59,22 @@
  * ============================================================================ */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2 } from 'lucide-react';
+import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2, MoveVertical } from 'lucide-react';
 import EngravingPreview from '@/components/studio/engraving-preview';
 import { useEditorStore } from '@/lib/store/editor';
+import { isThermoProduct, resolveProduct } from '@/lib/catalog';
+import {
+  clampThermoRotation,
+  evaluateThermoOverflow,
+  formatThermoScaleLabel,
+  normalizeThermoScale,
+  thermoAngleBounds,
+  thermoContinuousAngle,
+  thermoOverflowText,
+  THERMO_OFFSET_STEP_PCT,
+  THERMO_SCALE_STEP_PCT,
+} from '@/lib/thermo';
+import { thermoAssetAspect } from '@/lib/compose-thermo-engraving';
 import {
   applyMagnet,
   loadSnapMagnetDefault,
@@ -102,6 +115,7 @@ function fmtAngle(deg: number): string {
 }
 
 export default function DesignCard() {
+  const mateModel = useEditorStore((s) => s.mateModel);
   const extDiameter = useEditorStore((s) => s.extDiameter);
   const intDiameter = useEditorStore((s) => s.intDiameter);
   const rotation = useEditorStore((s) => s.design.rotation);
@@ -110,12 +124,39 @@ export default function DesignCard() {
   const setDesignRotation = useEditorStore((s) => s.setDesignRotation);
   const setDesignScale = useEditorStore((s) => s.setDesignScale);
   const setDesignMirror = useEditorStore((s) => s.setDesignMirror);
+  const thermoOffset = useEditorStore((s) => s.thermo.offsetYPct);
+  const thermoInvert = useEditorStore((s) => s.thermo.invert);
+  const setThermoOffset = useEditorStore((s) => s.setThermoOffset);
+  const setThermoInvert = useEditorStore((s) => s.setThermoInvert);
   const designAsset = useEditorStore((s) => s.designAsset);
   const loadDesignAsset = useEditorStore((s) => s.loadDesignAsset);
   const inkEnvelope = useEditorStore((s) => s.inkEnvelope);
   const inkScanDegraded = useEditorStore((s) => s.inkScanDegraded);
   const setInkEnvelope = useEditorStore((s) => s.setInkEnvelope);
   const setInkScanDegraded = useEditorStore((s) => s.setInkScanDegraded);
+
+  const product = useMemo(() => resolveProduct(mateModel), [mateModel]);
+  const thermoProduct = isThermoProduct(product) ? product : null;
+  const thermoSpec = thermoProduct?.thermo ?? null;
+  const aspect = useMemo(() => thermoAssetAspect(designAsset?.canvas ?? null), [designAsset]);
+  const angleBounds = useMemo(
+    () => (thermoSpec ? thermoAngleBounds(thermoSpec, scale, aspect) : null),
+    [thermoSpec, scale, aspect],
+  );
+  /* El slider del termo trabaja en el rango CONTINUO del arco libre (puede
+   * cruzar 0°); el store conserva el canónico [0,360). */
+  const continuousRotation = useMemo(
+    () =>
+      thermoSpec ? thermoContinuousAngle(thermoSpec, rotation, scale, aspect) : rotation,
+    [thermoSpec, rotation, scale, aspect],
+  );
+  const angleLabel = thermoSpec
+    ? String(Math.round(continuousRotation * 2) / 2)
+    : fmtAngle(rotation);
+  const scaleMin = thermoSpec?.minScalePct ?? SCALE_RANGE.min;
+  const scaleMax = thermoSpec?.maxScalePct ?? SCALE_RANGE.max;
+  const scaleStep = thermoSpec ? THERMO_SCALE_STEP_PCT : SCALE_STEP_PCT;
+  const scaleLabel = thermoSpec ? formatThermoScaleLabel(scale) : formatScaleLabel(normalizeScale(scale));
 
   /* R4/§5: imán SOLO de dispositivo — se lee tras hidratar (el SSR no tiene
    * localStorage; default ON evita mismatch de hidratación). */
@@ -124,7 +165,7 @@ export default function DesignCard() {
   const [fileBusy, setFileBusy] = useState(false);
   const [angleText, setAngleText] = useState(fmtAngle(0));
   const [angleInvalid, setAngleInvalid] = useState(false);
-  const [scaleText, setScaleText] = useState('100');
+  const [scaleText, setScaleText] = useState(String(scale));
   const [scaleInvalid, setScaleInvalid] = useState(false);
   const editingAngleRef = useRef(false);
   const editingScaleRef = useRef(false);
@@ -135,15 +176,52 @@ export default function DesignCard() {
   /* Slider/presets/escena pueden cambiar ángulo y escala: los campos siguen al
    * store MIENTRAS no se esté tipeando (espejo del patrón de HexInput). */
   useEffect(() => {
-    if (!editingAngleRef.current) setAngleText(fmtAngle(rotation));
-  }, [rotation]);
+    if (!editingAngleRef.current) setAngleText(angleLabel);
+  }, [angleLabel]);
   useEffect(() => {
     if (!editingScaleRef.current) setScaleText(String(scale));
   }, [scale]);
 
-  /* §3 flujo R4: slider con imán SOLO en el arrastre (±4°), paso 0.5°. */
+  /* Termo: al cambiar el aspecto del diseño o la escala, el arco libre se
+   * recalcula; si el ángulo vigente ya no entra, se lleva al límite. */
+  useEffect(() => {
+    if (!thermoSpec) return;
+    const clamped = clampThermoRotation(thermoSpec, rotation, scale, aspect);
+    if (Math.abs(clamped - rotation) > 0.001) setDesignRotation(clamped);
+  }, [thermoSpec, rotation, scale, aspect, setDesignRotation]);
+
+  /* Un diseño cargado con el termo activo NO midió la envolvente del anillo
+   * (el termo no la usa). Al volver a un mate se mide una vez: sin esto el
+   * chequeo de margen quedaría en "midiendo" y el export no confirmaría. */
+  useEffect(() => {
+    if (thermoSpec || !designAsset || inkEnvelope || inkScanDegraded) return;
+    try {
+      setInkEnvelope(measureInkEnvelopeMm(designAsset.canvas, designAsset.baseSideMm));
+      setInkScanDegraded(false);
+    } catch {
+      setInkEnvelope(null);
+      setInkScanDegraded(true);
+    }
+  }, [
+    thermoSpec,
+    designAsset,
+    inkEnvelope,
+    inkScanDegraded,
+    setInkEnvelope,
+    setInkScanDegraded,
+  ]);
+
+  /* §3 flujo R4: slider con imán SOLO en el arrastre (±4°), paso 0.5°. En el
+   * termo además se excluye el arco de la media manija. */
+  function setRotationClamped(value: number): void {
+    const next = thermoSpec
+      ? clampThermoRotation(thermoSpec, value, scale, aspect)
+      : normalizeRotation(value);
+    setDesignRotation(next);
+  }
+
   function handleSlider(value: number): void {
-    setDesignRotation(applyMagnet(normalizeRotation(value), snapMagnet));
+    setRotationClamped(thermoSpec ? normalizeRotation(value) : applyMagnet(normalizeRotation(value), snapMagnet));
   }
 
   /* §6: al tipear, WYSIWYG de lo válido; el basura no toca el store y al salir
@@ -157,16 +235,25 @@ export default function DesignCard() {
       return;
     }
     setAngleInvalid(false);
-    setDesignRotation(parsed); // normaliza por módulo — jamás rompe la escena
+    setRotationClamped(parsed); // normaliza/clampa — jamás rompe la escena
   }
 
   function commitAngleBlur(): void {
     editingAngleRef.current = false;
     setAngleInvalid(false);
-    setAngleText(fmtAngle(rotation));
+    setAngleText(angleLabel);
   }
 
-  /* R8 escala: mismo patrón WYSIWYG del ángulo — clamp [70,110] paso 0.5%. */
+  /* R8 escala: mismo patrón WYSIWYG del ángulo — clamp por FAMILIA paso 0.5%. */
+  function applyScale(value: number): void {
+    const normalized = thermoSpec ? normalizeThermoScale(value) : normalizeScale(value);
+    setDesignScale(normalized);
+    if (thermoSpec) {
+      // El ancho del diseño cambia con la escala: re-clamp del arco libre.
+      setDesignRotation(clampThermoRotation(thermoSpec, rotation, normalized, aspect));
+    }
+  }
+
   function handleScaleTyping(text: string): void {
     editingScaleRef.current = true;
     setScaleText(text);
@@ -176,7 +263,7 @@ export default function DesignCard() {
       return;
     }
     setScaleInvalid(false);
-    setDesignScale(parsed); // normaliza (clamp + paso 0.5%) — jamás fuera de rango
+    applyScale(parsed); // normaliza (clamp + paso 0.5%) — jamás fuera de rango
   }
 
   function commitScaleBlur(): void {
@@ -205,13 +292,20 @@ export default function DesignCard() {
         baseSideMm: extDiameter,
       };
       loadDesignAsset(asset);
-      try {
-        setInkEnvelope(measureInkEnvelopeMm(canvas, asset.baseSideMm));
-        setInkScanDegraded(false);
-      } catch {
-        // §6: raster del chequeo falló ⇒ modo envolvente conservador.
+      if (thermoSpec) {
+        /* El termo no usa la envolvente polar del anillo: su margen sale del
+         * recorte real del trazado + la zona lateral (lib/thermo). */
         setInkEnvelope(null);
-        setInkScanDegraded(true);
+        setInkScanDegraded(false);
+      } else {
+        try {
+          setInkEnvelope(measureInkEnvelopeMm(canvas, asset.baseSideMm));
+          setInkScanDegraded(false);
+        } catch {
+          // §6: raster del chequeo falló ⇒ modo envolvente conservador.
+          setInkEnvelope(null);
+          setInkScanDegraded(true);
+        }
       }
       setFileError(null);
     } catch {
@@ -230,8 +324,16 @@ export default function DesignCard() {
   }
 
   /* Feedback de imán (§4): el preset "enganchado" se marca; con imán OFF los
-   * marcadores quedan neutros. */
-  const snapped = magnetSnappedPreset(rotation, snapMagnet);
+   * marcadores quedan neutros. En el termo los presets son los bordes y el
+   * centro del arco libre (la manija no se puede tapar). */
+  const snapped = thermoSpec ? null : magnetSnappedPreset(rotation, snapMagnet);
+  const rotationPresets = thermoSpec && angleBounds
+    ? [
+        { angle: angleBounds.minDeg, label: 'Borde Frente' },
+        { angle: angleBounds.centerDeg, label: 'Centro' },
+        { angle: angleBounds.maxDeg, label: 'Borde Dorso' },
+      ]
+    : ROTATION_PRESETS;
 
   /* ─────── R4/R5/R7 — chequeo, banner y Auto del margen ─────── */
   const rExtMm = extDiameter / 2;
@@ -239,12 +341,19 @@ export default function DesignCard() {
 
   const check = useMemo(() => {
     if (!designAsset) return null;
+    if (thermoSpec) {
+      return evaluateThermoOverflow(thermoSpec, {
+        scalePct: scale,
+        offsetYPct: thermoOffset,
+        aspect,
+      });
+    }
     if (inkEnvelope) return evaluateOverflow(inkEnvelope, rExtMm, rIntMm, scale);
     if (inkScanDegraded) { // §6: modo envolvente (bbox) conservador
       return evaluateOverflowBBox(designAsset.baseSideMm, scale, rExtMm, rIntMm);
     }
     return null; // medición en curso / asset sin trazado
-  }, [designAsset, inkEnvelope, inkScanDegraded, rExtMm, rIntMm, scale]);
+  }, [designAsset, inkEnvelope, inkScanDegraded, rExtMm, rIntMm, scale, thermoSpec, thermoOffset, aspect]);
 
   const overflowing = check?.status === 'overflow';
   const severe =
@@ -314,13 +423,15 @@ export default function DesignCard() {
           </p>
         )}
 
-        {/* Vista cenital del anillo: la corona en el 3D queda casi de canto. */}
-        <EngravingPreview />
+        {/* Vista cenital del anillo (solo mates): en el termo el grabado es
+            lateral y se lee en la escena 3D. */}
+        {!thermoSpec && <EngravingPreview />}
 
         {!designAsset && !fileError && (
           <p className="text-[10px] leading-relaxed text-stone-600">
-            Sin diseño: la corona sale lisa. SVG o PNG con trazado tocando el anillo; al cargar se
-            congela el 100 % (R1) y la vista previa es en vivo en el 3D y en el anillo de arriba.
+            {thermoSpec
+              ? 'Sin diseño: el cuerpo sale liso. SVG o PNG con trazado; al cargar se ajusta a la zona lateral y se puede mover con el dedo sobre el termo.'
+              : 'Sin diseño: la corona sale lisa. SVG o PNG con trazado tocando el anillo; al cargar se congela el 100 % (R1) y la vista previa es en vivo en el 3D y en el anillo de arriba.'}
           </p>
         )}
       </section>
@@ -331,20 +442,22 @@ export default function DesignCard() {
       <section className="space-y-3">
         <div className="flex items-baseline justify-between">
           <p className="text-xs font-bold uppercase tracking-wider text-stone-400">
-            Rotación del Grabado (360°)
+            {thermoSpec ? 'Posición Angular del Grabado' : 'Rotación del Grabado (360°)'}
           </p>
-          <span className="text-[9px] text-stone-600">paso 0.5° (R3)</span>
+          <span className="text-[9px] text-stone-600">
+            {thermoSpec ? 'arco libre (sin manija)' : 'paso 0.5° (R3)'}
+          </span>
         </div>
 
-        {/* Slider 0–360 · paso 0.5 (R4) con imán aplicado en el arrastre */}
+        {/* Slider: mate 0–360 · termo sólo el arco libre que deja la manija */}
         <div className="flex items-center gap-3">
           <input
             type="range"
-            min={0}
-            max={360}
+            min={thermoSpec && angleBounds ? angleBounds.minDeg : 0}
+            max={thermoSpec && angleBounds ? angleBounds.maxDeg : 360}
             step={0.5}
-            value={rotation}
-            aria-label="Alineación y rotación del grabado"
+            value={thermoSpec ? continuousRotation : rotation}
+            aria-label={thermoSpec ? 'Posición angular del grabado' : 'Alineación y rotación del grabado'}
             onChange={(e) => handleSlider(Number(e.target.value))}
             className="w-full accent-gold"
           />
@@ -380,13 +493,17 @@ export default function DesignCard() {
 
         {/* 4 presets R4 — fijan EXACTO con imán ON u OFF */}
         <div className="flex flex-wrap gap-1.5">
-          {ROTATION_PRESETS.map((preset) => {
-            const active = snapped !== null ? snapped === preset.angle : rotation === preset.angle;
+          {rotationPresets.map((preset) => {
+            const active = thermoSpec
+              ? Math.abs(continuousRotation - preset.angle) < 0.26
+              : snapped !== null
+                ? snapped === preset.angle
+                : rotation === preset.angle;
             return (
               <button
-                key={preset.angle}
+                key={`${preset.angle}-${preset.label}`}
                 type="button"
-                onClick={() => setDesignRotation(preset.angle)}
+                onClick={() => setRotationClamped(preset.angle)}
                 title={`Fija exactamente ${preset.angle}°`}
                 className={[
                   'rounded-lg border px-2 py-1.5 text-[11px] transition-all focus:outline-none',
@@ -401,26 +518,32 @@ export default function DesignCard() {
           })}
         </div>
 
-        {/* Imán configurable R4 (±4°) — estado de DISPOSITIVO (§5) + espejo + reset */}
+        {/* Imán configurable R4 (±4°) — solo mates (el termo tiene arco propio) + reset */}
         <div className="flex items-center justify-between gap-2">
-          <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
-            <input
-              type="checkbox"
-              checked={snapMagnet}
-              onChange={toggleMagnet}
-              className="accent-gold"
-            />
-            <Magnet className={`h-3.5 w-3.5 ${snapMagnet ? 'text-gold-soft' : 'text-stone-600'}`} />
-            Imán en 0°/90°/180°/270°
-          </label>
+          {thermoSpec ? (
+            <span className="text-[10px] text-stone-600">
+              La media manija bloquea el costado izquierdo: el diseño se mueve dentro del arco libre.
+            </span>
+          ) : (
+            <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
+              <input
+                type="checkbox"
+                checked={snapMagnet}
+                onChange={toggleMagnet}
+                className="accent-gold"
+              />
+              <Magnet className={`h-3.5 w-3.5 ${snapMagnet ? 'text-gold-soft' : 'text-stone-600'}`} />
+              Imán en 0°/90°/180°/270°
+            </label>
+          )}
           <button
             type="button"
-            onClick={() => setDesignRotation(0)}
-            title="Vuelve a 0° conservando imán, escala y espejo (R7)"
+            onClick={() => setRotationClamped(thermoSpec && angleBounds ? angleBounds.centerDeg : 0)}
+            title="Vuelve al centro conservando escala y espejo"
             className="flex items-center gap-1 text-[10px] text-stone-500 transition hover:text-stone-300 focus:outline-none"
           >
             <RotateCcw className="h-3 w-3" />
-            Reset 0°
+            Reset
           </button>
         </div>
 
@@ -438,6 +561,47 @@ export default function DesignCard() {
             {mirror ? 'invertido sobre eje vertical' : 'normal (R2)'}
           </span>
         </label>
+
+        {/* Termo: la zona de grabado es lateral, no la corona ⇒ posición
+            vertical libre dentro del cuerpo y negativo (invertido). */}
+        {thermoSpec && (
+          <div className="space-y-3 rounded-xl border border-line bg-black/20 p-3">
+            <div className="flex items-baseline justify-between">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                Posición Vertical
+              </p>
+              <span className="text-[9px] text-stone-600">-100 abajo · 100 arriba</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <MoveVertical className="h-3.5 w-3.5 shrink-0 text-stone-500" />
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={THERMO_OFFSET_STEP_PCT}
+                value={thermoOffset}
+                aria-label="Posición vertical del grabado"
+                onChange={(e) => setThermoOffset(Number(e.target.value))}
+                className="w-full accent-gold"
+              />
+              <span className="w-10 shrink-0 text-right font-mono text-[10px] text-stone-400">
+                {thermoOffset > 0 ? `+${thermoOffset}` : thermoOffset}
+              </span>
+            </div>
+            <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
+              <input
+                type="checkbox"
+                checked={thermoInvert}
+                onChange={() => setThermoInvert(!thermoInvert)}
+                className="accent-gold"
+              />
+              Grabado invertido (negativo)
+              <span className="ml-auto text-[9px] text-stone-600">
+                {thermoInvert ? 'fondo quemado' : 'trazo quemado'}
+              </span>
+            </label>
+          </div>
+        )}
       </section>
 
       <hr className="border-line" />
@@ -466,7 +630,7 @@ export default function DesignCard() {
               Dentro de zona segura
             </span>
           )}
-          {inkScanDegraded && designAsset && (
+          {!thermoSpec && inkScanDegraded && designAsset && (
             <span className="text-[9px] text-amber-300/80">Detección aproximada (§6)</span>
           )}
         </div>
@@ -482,26 +646,38 @@ export default function DesignCard() {
             ].join(' ')}
           >
             <span>⚠️</span>
-            <span aria-live="polite">{overflowBannerText(check)}</span>
+            <span aria-live="polite">
+              {thermoSpec ? thermoOverflowText(check) : overflowBannerText(check)}
+            </span>
           </p>
         )}
 
         <p className="text-[10px] leading-relaxed text-stone-600">
-          El <span className="text-stone-400">100%</span> queda congelado al cargar el archivo (R1:
-          la envolvente toca el anillo); editar medidas NO re-escala el diseño, solo re-chequea.
-          La tolerancia del anillo es 0 mm estricta (R4).
+          {thermoSpec ? (
+            <>
+              El diseño se ajusta a la zona lateral del cuerpo y se mueve con el dedo sobre el
+              termo. La escala va de {thermoSpec.minScalePct}% a {thermoSpec.maxScalePct}% y el
+              margen se recalcula al instante.
+            </>
+          ) : (
+            <>
+              El <span className="text-stone-400">100%</span> queda congelado al cargar el archivo
+              (R1: la envolvente toca el anillo); editar medidas NO re-escala el diseño, solo
+              re-chequea. La tolerancia del anillo es 0 mm estricta (R4).
+            </>
+          )}
         </p>
 
-        {/* Slider 70–110 · paso 0.5% (R8) */}
+        {/* Slider de escala: mate 70–110 · termo 10–100 (R8) */}
         <div className="flex items-center gap-3">
           <input
             type="range"
-            min={SCALE_RANGE.min}
-            max={SCALE_RANGE.max}
-            step={SCALE_STEP_PCT}
+            min={scaleMin}
+            max={scaleMax}
+            step={scaleStep}
             value={scale}
             aria-label="Escala del grabado"
-            onChange={(e) => setDesignScale(Number(e.target.value))}
+            onChange={(e) => applyScale(Number(e.target.value))}
             className="w-full accent-gold"
           />
         </div>
@@ -518,7 +694,7 @@ export default function DesignCard() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
-            placeholder="100"
+            placeholder={thermoSpec ? '45' : '100'}
             maxLength={7}
             spellCheck={false}
             className={[
@@ -530,30 +706,26 @@ export default function DesignCard() {
           />
           <span className="text-xs text-stone-500">%</span>
           <span className="flex-1 text-right text-[10px] text-stone-600">
-            {scaleInvalid ? 'restaura al salir' : `${formatScaleLabel(normalizeScale(scale))} vigente`}
+            {scaleInvalid ? 'restaura al salir' : `${scaleLabel} vigente`}
           </span>
         </div>
 
-        {/* Presets de escala (sin "Máx": el máximo real es 110 %). El botón
-            Auto de la spec R7 quedó RETIRADO por decisión del titular
-            (05-nov): la mayor escala segura la elige el tallerista a ojo con
-            el slider y el banner; `largestSafeScalePct` queda en lib/overflow
-            (función testeada) por si la reusan ficha/variantes. */}
+        {/* Presets de escala por familia (termo 25/45/70 · mate 85/90/100). */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {SCALE_PRESETS.map((preset) => (
+          {(thermoSpec ? [25, 45, 70, 100] : SCALE_PRESETS.map((p) => p.pct)).map((pct) => (
             <button
-              key={preset.pct}
+              key={pct}
               type="button"
-              onClick={() => setDesignScale(preset.pct)}
-              title={`Fija la escala en ${preset.pct}%`}
+              onClick={() => applyScale(pct)}
+              title={`Fija la escala en ${pct}%`}
               className={[
                 'rounded-lg border px-2 py-1.5 text-[11px] transition-all focus:outline-none',
-                scale === preset.pct
+                scale === pct
                   ? 'border-gold ring-2 ring-gold bg-gold/10 text-cream'
                   : 'border-line text-stone-400 hover:border-gold/50 hover:text-cream',
               ].join(' ')}
             >
-              {preset.pct}%
+              {pct}%
             </button>
           ))}
         </div>

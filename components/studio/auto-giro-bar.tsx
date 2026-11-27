@@ -50,7 +50,7 @@ export default function AutoGiroBar({
           className="pointer-events-auto bg-panel/80 backdrop-blur"
           onClick={onToggleEngravingView}
           aria-pressed={engravingView}
-          title="Encuadra el anillo de la corona para leer el grabado"
+          title="Encuadra el grabado para leerlo de frente"
         >
           {engravingView ? (
             <Box className="h-3.5 w-3.5" />

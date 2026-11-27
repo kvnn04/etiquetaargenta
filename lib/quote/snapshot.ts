@@ -24,7 +24,7 @@
  *      projects.state; todo su contenido es derivable del estado vivo.
  * ============================================================================ */
 
-import { resolveMateModel } from '@/lib/catalog';
+import { isThermoProduct, resolveProduct, type ThermoSpec } from '@/lib/catalog';
 import { formatColorDescriptor } from '@/lib/color';
 import { formatRotationLabel, normalizeRotation } from '@/lib/design';
 import {
@@ -34,6 +34,15 @@ import {
   marginSheetLine,
   type OverflowCheck,
 } from '@/lib/overflow';
+import {
+  clampThermoRotation,
+  evaluateThermoOverflow,
+  formatThermoScaleLabel,
+  normalizeThermoConfig,
+  normalizeThermoScale,
+  thermoColorName,
+  thermoFinishLabel,
+} from '@/lib/thermo';
 import type { ResolvedBranding } from '@/lib/branding';
 import { OBSERVACIONES_MAX } from './texts';
 
@@ -90,14 +99,17 @@ export function formatCuerpoCard(bodyPreset: string, bodyColor: string | null): 
 
 /**
  * R2/QA2: con Imperial activo imprime EXACTAMENTE `Mate Imperial`;
- * con Camionero, `Mate Camionero`. R8: modelo ausente/desconocido ⇒ cae a
- * `Mate Camionero` (resolveMateModel ya implementa el fallback del catálogo).
+ * con Camionero, `Mate Camionero`. El termo imprime su nombre comercial
+ * completo. R8: modelo ausente/desconocido ⇒ cae al mate por defecto.
  */
 export function formatModeloCard(
   mateModel: string | null | undefined,
 ): { etiqueta: string; modelId: string } {
-  const product = resolveMateModel(mateModel ?? null);
-  return { etiqueta: `Mate ${product.label}`, modelId: product.id };
+  const product = resolveProduct(mateModel ?? null);
+  return {
+    etiqueta: isThermoProduct(product) ? product.label : `Mate ${product.label}`,
+    modelId: product.id,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -133,10 +145,20 @@ export interface FichaSnapshot {
   hasProject: boolean;
   /** §6/R8: ¿hay archivo de diseño en el slot de sesión? (placeholders Grabado). */
   hasDesign: boolean;
-  /** Tarjeta Modelo (R2/R8: `Mate Imperial` / `Mate Camionero`). */
+  /** Tarjeta Modelo (R2/R8: `Mate Imperial` / `Termo Matero Media Manija 1L`). */
   modeloEtiqueta: string;
   /** Id canónico del modelo (seguro para el nombre de archivo §5). */
   productId: string;
+  /** Familia del producto: adapta las tarjetas de la ficha. */
+  family: 'mate' | 'thermo';
+  /** Tarjetas propias del termo (null en mates). */
+  thermo: {
+    acabadoEtiqueta: string;
+    posicionEtiqueta: string;
+    capacidadEtiqueta: string;
+    altoEtiqueta: string;
+    diametroEtiqueta: string;
+  } | null;
   /** Tarjetas de Producto: D_ext / D_int / banda auto W=(Dext−Dint)/2. */
   extDiameterMm: number | null;
   intDiameterMm: number | null;
@@ -176,9 +198,13 @@ export interface CaptureFichaInput {
     bodyColor: string | null;
     virolaColor: string | null;
     design: { rotation?: unknown; scale?: unknown; mirror?: unknown } | null;
+    /** Termo: posición vertical, invertido y acabado (los mates lo ignoran). */
+    thermo?: { offsetYPct?: unknown; invert?: unknown; finish?: unknown } | null;
   };
   /** ¿archivo SVG/PNG en el slot de sesión? (Grabado sin placeholder). */
   designAssetPresent: boolean;
+  /** Aspecto real del diseño (termo): etiqueta el ángulo que se dibuja. */
+  designAspect?: number | null;
   /** ¿hay proyecto server-side? (transparencia — no bloquea nada). */
   hasProject: boolean;
   /** Chequeo vigente de sesión — derivado al vuelo (R8 pos 7: jamás persistido). */
@@ -216,10 +242,16 @@ function vigente(v: number | null | undefined, what: string): number | null {
  */
 export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
   const { state, overflow, brand } = input;
+  const product = resolveProduct(state.mateModel);
+  const isThermo = isThermoProduct(product);
+  const thermoConfig = normalizeThermoConfig(state.thermo);
 
-  // --- Producto: diámetros (R8) y banda auto (R2: W = (Dext − Dint)/2) ---
-  const extMm = vigente(state.extDiameter, 'D_ext');
-  const intMm = vigente(state.intDiameter, 'D_int');
+  // --- Producto: diámetros (R8) y banda auto (R2: W = (Dext − Dint)/2).
+  // El termo no tiene virola: sus tarjetas son capacidad / alto / diámetro.
+  const extMm = isThermo
+    ? Number((product.thermo.radiusMm * 2).toFixed(2))
+    : vigente(state.extDiameter, 'D_ext');
+  const intMm = isThermo ? null : vigente(state.intDiameter, 'D_int');
   const bandaMm =
     extMm !== null && intMm !== null && intMm < extMm
       ? Number(((extMm - intMm) / 2).toFixed(2))
@@ -231,12 +263,27 @@ export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
   // normalizadores canónicos de pos 6/7 cubren cualquier valor del jsonb.
   const d = state.design ?? {};
   const grabadoSinDiseno = !input.designAssetPresent;
-  const escalaEtiqueta = grabadoSinDiseno ? '—' : formatPctCard(
-    typeof d.scale === 'number' ? d.scale : normalizeScale(undefined as unknown as number),
-  );
-  const rotacionEtiqueta = grabadoSinDiseno ? '—' : formatDegCard(
-    typeof d.rotation === 'number' ? d.rotation : normalizeRotation(undefined as unknown as number),
-  );
+  const rawScale = typeof d.scale === 'number' ? d.scale : undefined;
+  const rawRotation = typeof d.rotation === 'number' ? d.rotation : undefined;
+  /* El termo dibuja el ángulo CLAMPEADO al arco libre: la etiqueta debe decir
+   * lo que realmente se ve, no el valor viejo que quedó fuera de rango al
+   * cambiar escala/posición. */
+  const scalePct = isThermo
+    ? normalizeThermoScale(rawScale)
+    : (rawScale ?? normalizeScale(undefined as unknown as number));
+  const rotationDeg = isThermo
+    ? clampThermoRotation(product.thermo, rawRotation ?? 0, scalePct, input.designAspect ?? 1)
+    : (rawRotation ?? normalizeRotation(undefined as unknown as number));
+  const escalaEtiqueta = grabadoSinDiseno
+    ? '—'
+    : isThermo
+      ? formatThermoScaleLabel(scalePct)
+      : formatPctCard(scalePct);
+  const rotacionEtiqueta = grabadoSinDiseno ? '—' : formatDegCard(rotationDeg);
+  const offset = thermoConfig.offsetYPct;
+  const posicionEtiqueta = grabadoSinDiseno
+    ? '—'
+    : `${rotacionEtiqueta} · ${offset > 0 ? '+' : ''}${offset}%`;
 
   // --- Margen (R5/R6 pos 7): texto canónico ÚNICO para modal y canvas.
   let margenEtiqueta: string | null = null;
@@ -262,6 +309,16 @@ export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
     hasDesign: input.designAssetPresent,
     modeloEtiqueta: modelo.etiqueta,
     productId: modelo.modelId,
+    family: isThermo ? 'thermo' : 'mate',
+    thermo: isThermo
+      ? {
+          acabadoEtiqueta: thermoFinishLabel(thermoConfig.finish),
+          posicionEtiqueta,
+          capacidadEtiqueta: '1.0 L',
+          altoEtiqueta: formatMmCard(product.thermo.totalHeightMm) ?? '—',
+          diametroEtiqueta: formatMmCard(product.thermo.radiusMm * 2) ?? '—',
+        }
+      : null,
     extDiameterMm: extMm,
     intDiameterMm: intMm,
     bandaMm,
@@ -270,9 +327,13 @@ export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
     rotacionEtiqueta,
     margenEtiqueta,
     margenEstado,
-    margenAproximado: Boolean(input.inkDegraded) && !grabadoSinDiseno,
-    virolaEtiqueta: formatVirolaCard(state.metalPreset ?? 'alpaca', state.virolaColor),
-    cuerpoEtiqueta: formatCuerpoCard(state.bodyPreset ?? 'algarrobo', state.bodyColor),
+    margenAproximado: !isThermo && Boolean(input.inkDegraded) && !grabadoSinDiseno,
+    virolaEtiqueta: isThermo
+      ? thermoFinishLabel(thermoConfig.finish)
+      : formatVirolaCard(state.metalPreset ?? 'alpaca', state.virolaColor),
+    cuerpoEtiqueta: isThermo
+      ? thermoColorName(state.bodyColor)
+      : formatCuerpoCard(state.bodyPreset ?? 'algarrobo', state.bodyColor),
     observaciones: cleanObservaciones(input.observaciones),
     linkId: input.linkId ?? null,
     brand: {
@@ -310,6 +371,10 @@ function fnv1a32(text: string): string {
 export function hashFichaSnapshot(s: FichaSnapshot): string {
   const parts = [
     s.productId,
+    s.family,
+    s.thermo
+      ? `${s.thermo.acabadoEtiqueta}|${s.thermo.posicionEtiqueta}|${s.thermo.capacidadEtiqueta}|${s.thermo.altoEtiqueta}|${s.thermo.diametroEtiqueta}`
+      : 'mate',
     s.extDiameterMm === null ? '—' : s.extDiameterMm.toFixed(2),
     s.intDiameterMm === null ? '—' : s.intDiameterMm.toFixed(2),
     s.bandaMm === null ? '—' : s.bandaMm.toFixed(2),
@@ -349,6 +414,11 @@ export interface OverflowCheckInput {
   intDiameterMm: number;
   /** Escala vigente (%; normalizeScale cubre ausentes/basura). */
   scalePct: number;
+  /**
+   * Termo: si viene, el chequeo es la zona lateral (arco libre + alto útil),
+   * no el anillo de la virola. `aspect` = aspecto real del asset.
+   */
+  thermo?: { spec: ThermoSpec; offsetYPct: number; aspect: number } | null;
 }
 
 /**
@@ -360,6 +430,13 @@ export interface OverflowCheckInput {
  */
 export function currentOverflowCheck(input: OverflowCheckInput): OverflowCheck | null {
   if (!input.hasDesignAsset) return null;
+  if (input.thermo) {
+    return evaluateThermoOverflow(input.thermo.spec, {
+      scalePct: input.scalePct,
+      offsetYPct: input.thermo.offsetYPct,
+      aspect: input.thermo.aspect,
+    });
+  }
   if (input.inkEnvelope) {
     return evaluateOverflow(
       input.inkEnvelope,
