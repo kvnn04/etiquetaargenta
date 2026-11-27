@@ -100,6 +100,7 @@ interface SubscriptionRow {
   status: SubscriptionStatus;
   preapproval_id: string | null;
   preapproval_plan_id: string | null;
+  cycle_anchor: string | null;
   period_end: string | null;
 }
 
@@ -157,7 +158,7 @@ async function readSubRow(
 ): Promise<SubscriptionRow | null> {
   const { data, error } = await service
     .from('subscriptions')
-    .select('status, preapproval_id, preapproval_plan_id, period_end')
+    .select('status, preapproval_id, preapproval_plan_id, cycle_anchor, period_end')
     .eq('user_id', userId)
     .maybeSingle<SubscriptionRow>();
   if (error) console.error('[billing cancel sub]:', error.message);
@@ -174,6 +175,23 @@ async function readSubAfter(
     .eq('user_id', userId)
     .maybeSingle<SubscriptionAfterRow>();
   if (error) console.error('[billing cancel reread]:', error.message);
+  return data ?? null;
+}
+
+/** Último pago aprobado (o parcial): el que financió el ciclo vigente. */
+async function readLatestFundingPayment(
+  service: ReturnType<typeof createSupabaseServiceClient>,
+  userId: string,
+): Promise<PaymentRow | null> {
+  const { data, error } = await service
+    .from('payments')
+    .select('mp_payment_id, amount, refunded_amount, occurred_at, status')
+    .eq('user_id', userId)
+    .in('status', ['approved', 'partially_refunded'])
+    .order('occurred_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<PaymentRow>();
+  if (error) console.error('[billing cancel payment]:', error.message);
   return data ?? null;
 }
 
@@ -306,6 +324,8 @@ async function applyScheduledClose(input: {
   pre: Extract<PreapprovalCancelOutcome, { ok: true }>;
   source: 'app' | 'legal';
   suppressEmail: boolean;
+  /** Fin de acceso derivado del pago real; `null` deja que R9 lo calcule. */
+  periodEndMs?: number | null;
 }): Promise<{
   status: SubscriptionStatus;
   periodEndMs: number | null;
@@ -323,6 +343,7 @@ async function applyScheduledClose(input: {
         userId: input.userId,
         source: input.source,
         suppressEmail: input.suppressEmail,
+        periodEndMs: input.periodEndMs ?? null,
       },
     );
     if (applied.action === 'error') {
@@ -374,6 +395,15 @@ export async function cancelUserSubscription(
     return { ok: false, reason: 'not_cancelable' };
   }
 
+  /* Fin del ciclo ya pago: `period_end` manda; si falta, se deriva del ancla
+   * y la fecha del último pago. En gracia manda la ventana de gracia (R8). */
+  const funding = await readLatestFundingPayment(service, userId);
+  const paidCycleEndMs = resolvePaidCycleEndMs({
+    periodEndMs: isoToMs(sub.period_end),
+    cycleAnchorDate: sub.cycle_anchor,
+    paidAtMs: funding ? isoToMs(funding.occurred_at) : null,
+  });
+
   const pre = await cancelPreapprovalForUser(service, userId, sub, {
     allowMissing: false,
   });
@@ -386,6 +416,7 @@ export async function cancelUserSubscription(
     pre,
     source: 'app',
     suppressEmail: pre.alreadyCancelled,
+    periodEndMs: sub.status === 'gracia' ? null : paidCycleEndMs,
   });
 
   const warning = closed.status === 'programada_cierre' ? null : 'LOCAL_SYNC_PENDING';
@@ -478,6 +509,7 @@ async function closeWithoutRefund(input: {
   sub: SubscriptionRow;
   pre: Extract<PreapprovalCancelOutcome, { ok: true }>;
   suppressEmail: boolean;
+  periodEndMs?: number | null;
 }): Promise<{ status: SubscriptionStatus; periodEndMs: number | null }> {
   if (input.sub.status === 'programada_cierre') {
     return {
@@ -490,6 +522,7 @@ async function closeWithoutRefund(input: {
     pre: input.pre,
     source: 'legal',
     suppressEmail: input.suppressEmail,
+    periodEndMs: input.periodEndMs ?? null,
   });
 }
 
@@ -545,6 +578,15 @@ export async function executeWithdrawalCancellation(input: {
     nowMs,
   });
 
+  /* Fin de acceso si no hay reembolso: `period_end` manda; si falta, el ciclo
+   * que financió el pago real. En gracia manda la ventana de gracia (R8). */
+  const paidCycleEndMs = resolvePaidCycleEndMs({
+    periodEndMs: isoToMs(sub.period_end),
+    cycleAnchorDate: sub.cycle_anchor,
+    paidAtMs,
+  });
+  const closeEndMs = sub.status === 'gracia' ? null : paidCycleEndMs;
+
   /* 1) Cortar la renovación ANTES de tocar el dinero. Si no hay reembolso que
    * hacer, el preapproval es obligatorio (no se puede "programar" un cierre
    * que no existe). */
@@ -562,6 +604,7 @@ export async function executeWithdrawalCancellation(input: {
       sub,
       pre,
       suppressEmail: false,
+      periodEndMs: closeEndMs,
     });
     return {
       ok: true,
@@ -581,6 +624,7 @@ export async function executeWithdrawalCancellation(input: {
       sub,
       pre,
       suppressEmail: false,
+      periodEndMs: closeEndMs,
     });
     return {
       ok: false,
@@ -615,6 +659,7 @@ export async function executeWithdrawalCancellation(input: {
       sub,
       pre,
       suppressEmail: false,
+      periodEndMs: closeEndMs,
     });
     return {
       ok: false,
@@ -674,6 +719,7 @@ export async function executeWithdrawalCancellation(input: {
         pre,
         source: 'legal',
         suppressEmail: true,
+        periodEndMs: closeEndMs,
       });
       after = {
         status: closed.status,
@@ -719,6 +765,7 @@ export async function executeWithdrawalCancellation(input: {
       sub,
       pre,
       suppressEmail: false,
+      periodEndMs: closeEndMs,
     });
     await sendPaymentAlert({
       userId: input.userId,
@@ -796,6 +843,7 @@ export async function executeWithdrawalCancellation(input: {
       pre,
       source: 'legal',
       suppressEmail: true,
+      periodEndMs: closeEndMs,
     });
     after = {
       status: closed.status,

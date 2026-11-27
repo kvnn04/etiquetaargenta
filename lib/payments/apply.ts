@@ -1705,7 +1705,14 @@ export async function applyPayment(
  */
 export async function applyPreapproval(
   pre: MpPreapprovalFull,
-  ctx: { userId: string; source: ApplySource; deadlineMs?: number; suppressEmail?: boolean },
+  ctx: {
+    userId: string;
+    source: ApplySource;
+    deadlineMs?: number;
+    suppressEmail?: boolean;
+    /** Fin de acceso ya resuelto por el caller (pago real); si falta, R9. */
+    periodEndMs?: number | null;
+  },
 ): Promise<PreapprovalApplyResult> {
   const service = createSupabaseServiceClient();
   const sub = await readSubRow(service, ctx.userId);
@@ -1772,11 +1779,13 @@ export async function applyPreapproval(
   const grMs = isoToMs(sub?.grace_expires_at ?? null);
   const anchorDay = sub?.cycle_anchor ? cycleAnchorDayOfStr(sub.cycle_anchor) : null;
   const periodEndMs =
+    ctx.periodEndMs ??
     cancelationPeriodEndMs(current, {
       graceExpiresAtMs: grMs,
       anchorDay,
       nowMs: Date.now(),
-    }) ?? Date.now();
+    }) ??
+    Date.now();
 
   const patch = transitionSubscription(current, {
     kind: 'cancelacion_programada',
