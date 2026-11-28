@@ -12,7 +12,7 @@
  * ============================================================================ */
 
 import type { ThermoProduct, ThermoSpec } from '@/lib/catalog';
-import { isBottleGeometry } from '@/lib/catalog';
+import { isBottleGeometry, isMateThermoGeometry } from '@/lib/catalog';
 import { normalizeRotation } from '@/lib/design';
 import { normalizeHex } from '@/lib/color';
 import type { OverflowCheck } from '@/lib/overflow';
@@ -61,6 +61,40 @@ export const THERMO_PALETTE: readonly ThermoPaletteColor[] = [
   { name: 'Arena', hex: '#D5C7B2' },
 ];
 
+/** Color por defecto del Mate Recto Térmico (Negro Mate del prototipo). */
+export const RECTO_DEFAULT_BODY_COLOR = '#1C1C1E';
+
+/** Paleta comercial del prototipo `3d_mate_recto.html` (mismos HEX). */
+export const RECTO_PALETTE: readonly ThermoPaletteColor[] = [
+  { name: 'Negro Mate', hex: '#1C1C1E' },
+  { name: 'Acero Inox', hex: '#D4D8DD', steel: true },
+  { name: 'Blanco Tiza', hex: '#F2F2F0' },
+  { name: 'Verde Militar', hex: '#4B5842' },
+  { name: 'Azul Marino', hex: '#1B2A4A' },
+  { name: 'Rosa Pastel', hex: '#EAB8C4' },
+  { name: 'Rojo Terracota', hex: '#B34D36' },
+  { name: 'Bordó / Vino', hex: '#631926' },
+];
+
+/** Paleta vigente según la geometría del producto (termo/botella vs mate). */
+export function thermoPaletteFor(spec?: ThermoSpec | null): readonly ThermoPaletteColor[] {
+  return spec && isMateThermoGeometry(spec.geometry) ? RECTO_PALETTE : THERMO_PALETTE;
+}
+
+/** Color de cuerpo por defecto del producto. */
+export function thermoDefaultBodyColor(spec?: ThermoSpec | null): string {
+  return spec && isMateThermoGeometry(spec.geometry)
+    ? RECTO_DEFAULT_BODY_COLOR
+    : THERMO_DEFAULT_BODY_COLOR;
+}
+
+/** HEX de acero de TODAS las paletas: el PBR metálico no depende del producto. */
+const THERMO_STEEL_HEXES = new Set(
+  [...THERMO_PALETTE, ...RECTO_PALETTE]
+    .filter((color) => color.steel)
+    .map((color) => color.hex.toUpperCase()),
+);
+
 export const THERMO_FINISH_OPTIONS: ReadonlyArray<{ id: ThermoFinish; label: string }> = [
   { id: 'matte', label: 'Mate Rugoso' },
   { id: 'satin', label: 'Satinado' },
@@ -71,9 +105,10 @@ export const THERMO_FINISH_OPTIONS: ReadonlyArray<{ id: ThermoFinish; label: str
 export function thermoBodyPbr(
   finish: ThermoFinish,
   color: string | null,
+  spec?: ThermoSpec | null,
 ): { color: string; metalness: number; roughness: number } {
-  const hex = normalizeHex(color ?? '') ?? THERMO_DEFAULT_BODY_COLOR;
-  const steel = THERMO_PALETTE.some((p) => p.steel && p.hex === hex);
+  const hex = normalizeHex(color ?? '') ?? thermoDefaultBodyColor(spec);
+  const steel = THERMO_STEEL_HEXES.has(hex);
   if (steel) return { color: hex, metalness: 0.92, roughness: 0.22 };
   switch (finish) {
     case 'satin':
@@ -89,16 +124,19 @@ export function thermoFinishLabel(finish: ThermoFinish): string {
   return THERMO_FINISH_OPTIONS.find((f) => f.id === finish)?.label ?? 'Mate Rugoso';
 }
 
-export function thermoColorName(hex: string | null): string {
+export function thermoColorName(hex: string | null, spec?: ThermoSpec | null): string {
   const norm = normalizeHex(hex ?? '');
   if (!norm) return 'Negro Mate';
-  return THERMO_PALETTE.find((p) => p.hex === norm)?.name ?? 'Color Libre';
+  return thermoPaletteFor(spec).find((p) => p.hex === norm)?.name ?? 'Color Libre';
 }
 
 /** Tono del grabado: sobre cuerpo claro se quema oscuro; sobre oscuro, plata. */
-export function thermoLaserBurn(color: string | null): { color: string; opacity: number } {
-  const norm = normalizeHex(color ?? '') ?? THERMO_DEFAULT_BODY_COLOR;
-  const steel = THERMO_PALETTE.some((p) => p.steel && p.hex === norm);
+export function thermoLaserBurn(
+  color: string | null,
+  spec?: ThermoSpec | null,
+): { color: string; opacity: number } {
+  const norm = normalizeHex(color ?? '') ?? thermoDefaultBodyColor(spec);
+  const steel = THERMO_STEEL_HEXES.has(norm);
   if (steel) return { color: '#23272E', opacity: 0.9 };
   const n = parseInt(norm.slice(1), 16);
   const r = ((n >> 16) & 255) / 255;
@@ -331,7 +369,12 @@ export function thermoOverflowText(check: OverflowCheck, spec?: ThermoSpec): str
   const parts: string[] = [];
   if (check.overflowOuter) parts.push(`Excede ${check.overflowOuterMm.toFixed(1)} mm por arriba`);
   if (check.overflowInner) parts.push(`Excede ${check.overflowInnerMm.toFixed(1)} mm por abajo`);
-  const producto = spec && isBottleGeometry(spec.geometry) ? 'la botella' : 'el termo';
+  const producto =
+    spec && isMateThermoGeometry(spec.geometry)
+      ? 'el mate'
+      : spec && isBottleGeometry(spec.geometry)
+        ? 'la botella'
+        : 'el termo';
   return `El diseño sale de la zona de grabado de ${producto}. ${parts.join(' / ')}.`;
 }
 

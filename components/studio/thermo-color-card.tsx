@@ -9,16 +9,17 @@
  * de lib/thermo (misma fuente que la escena y la ficha).
  * ============================================================================ */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Palette, RotateCcw } from 'lucide-react';
 import {
-  THERMO_DEFAULT_BODY_COLOR,
   THERMO_FINISH_OPTIONS,
-  THERMO_PALETTE,
   normalizeThermoFinish,
   thermoColorName,
+  thermoDefaultBodyColor,
   thermoFinishLabel,
+  thermoPaletteFor,
 } from '@/lib/thermo';
+import { isThermoProduct, resolveProduct } from '@/lib/catalog';
 import { normalizeHex } from '@/lib/color';
 import { useEditorStore } from '@/lib/store/editor';
 
@@ -50,6 +51,7 @@ function Swatch({
 }
 
 export default function ThermoColorCard() {
+  const mateModel = useEditorStore((s) => s.mateModel);
   const bodyColor = useEditorStore((s) => s.bodyColor);
   const finish = useEditorStore((s) => s.thermo.finish);
   const setBodyColor = useEditorStore((s) => s.setBodyColor);
@@ -57,7 +59,14 @@ export default function ThermoColorCard() {
   const addRecentColor = useEditorStore((s) => s.addRecentColor);
   const recent = useEditorStore((s) => s.recentColors.body);
 
-  const currentHex = normalizeHex(bodyColor ?? '') ?? THERMO_DEFAULT_BODY_COLOR;
+  const spec = useMemo(() => {
+    const product = resolveProduct(mateModel);
+    return isThermoProduct(product) ? product.thermo : null;
+  }, [mateModel]);
+  const palette = useMemo(() => thermoPaletteFor(spec), [spec]);
+  const defaultColor = useMemo(() => thermoDefaultBodyColor(spec), [spec]);
+
+  const currentHex = normalizeHex(bodyColor ?? '') ?? defaultColor;
   const [hexText, setHexText] = useState(currentHex);
 
   useEffect(() => setHexText(currentHex), [currentHex]);
@@ -87,7 +96,7 @@ export default function ThermoColorCard() {
       <section className="space-y-2">
         <p className="text-xs font-bold uppercase tracking-wider text-stone-400">Color del cuerpo</p>
         <div className="flex flex-wrap gap-2">
-          {THERMO_PALETTE.map((color) => (
+          {palette.map((color) => (
             <Swatch
               key={color.hex}
               hex={color.hex}
@@ -138,13 +147,13 @@ export default function ThermoColorCard() {
             }}
             className="h-8 w-28 rounded-md border border-white/10 bg-black/30 px-2 font-mono text-xs text-stone-100 outline-none transition focus:border-gold/50 focus:ring-1 focus:ring-gold/40"
           />
-          <span className="text-[10px] text-stone-500">{thermoColorName(currentHex)}</span>
+          <span className="text-[10px] text-stone-500">{thermoColorName(currentHex, spec)}</span>
           <button
             type="button"
-            title="Volver al Negro Mate del producto"
+            title="Volver al color por defecto del producto"
             onClick={() => {
-              setBodyColor(THERMO_DEFAULT_BODY_COLOR);
-              addRecentColor('body', THERMO_DEFAULT_BODY_COLOR);
+              setBodyColor(defaultColor);
+              addRecentColor('body', defaultColor);
             }}
             className="ml-auto flex items-center gap-1 text-[10px] text-stone-500 transition hover:text-stone-300 focus:outline-none"
           >

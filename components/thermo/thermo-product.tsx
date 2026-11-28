@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { ThermoProduct } from '@/lib/catalog';
+import { isMateThermoGeometry, type ThermoProduct } from '@/lib/catalog';
 import {
   clampThermoRotation,
   normalizeThermoOffset,
@@ -30,13 +30,16 @@ import {
 } from '@/lib/compose-thermo-engraving';
 import { composeEngravingHeightCanvas } from '@/lib/compose-engraving';
 import {
+  buildThermoBaseDiscGeometry,
   buildThermoBaseGeometry,
   buildThermoBodyGeometry,
   buildThermoCollarGeometry,
   buildThermoEngravingGeometry,
   buildThermoGrooveGeometry,
   buildThermoHandleGeometry,
+  buildThermoInnerGeometry,
   buildThermoLidGeometry,
+  buildThermoRimGeometry,
   buildThermoSeamGeometry,
   buildThermoSportCapDetailsGeometry,
   buildThermoSportCarabinerGeometry,
@@ -77,9 +80,21 @@ export interface ThermoProductProps {
   } | null;
 }
 
-function SteelMaterial({ color = '#E6EBF0' }: { color?: string }) {
+function SteelMaterial({
+  color = '#E6EBF0',
+  side = THREE.FrontSide,
+}: {
+  color?: string;
+  side?: THREE.Side;
+}) {
   return (
-    <meshStandardMaterial color={color} metalness={0.92} roughness={0.22} envMapIntensity={0.9} />
+    <meshStandardMaterial
+      color={color}
+      metalness={0.92}
+      roughness={0.22}
+      envMapIntensity={0.9}
+      side={side}
+    />
   );
 }
 
@@ -169,23 +184,39 @@ export default function ThermoProduct({
   const spec = product.thermo;
   const isSystem = spec.geometry === 'system';
   const isSport = spec.geometry === 'sport';
+  const isRecto = isMateThermoGeometry(spec.geometry);
   /* Bowling y Deportiva comparten el contrato de botella: sin manija lateral,
    * sin zócalo de acero y con el diseño en el frente fijo. */
   const isBottle = spec.geometry === 'bowling' || isSport;
   const surface = useMemo(() => thermoSurface(spec), [spec]);
   const bodyGeo = useMemo(() => buildThermoBodyGeometry(spec), [spec]);
   const baseGeo = useMemo(
-    () => (isBottle ? null : buildThermoBaseGeometry(spec)),
-    [isBottle, spec],
+    () => (isBottle || isRecto ? null : buildThermoBaseGeometry(spec)),
+    [isBottle, isRecto, spec],
+  );
+  const baseDiscGeo = useMemo(
+    () => (isRecto ? buildThermoBaseDiscGeometry(spec) : null),
+    [isRecto, spec],
+  );
+  const rimGeo = useMemo(
+    () => (isRecto ? buildThermoRimGeometry(spec) : null),
+    [isRecto, spec],
+  );
+  const innerGeo = useMemo(
+    () => (isRecto ? buildThermoInnerGeometry(spec) : null),
+    [isRecto, spec],
   );
   const collarGeo = useMemo(
-    () => (isSystem ? null : buildThermoCollarGeometry(spec)),
-    [isSystem, spec],
+    () => (isSystem || isRecto ? null : buildThermoCollarGeometry(spec)),
+    [isSystem, isRecto, spec],
   );
-  const lidGeo = useMemo(() => buildThermoLidGeometry(spec), [spec]);
+  const lidGeo = useMemo(
+    () => (isRecto ? null : buildThermoLidGeometry(spec)),
+    [isRecto, spec],
+  );
   const handleGeo = useMemo(
-    () => (isBottle ? null : buildThermoHandleGeometry(spec)),
-    [isBottle, spec],
+    () => (isBottle || isRecto ? null : buildThermoHandleGeometry(spec)),
+    [isBottle, isRecto, spec],
   );
   const sportCapGeo = useMemo(
     () => (isSport ? buildThermoSportCapDetailsGeometry(spec) : null),
@@ -235,8 +266,11 @@ export default function ThermoProduct({
     return { mounts: thermoHandleMounts(spec), links };
   }, [isSystem, spec]);
 
-  const pbr = useMemo(() => thermoBodyPbr(finish, bodyColor), [finish, bodyColor]);
-  const burn = useMemo(() => thermoLaserBurn(bodyColor), [bodyColor]);
+  const pbr = useMemo(
+    () => thermoBodyPbr(finish, bodyColor, spec),
+    [finish, bodyColor, spec],
+  );
+  const burn = useMemo(() => thermoLaserBurn(bodyColor, spec), [bodyColor, spec]);
 
   const { canvas, heightCanvas, texture, heightTexture } = useMemo(() => {
     const c = document.createElement('canvas');
@@ -453,16 +487,33 @@ export default function ThermoProduct({
         />
       </mesh>
 
-      {/* Zócalo de acero (los termos; la botella lo integra al cuerpo) */}
-      {!isBottle && baseGeo && (
+      {/* Zócalo de acero (los termos; la botella y el Mate Recto lo integran) */}
+      {!isBottle && !isRecto && baseGeo && (
         <mesh geometry={baseGeo} castShadow receiveShadow>
           <SteelMaterial />
         </mesh>
       )}
 
+      {/* Mate Recto: disco de acero que cierra la base, labio e interior. */}
+      {isRecto && baseDiscGeo && (
+        <mesh geometry={baseDiscGeo} castShadow receiveShadow>
+          <SteelMaterial />
+        </mesh>
+      )}
+      {isRecto && rimGeo && (
+        <mesh geometry={rimGeo} castShadow receiveShadow>
+          <SteelMaterial side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      {isRecto && innerGeo && (
+        <mesh geometry={innerGeo} receiveShadow>
+          <SteelMaterial side={THREE.DoubleSide} />
+        </mesh>
+      )}
+
       {/* Collarín negro (Media Manija), aro de silicona (Bowling) o cuello de
        * acero (Deportiva). */}
-      {!isSystem && collarGeo && (
+      {!isSystem && !isRecto && collarGeo && (
         <mesh geometry={collarGeo} castShadow receiveShadow>
           {isSport ? <SteelMaterial /> : isBottle ? <SiliconeMaterial /> : <CollarMaterial />}
         </mesh>
@@ -480,10 +531,13 @@ export default function ThermoProduct({
           </mesh>
         ))}
 
-      {/* Tapa-vaso de acero (termos y Bowling) o tapa negra (Deportiva) */}
-      <mesh geometry={lidGeo} castShadow receiveShadow>
-        {isSport ? <SportPlasticMaterial /> : <SteelMaterial />}
-      </mesh>
+      {/* Tapa-vaso de acero (termos y Bowling) o tapa negra (Deportiva). El
+       * Mate Recto no tiene tapa: su boca de acero es el labio. */}
+      {!isRecto && lidGeo && (
+        <mesh geometry={lidGeo} castShadow receiveShadow>
+          {isSport ? <SportPlasticMaterial /> : <SteelMaterial />}
+        </mesh>
+      )}
 
       {/* Deportiva: estrías + bisagra, asa superior, pico y mosquetón */}
       {isSport && sportCapGeo && (
@@ -519,8 +573,8 @@ export default function ThermoProduct({
         </mesh>
       )}
 
-      {/* Manija lateral (los termos; la botella no tiene) */}
-      {!isBottle && handleGeo && (
+      {/* Manija lateral (los termos; botella y Mate Recto no tienen) */}
+      {!isBottle && !isRecto && handleGeo && (
         <group rotation={[0, spec.handleAngleRad, 0]}>
           <mesh geometry={handleGeo} castShadow receiveShadow>
             <CollarMaterial />

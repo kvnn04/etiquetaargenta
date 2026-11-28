@@ -16,7 +16,7 @@
  * la Deportiva usa 49.08 mm/unidad (su prototipo declara 165 mm de zona útil).
  * ============================================================================ */
 
-export const CATALOG_VERSION = 4;
+export const CATALOG_VERSION = 5;
 
 export type ProductFamily = 'mate' | 'thermo';
 
@@ -36,7 +36,7 @@ export interface ProductCategory {
 
 /** Orden de presentación del catálogo. Las categorías vacías no se muestran. */
 export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
-  { id: 'mates', label: 'Mates', description: 'Camionero e Imperial' },
+  { id: 'mates', label: 'Mates', description: 'Camionero, Imperial y Recto Térmico' },
   { id: 'termos', label: 'Termos', description: 'Acero, manija lateral y grabado' },
   { id: 'vasos', label: 'Vasos térmicos', description: 'Próximamente' },
   { id: 'botellas', label: 'Botellas', description: 'Bowling y Deportiva 500 ml' },
@@ -63,12 +63,25 @@ export interface MateShape {
   points: MateShapePoint[];
 }
 
-/** Variante de geometría procedural del termo/botella. */
-export type ThermoGeometry = 'media-manija' | 'system' | 'bowling' | 'sport';
+/** Variante de geometría procedural del termo/botella/mate térmico. */
+export type ThermoGeometry = 'media-manija' | 'system' | 'bowling' | 'sport' | 'recto';
 
 /** Las botellas comparten el frente fijo y la ausencia de manija lateral. */
 export function isBottleGeometry(geometry: ThermoGeometry): boolean {
   return geometry === 'bowling' || geometry === 'sport';
+}
+
+/** Mate Recto Térmico: cuerpo cilíndrico, labio de acero y grabado frontal. */
+export function isMateThermoGeometry(geometry: ThermoGeometry): boolean {
+  return geometry === 'recto';
+}
+
+/**
+ * Productos sin manija lateral cuyo grabado vive en un frente fijo (no dan la
+ * vuelta al cuerpo): botellas y Mate Recto Térmico.
+ */
+export function hasFixedFrontGeometry(geometry: ThermoGeometry): boolean {
+  return isBottleGeometry(geometry) || isMateThermoGeometry(geometry);
 }
 
 /** Contrato geométrico del termo/botella, en mm desde la base apoyada en Y=0. */
@@ -129,7 +142,7 @@ export interface MateProduct extends CatalogProductBase {
 
 export interface ThermoProduct extends CatalogProductBase {
   family: 'thermo';
-  category: 'termos' | 'botellas';
+  category: 'termos' | 'botellas' | 'mates';
   thermo: ThermoSpec;
 }
 
@@ -460,6 +473,67 @@ const SPORT_SPEC: ThermoSpec = {
   capacityLabel: '500 ml',
 };
 
+/* -------------------------------------------------------------------------- */
+/* Mate Recto Térmico de Acero Inoxidable                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Escala del prototipo `3d_mate_recto.html`: el cuerpo mide 2.33 unidades y el
+ * total 2.50 unidades. Con 90 mm de alto total ⇒ 36 mm/unidad, el mismo factor
+ * de los termos. El diámetro queda en 75.6 mm (radio 1.05 u).
+ */
+export const RECTO_MM_PER_UNIT = 36;
+
+const RECTO_UNIT = {
+  radius: 1.05,
+  baseBottom: -1.25,
+  bodyBottom: -0.68,
+  bodyTop: 1.08,
+  rimTop: 1.25,
+  /** Zona segura del prototipo sobre la textura del cuerpo. */
+  safeVMin: 0.25,
+  safeVMax: 0.91,
+  /** Frente fijo del prototipo: ±45° (90° en total). */
+  frontArcDeg: 90,
+  engraveRadius: 1.0525,
+} as const;
+
+const RECTO_BODY_HEIGHT_U = RECTO_UNIT.bodyTop - RECTO_UNIT.baseBottom;
+const RECTO_ENGRAVE_MIN_U =
+  RECTO_UNIT.baseBottom + RECTO_UNIT.safeVMin * RECTO_BODY_HEIGHT_U;
+const RECTO_ENGRAVE_MAX_U =
+  RECTO_UNIT.baseBottom + RECTO_UNIT.safeVMax * RECTO_BODY_HEIGHT_U;
+
+const RECTO_SPEC: ThermoSpec = {
+  geometry: 'recto',
+  radiusMm: RECTO_UNIT.radius * RECTO_MM_PER_UNIT,
+  // Radio interior del labio (0.99 u): la boca de acero no supera el cuerpo.
+  neckRadiusMm: 0.99 * RECTO_MM_PER_UNIT,
+  totalHeightMm: (RECTO_UNIT.rimTop - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  baseBottomMm: 0,
+  baseTopMm: 0,
+  bodyBottomMm: (RECTO_UNIT.bodyBottom - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  bodyTopMm: (RECTO_UNIT.bodyTop - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  // Sin hombro ni collarín: el labio de acero ocupa el tramo superior.
+  shoulderTopMm: (RECTO_UNIT.bodyTop - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  collarBottomMm: (RECTO_UNIT.bodyTop - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  collarTopMm: (RECTO_UNIT.rimTop - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  // El mate no tiene tapa: las geometrías de tapa quedan vacías.
+  lidBottomMm: (RECTO_UNIT.rimTop - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  lidTopMm: (RECTO_UNIT.rimTop - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  engraveMinYMm: (RECTO_ENGRAVE_MIN_U - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  engraveMaxYMm: (RECTO_ENGRAVE_MAX_U - RECTO_UNIT.baseBottom) * RECTO_MM_PER_UNIT,
+  // El "arco bloqueado" es todo el dorso: el diseño vive en el frente fijo.
+  handleAngleRad: Math.PI,
+  handleBlockedArcRad: ((360 - RECTO_UNIT.frontArcDeg) * Math.PI) / 180,
+  engraveRadiusMm: RECTO_UNIT.engraveRadius * RECTO_MM_PER_UNIT,
+  defaultScalePct: 65,
+  minScalePct: 15,
+  maxScalePct: 100,
+  // Producto sin capacidad declarada: la ficha imprime alto y diámetro.
+  capacityLabel: '—',
+};
+
 const RAW_CATALOG: MateCatalog = {
   catalogVersion: CATALOG_VERSION,
   products: [
@@ -480,6 +554,15 @@ const RAW_CATALOG: MateCatalog = {
       family: 'mate',
       category: 'mates',
       shape: IMPERIAL_SHAPE,
+    },
+    {
+      id: 'mate-recto-termico',
+      label: 'Mate Recto Térmico',
+      description: 'Acero inoxidable, cuerpo pintado y grabado frontal',
+      pro: false,
+      family: 'thermo',
+      category: 'mates',
+      thermo: RECTO_SPEC,
     },
     {
       id: 'termo-media-manija-1l',
@@ -635,6 +718,7 @@ export const THERMO_MODEL_ID = 'termo-media-manija-1l';
 export const THERMO_SYSTEM_MODEL_ID = 'termo-system-1l';
 export const BOTTLE_MODEL_ID = 'botella-bowling-500ml';
 export const SPORT_BOTTLE_MODEL_ID = 'botella-deportiva-500ml';
+export const RECTO_MATE_MODEL_ID = 'mate-recto-termico';
 
 /**
  * Resuelve cualquier producto del catálogo. Un id de termo devuelve el termo;
@@ -709,9 +793,10 @@ function thermoSilhouette(product: ThermoProduct, width: number, height: number,
   const t = product.thermo;
   const usableW = width - pad * 2;
   const usableH = height - pad * 2;
-  const maxR = isBottleGeometry(t.geometry)
-    ? t.radiusMm * 1.06 // sin manija lateral: el cuerpo manda
-    : t.radiusMm * 1.32; // aire para la manija
+  const maxR =
+    isBottleGeometry(t.geometry) || isMateThermoGeometry(t.geometry)
+      ? t.radiusMm * 1.06 // sin manija lateral: el cuerpo manda
+      : t.radiusMm * 1.32; // aire para la manija
   const yPx = (y: number) => pad + (1 - y / t.totalHeightMm) * usableH;
   const xPx = (x: number) => width / 2 + (x / maxR) * (usableW / 2);
   const r = t.radiusMm;
@@ -745,6 +830,32 @@ function thermoSilhouette(product: ThermoProduct, width: number, height: number,
       [0, t.totalHeightMm],
     );
     const pts = [...right, ...right.slice(1, -1).reverse().map(([x, y]) => [-x, y] as [number, number])];
+    const path = `M ${pts.map(([x, y]) => `${xPx(x).toFixed(2)},${yPx(y).toFixed(2)}`).join(' L ')} Z`;
+    return { path, viewBox: `0 0 ${width} ${height}`, usedWidthPx: usableW };
+  }
+
+  if (t.geometry === 'recto') {
+    const r = t.radiusMm;
+    const yBody = t.bodyBottomMm;
+    const yTop = t.bodyTopMm;
+    // Base redondeada, pared recta y labio de acero que se curva hacia adentro.
+    const right: Array<[number, number]> = [
+      [0, t.baseBottomMm],
+      [r * 0.686, t.baseBottomMm],
+      [r * 0.838, t.baseBottomMm + 2.52],
+      [r * 0.962, t.baseBottomMm + 10.44],
+      [r, yBody],
+      [r, yTop],
+      [r * 1.033, yTop + 1.08],
+      [r * 1.052, yTop + 3.24],
+      [r * 1.005, t.totalHeightMm],
+      [r * 0.62, t.totalHeightMm - 1.2],
+      [0, t.totalHeightMm - 2.4],
+    ];
+    const pts = [
+      ...right,
+      ...right.slice(1, -1).reverse().map(([x, y]) => [-x, y] as [number, number]),
+    ];
     const path = `M ${pts.map(([x, y]) => `${xPx(x).toFixed(2)},${yPx(y).toFixed(2)}`).join(' L ')} Z`;
     return { path, viewBox: `0 0 ${width} ${height}`, usedWidthPx: usableW };
   }

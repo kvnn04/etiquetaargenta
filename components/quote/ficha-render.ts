@@ -33,6 +33,7 @@
 
 import * as THREE from 'three';
 import {
+  isMateThermoGeometry,
   isThermoProduct,
   resolveMateModel,
   resolveProduct,
@@ -65,13 +66,16 @@ import {
   buildVirolaInnerWallGeometry,
 } from '@/three/lathe-builder';
 import {
+  buildThermoBaseDiscGeometry,
   buildThermoBaseGeometry,
   buildThermoBodyGeometry,
   buildThermoCollarGeometry,
   buildThermoEngravingGeometry,
   buildThermoGrooveGeometry,
   buildThermoHandleGeometry,
+  buildThermoInnerGeometry,
   buildThermoLidGeometry,
+  buildThermoRimGeometry,
   buildThermoSeamGeometry,
   buildThermoSportCapDetailsGeometry,
   buildThermoSportCarabinerGeometry,
@@ -422,8 +426,9 @@ function renderThermoView(
 
   const isSystem = spec.geometry === 'system';
   const isSport = spec.geometry === 'sport';
+  const isRecto = isMateThermoGeometry(spec.geometry);
   const isBottle = spec.geometry === 'bowling' || isSport;
-  const pbr = thermoBodyPbr(config.finish, input.bodyColor);
+  const pbr = thermoBodyPbr(config.finish, input.bodyColor, spec);
   const bodyMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(pbr.color),
     metalness: pbr.metalness,
@@ -437,6 +442,13 @@ function renderThermoView(
     metalness: 0.92,
     roughness: 0.22,
     envMapIntensity: 0.9,
+  });
+  const steelDoubleMat = new THREE.MeshStandardMaterial({
+    color: '#E6EBF0',
+    metalness: 0.92,
+    roughness: 0.22,
+    envMapIntensity: 0.9,
+    side: THREE.DoubleSide,
   });
   const collarMat = new THREE.MeshStandardMaterial({
     color: '#16181D',
@@ -469,10 +481,18 @@ function renderThermoView(
     roughness: 0.3,
     envMapIntensity: 1.1,
   });
-  if (!isBottle) group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
-  group.add(new THREE.Mesh(buildThermoLidGeometry(spec), isSport ? sportPlasticMat : steelMat));
+  if (!isBottle && !isRecto) group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
+  if (!isRecto) {
+    group.add(new THREE.Mesh(buildThermoLidGeometry(spec), isSport ? sportPlasticMat : steelMat));
+  }
+  if (isRecto) {
+    group.add(new THREE.Mesh(buildThermoBaseDiscGeometry(spec), steelMat));
+    group.add(new THREE.Mesh(buildThermoRimGeometry(spec), steelDoubleMat));
+    group.add(new THREE.Mesh(buildThermoInnerGeometry(spec), steelDoubleMat));
+  }
   disposables.push(
     steelMat,
+    steelDoubleMat,
     collarMat,
     siliconeMat,
     sportPlasticMat,
@@ -488,7 +508,10 @@ function renderThermoView(
     group.add(new THREE.Mesh(buildThermoSportRingGeometry(spec), steelMat));
   }
 
-  if (isBottle) {
+  if (isRecto) {
+    // El Mate Recto no tiene collarín: el labio y el interior de acero ya se
+    // agregaron arriba; el dorso queda libre para el grabado.
+  } else if (isBottle) {
     // Aro de silicona (Bowling) o cuello de acero (Deportiva) bajo la tapa.
     group.add(
       new THREE.Mesh(buildThermoCollarGeometry(spec), isSport ? steelMat : siliconeMat),
@@ -511,7 +534,7 @@ function renderThermoView(
     group.add(seam);
   }
 
-  if (!isBottle) {
+  if (!isBottle && !isRecto) {
     const handleGroup = new THREE.Group();
     handleGroup.rotation.y = spec.handleAngleRad;
     handleGroup.add(new THREE.Mesh(buildThermoHandleGeometry(spec), collarMat));
@@ -551,7 +574,7 @@ function renderThermoView(
   }
 
   if (input.designAsset) {
-    const burn = thermoLaserBurn(input.bodyColor);
+    const burn = thermoLaserBurn(input.bodyColor, spec);
     const texCanvas = document.createElement('canvas');
     texCanvas.width = ENGRAVING_HD_PX;
     texCanvas.height = thermoCanvasHeight(spec, ENGRAVING_HD_PX);
@@ -1009,7 +1032,7 @@ export async function makeQuoteCanvas(input: QuoteCanvasInput): Promise<HTMLCanv
   const prodCards: Array<[string, string | null]> = isThermo
     ? [
         ['Modelo', s.modeloEtiqueta],
-        ['Capacidad', prodValues[0] ?? null],
+        [s.thermo!.capacidadTitulo, prodValues[0] ?? null],
         ['Altura Total', prodValues[1] ?? null],
         ['Diámetro del Cuerpo', prodValues[2] ?? null],
       ]

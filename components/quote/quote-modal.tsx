@@ -545,7 +545,10 @@ export default function QuoteModal({
                 <FichaCard title="Modelo" value={snapshot.modeloEtiqueta} />
                 {snapshot.family === 'thermo' && snapshot.thermo ? (
                   <>
-                    <FichaCard title="Capacidad" value={snapshot.thermo.capacidadEtiqueta} />
+                    <FichaCard
+                      title={snapshot.thermo.capacidadTitulo}
+                      value={snapshot.thermo.capacidadEtiqueta}
+                    />
                     <FichaCard title="Altura Total" value={snapshot.thermo.altoEtiqueta} />
                     <FichaCard title="Diámetro del Cuerpo" value={snapshot.thermo.diametroEtiqueta} />
                   </>

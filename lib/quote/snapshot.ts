@@ -24,7 +24,7 @@
  *      projects.state; todo su contenido es derivable del estado vivo.
  * ============================================================================ */
 
-import { isThermoProduct, resolveProduct, type ThermoSpec } from '@/lib/catalog';
+import { isMateThermoGeometry, isThermoProduct, resolveProduct, type ThermoSpec } from '@/lib/catalog';
 import { formatColorDescriptor } from '@/lib/color';
 import { formatRotationLabel, normalizeRotation } from '@/lib/design';
 import {
@@ -155,6 +155,8 @@ export interface FichaSnapshot {
   thermo: {
     acabadoEtiqueta: string;
     posicionEtiqueta: string;
+    /** "Capacidad" en termos/botellas; "Material" en el Mate Recto Térmico. */
+    capacidadTitulo: string;
     capacidadEtiqueta: string;
     altoEtiqueta: string;
     diametroEtiqueta: string;
@@ -314,7 +316,12 @@ export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
       ? {
           acabadoEtiqueta: thermoFinishLabel(thermoConfig.finish),
           posicionEtiqueta,
-          capacidadEtiqueta: product.thermo.capacityLabel,
+          capacidadTitulo: isMateThermoGeometry(product.thermo.geometry)
+            ? 'Material'
+            : 'Capacidad',
+          capacidadEtiqueta: isMateThermoGeometry(product.thermo.geometry)
+            ? 'Acero Inoxidable'
+            : product.thermo.capacityLabel,
           altoEtiqueta: formatMmCard(product.thermo.totalHeightMm) ?? '—',
           diametroEtiqueta: formatMmCard(product.thermo.radiusMm * 2) ?? '—',
         }
@@ -332,7 +339,7 @@ export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
       ? thermoFinishLabel(thermoConfig.finish)
       : formatVirolaCard(state.metalPreset ?? 'alpaca', state.virolaColor),
     cuerpoEtiqueta: isThermo
-      ? thermoColorName(state.bodyColor)
+      ? thermoColorName(state.bodyColor, product.thermo)
       : formatCuerpoCard(state.bodyPreset ?? 'algarrobo', state.bodyColor),
     observaciones: cleanObservaciones(input.observaciones),
     linkId: input.linkId ?? null,
@@ -373,7 +380,7 @@ export function hashFichaSnapshot(s: FichaSnapshot): string {
     s.productId,
     s.family,
     s.thermo
-      ? `${s.thermo.acabadoEtiqueta}|${s.thermo.posicionEtiqueta}|${s.thermo.capacidadEtiqueta}|${s.thermo.altoEtiqueta}|${s.thermo.diametroEtiqueta}`
+      ? `${s.thermo.acabadoEtiqueta}|${s.thermo.posicionEtiqueta}|${s.thermo.capacidadTitulo}|${s.thermo.capacidadEtiqueta}|${s.thermo.altoEtiqueta}|${s.thermo.diametroEtiqueta}`
       : 'mate',
     s.extDiameterMm === null ? '—' : s.extDiameterMm.toFixed(2),
     s.intDiameterMm === null ? '—' : s.intDiameterMm.toFixed(2),

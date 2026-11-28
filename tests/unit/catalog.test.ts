@@ -24,6 +24,7 @@ describe('catálogo R1 (registro central)', () => {
     expect(CATALOG.map((p) => p.id)).toEqual([
       'camionero',
       'imperial',
+      'mate-recto-termico',
       'termo-media-manija-1l',
       'termo-system-1l',
       'botella-bowling-500ml',

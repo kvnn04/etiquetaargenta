@@ -62,7 +62,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2, MoveVertical } from 'lucide-react';
 import EngravingPreview from '@/components/studio/engraving-preview';
 import { useEditorStore } from '@/lib/store/editor';
-import { isBottleGeometry, isThermoProduct, resolveProduct } from '@/lib/catalog';
+import { isBottleGeometry, isMateThermoGeometry, isThermoProduct, resolveProduct } from '@/lib/catalog';
 import {
   clampThermoRotation,
   evaluateThermoOverflow,
@@ -139,6 +139,8 @@ export default function DesignCard() {
   const thermoProduct = isThermoProduct(product) ? product : null;
   const thermoSpec = thermoProduct?.thermo ?? null;
   const isBottle = thermoSpec ? isBottleGeometry(thermoSpec.geometry) : false;
+  const isRecto = thermoSpec ? isMateThermoGeometry(thermoSpec.geometry) : false;
+  const thermoNoun = isRecto ? 'el mate' : isBottle ? 'la botella' : 'el termo';
   const aspect = useMemo(() => thermoAssetAspect(designAsset?.canvas ?? null), [designAsset]);
   const angleBounds = useMemo(
     () => (thermoSpec ? thermoAngleBounds(thermoSpec, scale, aspect) : null),
@@ -332,17 +334,26 @@ export default function DesignCard() {
   const snapped = thermoSpec ? null : magnetSnappedPreset(rotation, snapMagnet);
   const rotationPresets = thermoSpec && angleBounds
     ? [
-        { angle: angleBounds.minDeg, label: isBottle ? 'Borde Izq' : 'Borde Frente' },
+        {
+          angle: angleBounds.minDeg,
+          label: isRecto ? 'Izquierda' : isBottle ? 'Borde Izq' : 'Borde Frente',
+        },
         { angle: angleBounds.centerDeg, label: 'Centro' },
-        { angle: angleBounds.maxDeg, label: isBottle ? 'Borde Der' : 'Borde Dorso' },
+        {
+          angle: angleBounds.maxDeg,
+          label: isRecto ? 'Derecha' : isBottle ? 'Borde Der' : 'Borde Dorso',
+        },
       ]
     : ROTATION_PRESETS;
   /* La botella no tiene manija: sus presets acompañan el frente fijo (el
-   * default del prototipo es 72 %). Los termos conservan 25/45/70/100. */
+   * default del prototipo es 72 %). El Mate Recto usa 50/65/100; los termos
+   * conservan 25/45/70/100. */
   const scalePresets = thermoSpec
-    ? isBottle
-      ? [50, 72, 100]
-      : [25, 45, 70, 100]
+    ? isRecto
+      ? [50, 65, 100]
+      : isBottle
+        ? [50, 72, 100]
+        : [25, 45, 70, 100]
     : SCALE_PRESETS.map((p) => p.pct);
 
   /* ─────── R4/R5/R7 — chequeo, banner y Auto del margen ─────── */
@@ -440,7 +451,7 @@ export default function DesignCard() {
         {!designAsset && !fileError && (
           <p className="text-[10px] leading-relaxed text-stone-600">
             {thermoSpec
-              ? `Sin diseño: el cuerpo sale liso. SVG o PNG con trazado; al cargar se ajusta a la zona lateral y se puede mover con el dedo sobre ${isBottle ? 'la botella' : 'el termo'}.`
+              ? `Sin diseño: el cuerpo sale liso. SVG o PNG con trazado; al cargar se ajusta a la zona lateral y se puede mover con el dedo sobre ${thermoNoun}.`
               : 'Sin diseño: la corona sale lisa. SVG o PNG con trazado tocando el anillo; al cargar se congela el 100 % (R1) y la vista previa es en vivo en el 3D y en el anillo de arriba.'}
           </p>
         )}
@@ -452,14 +463,20 @@ export default function DesignCard() {
       <section className="space-y-3">
         <div className="flex items-baseline justify-between">
           <p className="text-xs font-bold uppercase tracking-wider text-stone-400">
-            {thermoSpec ? 'Posición Angular del Grabado' : 'Rotación del Grabado (360°)'}
+            {thermoSpec
+              ? isRecto
+                ? 'Posición Horizontal del Grabado'
+                : 'Posición Angular del Grabado'
+              : 'Rotación del Grabado (360°)'}
           </p>
           <span className="text-[9px] text-stone-600">
-            {isBottle
-              ? 'frente fijo de 114°'
-              : thermoSpec
-                ? 'arco libre (sin manija)'
-                : 'paso 0.5° (R3)'}
+            {isRecto
+              ? 'frente fijo de 90° (±45°)'
+              : isBottle
+                ? 'frente fijo de 114°'
+                : thermoSpec
+                  ? 'arco libre (sin manija)'
+                  : 'paso 0.5° (R3)'}
           </span>
         </div>
 
@@ -471,7 +488,13 @@ export default function DesignCard() {
             max={thermoSpec && angleBounds ? angleBounds.maxDeg : 360}
             step={0.5}
             value={thermoSpec ? continuousRotation : rotation}
-            aria-label={thermoSpec ? 'Posición angular del grabado' : 'Alineación y rotación del grabado'}
+            aria-label={
+              isRecto
+                ? 'Posición horizontal del grabado'
+                : thermoSpec
+                  ? 'Posición angular del grabado'
+                  : 'Alineación y rotación del grabado'
+            }
             onChange={(e) => handleSlider(Number(e.target.value))}
             className="w-full accent-gold"
           />
@@ -536,11 +559,13 @@ export default function DesignCard() {
         <div className="flex items-center justify-between gap-2">
           {thermoSpec ? (
             <span className="text-[10px] text-stone-600">
-              {isBottle
-                ? 'El frente fijo de 114° limita el grabado; el dorso queda libre.'
-                : thermoSpec.geometry === 'system'
-                  ? 'La manija táctica bloquea el costado derecho; el diseño se mueve dentro del arco libre.'
-                  : 'La media manija bloquea el costado izquierdo; el diseño se mueve dentro del arco libre.'}
+              {isRecto
+                ? 'El frente fijo de 90° (±45°) limita el grabado; el dorso queda libre.'
+                : isBottle
+                  ? 'El frente fijo de 114° limita el grabado; el dorso queda libre.'
+                  : thermoSpec.geometry === 'system'
+                    ? 'La manija táctica bloquea el costado derecho; el diseño se mueve dentro del arco libre.'
+                    : 'La media manija bloquea el costado izquierdo; el diseño se mueve dentro del arco libre.'}
             </span>
           ) : (
             <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
@@ -674,7 +699,7 @@ export default function DesignCard() {
           {thermoSpec ? (
             <>
               El diseño se ajusta a la zona lateral del cuerpo y se mueve con el dedo sobre{' '}
-              {isBottle ? 'la botella' : 'el termo'}. La escala va de {thermoSpec.minScalePct}% a{' '}
+              {thermoNoun}. La escala va de {thermoSpec.minScalePct}% a{' '}
               {thermoSpec.maxScalePct}% y el margen se recalcula al instante.
             </>
           ) : (

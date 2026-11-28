@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { canonicalSiteOrigin } from '@/lib/http/origin';
-import { isThermoProduct, resolveProduct } from '@/lib/catalog';
+import { isMateThermoGeometry, isThermoProduct, resolveProduct } from '@/lib/catalog';
 import { normalizeThermoConfig, thermoColorName, thermoFinishLabel } from '@/lib/thermo';
 import type { PublicLinkView, PublicVariantView } from '@/lib/links/view-shape';
 import { isLinkVariantId, type LinkVariantId } from '@/lib/links/payload';
@@ -691,22 +691,32 @@ export default function ClientViewer({
 
   const product = resolveProduct(view.mate.modelId);
   const isThermo = isThermoProduct(product);
+  const isMateThermo = isThermo && isMateThermoGeometry(product.thermo.geometry);
   const thermoConfig = normalizeThermoConfig(view.mate.thermo);
   const modelo = formatModeloCard(view.mate.modelId);
   const virola = formatVirolaCard(view.mate.metal, view.mate.virolaColor);
   const cuerpo = formatCuerpoCard(view.mate.cupMaterial, view.mate.cupColor);
   /* R7: el acordeón NO expone escala/rotación/margen; el termo cambia virola
-   * por sus medidas fijas y su acabado propio. */
+   * por sus medidas fijas y su acabado propio. El Mate Recto no declara
+   * capacidad: imprime alto y diámetro, y suma su material. */
+  const thermoMedidas = isThermo
+    ? `${isMateThermo ? '' : `${product.thermo.capacityLabel} · `}${
+        formatMmCard(product.thermo.totalHeightMm) ?? '—'
+      } de alto · Ø ${formatMmCard(product.thermo.radiusMm * 2) ?? '—'} de cuerpo`
+    : '';
   const summaryRows = isThermo
     ? [
         { title: 'Modelo', body: modelo.etiqueta },
-        {
-          title: 'Medidas',
-          body: `${product.thermo.capacityLabel} · ${formatMmCard(product.thermo.totalHeightMm) ?? '—'} de alto · Ø ${formatMmCard(product.thermo.radiusMm * 2) ?? '—'} de cuerpo`,
-        },
+        { title: 'Medidas', body: thermoMedidas },
+        ...(isMateThermo
+          ? [{ title: 'Material', body: 'Acero inoxidable · cuerpo pintado' }]
+          : []),
         {
           title: 'Acabado',
-          body: `${thermoFinishLabel(thermoConfig.finish)} · ${thermoColorName(view.mate.cupColor)}`,
+          body: `${thermoFinishLabel(thermoConfig.finish)} · ${thermoColorName(
+            view.mate.cupColor,
+            product.thermo,
+          )}`,
         },
       ]
     : [

@@ -34,9 +34,23 @@ function lathe(points: Array<[number, number]>, segments = 96): THREE.BufferGeom
   );
 }
 
+/** Perfil spline 2D en mm (los prototipos usan SplineCurve para las curvas). */
+function splineProfile(
+  points: Array<[number, number]>,
+  divisions: number,
+): Array<[number, number]> {
+  const curve = new THREE.SplineCurve(points.map(([x, y]) => new THREE.Vector2(x, y)));
+  return curve.getSpacedPoints(divisions).map((v) => [v.x, v.y]);
+}
+
 /** mm por unidad del prototipo deportivo, derivados de su radio máximo. */
 function sportUnitMm(spec: ThermoSpec): number {
   return spec.radiusMm / 0.7275;
+}
+
+/** mm por unidad del prototipo del Mate Recto (radio 1.05 u). */
+function rectoUnitMm(spec: ThermoSpec): number {
+  return spec.radiusMm / 1.05;
 }
 
 /** Radio del cuerpo deportivo en mm a una altura absoluta (base Y=0). */
@@ -145,6 +159,69 @@ function sportBodyProfile(spec: ThermoSpec): Array<[number, number]> {
   return pts;
 }
 
+/**
+ * Perfil del Mate Recto Térmico: base redondeada continua y pared cilíndrica
+ * recta hasta el labio de acero. Sale de `3d_mate_recto.html` (1 u = 36 mm),
+ * con la base apoyada en Y=0 (el prototipo la tiene en y=-1.25 u).
+ */
+function rectoBodyProfile(spec: ThermoSpec): Array<[number, number]> {
+  const S = rectoUnitMm(spec);
+  const y0 = spec.baseBottomMm;
+  return splineProfile(
+    [
+      [0.72 * S, y0],
+      [0.88 * S, y0 + 0.07 * S],
+      [1.01 * S, y0 + 0.29 * S],
+      [1.05 * S, y0 + 0.57 * S],
+      [1.05 * S, y0 + 1.25 * S],
+      [1.05 * S, y0 + 1.9 * S],
+      [1.05 * S, y0 + 2.33 * S],
+    ],
+    120,
+  ).map(([x, y]) => [
+    // La SplineCurve puede sobrepasar el radio nominal junto al hombro; se
+    // recorta para que la pared sea un cilindro exacto y el decal de grabado
+    // (radio + 0.09 mm) nunca quede enterrado en el cuerpo.
+    Math.min(x, 1.05 * S),
+    y,
+  ]);
+}
+
+/** Labio de acero del Mate Recto: borde redondeado hacia afuera y hacia adentro. */
+function rectoRimProfile(spec: ThermoSpec): Array<[number, number]> {
+  const S = rectoUnitMm(spec);
+  const y0 = spec.baseBottomMm;
+  return splineProfile(
+    [
+      [1.045, 1.08],
+      [1.085, 1.11],
+      [1.105, 1.17],
+      [1.095, 1.23],
+      [1.055, 1.25],
+      [1.015, 1.23],
+      [0.99, 1.16],
+    ].map(([r, y]) => [r * S, y0 + (y + 1.25) * S] as [number, number]),
+    48,
+  );
+}
+
+/** Interior cóncavo de acero con centro levemente elevado. */
+function rectoInnerProfile(spec: ThermoSpec): Array<[number, number]> {
+  const S = rectoUnitMm(spec);
+  const y0 = spec.baseBottomMm;
+  return splineProfile(
+    [
+      [0.99, 1.16],
+      [0.92, 0.92],
+      [0.76, 0.78],
+      [0.55, 0.83],
+      [0.28, 0.93],
+      [0.0, 0.96],
+    ].map(([r, y]) => [r * S, y0 + (y + 1.25) * S] as [number, number]),
+    48,
+  );
+}
+
 /** Cuerpo pintado: cilindro recto + hombro biselado (prototipo 5.1). */
 export function buildThermoBodyGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
@@ -152,6 +229,12 @@ export function buildThermoBodyGeometry(spec: ThermoSpec): THREE.BufferGeometry 
     return cached(
       `thermo-body:sport:${spec.radiusMm}:${spec.bodyTopMm}`,
       () => lathe(sportBodyProfile(spec), 128),
+    );
+  }
+  if (spec.geometry === 'recto') {
+    return cached(
+      `thermo-body:recto:${spec.radiusMm}:${spec.bodyTopMm}`,
+      () => lathe(rectoBodyProfile(spec), 128),
     );
   }
   if (spec.geometry === 'bowling') {
@@ -187,10 +270,10 @@ export function buildThermoBodyGeometry(spec: ThermoSpec): THREE.BufferGeometry 
   );
 }
 
-/** Zócalo de acero (prototipo 5.2). La botella no tiene zócalo separado. */
+/** Zócalo de acero (prototipo 5.2). La botella y el Mate Recto no lo tienen. */
 export function buildThermoBaseGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
-  if (spec.geometry === 'bowling' || spec.geometry === 'sport') {
+  if (spec.geometry === 'bowling' || spec.geometry === 'sport' || spec.geometry === 'recto') {
     return cached(`thermo-base:${spec.geometry}`, () => new THREE.BufferGeometry());
   }
   return cached(`thermo-base:${spec.geometry}:${spec.radiusMm}:${spec.baseTopMm}`, () =>
@@ -220,11 +303,11 @@ export function buildThermoBaseGeometry(spec: ThermoSpec): THREE.BufferGeometry 
 
 /**
  * Collarín negro de la Media Manija, aro de silicona de la Botella Bowling
- * (cilindro oscuro entre cuello y tapa) o nada en el System.
+ * (cilindro oscuro entre cuello y tapa) o nada en el System / Mate Recto.
  */
 export function buildThermoCollarGeometry(spec: ThermoSpec): THREE.BufferGeometry {
-  if (spec.geometry === 'system') {
-    return cached('thermo-collar:system', () => new THREE.BufferGeometry());
+  if (spec.geometry === 'system' || spec.geometry === 'recto') {
+    return cached(`thermo-collar:${spec.geometry}`, () => new THREE.BufferGeometry());
   }
   if (spec.geometry === 'sport') {
     const S = sportUnitMm(spec);
@@ -273,9 +356,46 @@ export function buildThermoCollarGeometry(spec: ThermoSpec): THREE.BufferGeometr
   );
 }
 
+/** Labio de acero del Mate Recto (vacío en el resto de los productos). */
+export function buildThermoRimGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'recto') {
+    return cached(`thermo-rim:${spec.geometry}`, () => new THREE.BufferGeometry());
+  }
+  return cached(`thermo-rim:recto:${spec.radiusMm}:${spec.totalHeightMm}`, () =>
+    lathe(rectoRimProfile(spec), 128),
+  );
+}
+
+/** Interior cóncavo de acero del Mate Recto (vacío en el resto). */
+export function buildThermoInnerGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'recto') {
+    return cached(`thermo-inner:${spec.geometry}`, () => new THREE.BufferGeometry());
+  }
+  return cached(`thermo-inner:recto:${spec.radiusMm}:${spec.totalHeightMm}`, () =>
+    lathe(rectoInnerProfile(spec), 96),
+  );
+}
+
+/** Disco de acero que cierra la base del Mate Recto (vacío en el resto). */
+export function buildThermoBaseDiscGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'recto') {
+    return cached(`thermo-base-disc:${spec.geometry}`, () => new THREE.BufferGeometry());
+  }
+  return cached(`thermo-base-disc:recto:${spec.radiusMm}`, () => {
+    const S = rectoUnitMm(spec);
+    const geo = new THREE.CircleGeometry(0.72 * S, 64);
+    geo.rotateX(Math.PI / 2);
+    geo.translate(0, spec.baseBottomMm, 0);
+    return geo;
+  });
+}
+
 /** Tapa-vaso de acero con domo suave (Media Manija) o copa cónica (System). */
 export function buildThermoLidGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
+  if (spec.geometry === 'recto') {
+    return cached('thermo-lid:recto', () => new THREE.BufferGeometry());
+  }
   if (spec.geometry === 'sport') {
     return cached(
       `thermo-lid:sport:${spec.neckRadiusMm}:${spec.lidBottomMm}:${spec.lidTopMm}`,
@@ -375,7 +495,7 @@ export function buildThermoLidGeometry(spec: ThermoSpec): THREE.BufferGeometry {
 
 /** Manija: media manija en L (prototipo 5.5) o manija táctica (System 5.4). */
 export function buildThermoHandleGeometry(spec: ThermoSpec): THREE.BufferGeometry {
-  if (spec.geometry === 'bowling' || spec.geometry === 'sport') {
+  if (spec.geometry === 'bowling' || spec.geometry === 'sport' || spec.geometry === 'recto') {
     return cached(`thermo-handle:${spec.geometry}`, () => new THREE.BufferGeometry());
   }
   return cached(
