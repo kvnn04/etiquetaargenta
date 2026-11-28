@@ -139,8 +139,8 @@ export default function DesignCard() {
   const thermoProduct = isThermoProduct(product) ? product : null;
   const thermoSpec = thermoProduct?.thermo ?? null;
   const isBottle = thermoSpec ? isBottleGeometry(thermoSpec.geometry) : false;
-  const isRecto = thermoSpec ? isMateThermoGeometry(thermoSpec.geometry) : false;
-  const thermoNoun = isRecto ? 'el mate' : isBottle ? 'la botella' : 'el termo';
+  const isMateThermo = thermoSpec ? isMateThermoGeometry(thermoSpec.geometry) : false;
+  const thermoNoun = isMateThermo ? 'el mate' : isBottle ? 'la botella' : 'el termo';
   const aspect = useMemo(() => thermoAssetAspect(designAsset?.canvas ?? null), [designAsset]);
   const angleBounds = useMemo(
     () => (thermoSpec ? thermoAngleBounds(thermoSpec, scale, aspect) : null),
@@ -336,20 +336,20 @@ export default function DesignCard() {
     ? [
         {
           angle: angleBounds.minDeg,
-          label: isRecto ? 'Izquierda' : isBottle ? 'Borde Izq' : 'Borde Frente',
+          label: isMateThermo ? 'Izquierda' : isBottle ? 'Borde Izq' : 'Borde Frente',
         },
         { angle: angleBounds.centerDeg, label: 'Centro' },
         {
           angle: angleBounds.maxDeg,
-          label: isRecto ? 'Derecha' : isBottle ? 'Borde Der' : 'Borde Dorso',
+          label: isMateThermo ? 'Derecha' : isBottle ? 'Borde Der' : 'Borde Dorso',
         },
       ]
     : ROTATION_PRESETS;
   /* La botella no tiene manija: sus presets acompañan el frente fijo (el
-   * default del prototipo es 72 %). El Mate Recto usa 50/65/100; los termos
-   * conservan 25/45/70/100. */
+   * default del prototipo es 72 %). Los mates térmicos usan 50/65/100; los
+   * termos conservan 25/45/70/100. */
   const scalePresets = thermoSpec
-    ? isRecto
+    ? isMateThermo
       ? [50, 65, 100]
       : isBottle
         ? [50, 72, 100]
@@ -464,13 +464,13 @@ export default function DesignCard() {
         <div className="flex items-baseline justify-between">
           <p className="text-xs font-bold uppercase tracking-wider text-stone-400">
             {thermoSpec
-              ? isRecto
+              ? isMateThermo
                 ? 'Posición Horizontal del Grabado'
                 : 'Posición Angular del Grabado'
               : 'Rotación del Grabado (360°)'}
           </p>
           <span className="text-[9px] text-stone-600">
-            {isRecto
+            {isMateThermo
               ? 'frente fijo de 90° (±45°)'
               : isBottle
                 ? 'frente fijo de 114°'
@@ -489,7 +489,7 @@ export default function DesignCard() {
             step={0.5}
             value={thermoSpec ? continuousRotation : rotation}
             aria-label={
-              isRecto
+              isMateThermo
                 ? 'Posición horizontal del grabado'
                 : thermoSpec
                   ? 'Posición angular del grabado'
@@ -559,7 +559,7 @@ export default function DesignCard() {
         <div className="flex items-center justify-between gap-2">
           {thermoSpec ? (
             <span className="text-[10px] text-stone-600">
-              {isRecto
+              {isMateThermo
                 ? 'El frente fijo de 90° (±45°) limita el grabado; el dorso queda libre.'
                 : isBottle
                   ? 'El frente fijo de 114° limita el grabado; el dorso queda libre.'

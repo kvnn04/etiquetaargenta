@@ -25,6 +25,7 @@ describe('catálogo R1 (registro central)', () => {
       'camionero',
       'imperial',
       'mate-recto-termico',
+      'mate-acero-inoxidable',
       'termo-media-manija-1l',
       'termo-system-1l',
       'botella-bowling-500ml',

@@ -13,10 +13,11 @@
  * Coordenadas del termo/botella: mm absolutos desde la base apoyada en Y=0. Los
  * perfiles se derivan de `3d_termo_matero_media_manija.html`,
  * `termo_system_1L_3d.html` y `3d_botella_bowling.html` con escala 36 mm/unidad;
- * la Deportiva usa 49.08 mm/unidad (su prototipo declara 165 mm de zona útil).
+ * la Deportiva usa 49.08 mm/unidad y el mate cónico 33.33 mm/unidad (90 mm de
+ * alto total, como su prototipo `mate_acero_inoxidable_3d.html`).
  * ============================================================================ */
 
-export const CATALOG_VERSION = 5;
+export const CATALOG_VERSION = 6;
 
 export type ProductFamily = 'mate' | 'thermo';
 
@@ -36,7 +37,7 @@ export interface ProductCategory {
 
 /** Orden de presentación del catálogo. Las categorías vacías no se muestran. */
 export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
-  { id: 'mates', label: 'Mates', description: 'Camionero, Imperial y Recto Térmico' },
+  { id: 'mates', label: 'Mates', description: 'Camionero, Imperial y mates térmicos' },
   { id: 'termos', label: 'Termos', description: 'Acero, manija lateral y grabado' },
   { id: 'vasos', label: 'Vasos térmicos', description: 'Próximamente' },
   { id: 'botellas', label: 'Botellas', description: 'Bowling y Deportiva 500 ml' },
@@ -64,21 +65,30 @@ export interface MateShape {
 }
 
 /** Variante de geometría procedural del termo/botella/mate térmico. */
-export type ThermoGeometry = 'media-manija' | 'system' | 'bowling' | 'sport' | 'recto';
+export type ThermoGeometry =
+  | 'media-manija'
+  | 'system'
+  | 'bowling'
+  | 'sport'
+  | 'recto'
+  | 'clasico';
 
 /** Las botellas comparten el frente fijo y la ausencia de manija lateral. */
 export function isBottleGeometry(geometry: ThermoGeometry): boolean {
   return geometry === 'bowling' || geometry === 'sport';
 }
 
-/** Mate Recto Térmico: cuerpo cilíndrico, labio de acero y grabado frontal. */
+/**
+ * Mates térmicos de acero inoxidable: cuerpo pintado, boca de acero y grabado
+ * frontal. `recto` es el de pared cilíndrica; `clasico`, el cónico con virola.
+ */
 export function isMateThermoGeometry(geometry: ThermoGeometry): boolean {
-  return geometry === 'recto';
+  return geometry === 'recto' || geometry === 'clasico';
 }
 
 /**
  * Productos sin manija lateral cuyo grabado vive en un frente fijo (no dan la
- * vuelta al cuerpo): botellas y Mate Recto Térmico.
+ * vuelta al cuerpo): botellas y mates térmicos.
  */
 export function hasFixedFrontGeometry(geometry: ThermoGeometry): boolean {
   return isBottleGeometry(geometry) || isMateThermoGeometry(geometry);
@@ -97,7 +107,7 @@ export interface ThermoSpec {
   /** Zócalo de acero: base apoyada y unión con el cuerpo. */
   baseBottomMm: number;
   baseTopMm: number;
-  /** Cuerpo pintado (cilindro recto). */
+  /** Cuerpo pintado (cilindro recto o perfil cónico). */
   bodyBottomMm: number;
   bodyTopMm: number;
   shoulderTopMm: number;
@@ -112,9 +122,9 @@ export interface ThermoSpec {
   engraveMaxYMm: number;
   /** Ángulo del centro de la media manija (-π/2 = -X). */
   handleAngleRad: number;
-  /** Arco bloqueado por la manija (~37°). En la botella: el dorso (246°). */
+  /** Arco bloqueado por la manija (~37°). En botellas/mates: el dorso. */
   handleBlockedArcRad: number;
-  /** Radio de la malla de grabado (cuerpo + ε). */
+  /** Radio nominal de la malla de grabado (cuerpo + ε; en el cónico, el centro). */
   engraveRadiusMm: number;
   /** Escala de grabado por defecto y rango del control. */
   defaultScalePct: number;
@@ -534,6 +544,66 @@ const RECTO_SPEC: ThermoSpec = {
   capacityLabel: '—',
 };
 
+/* -------------------------------------------------------------------------- */
+/* Mate Térmico de Acero Inoxidable (cónico, virola plateada)                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Escala del prototipo `mate_acero_inoxidable_3d.html`: el cuerpo mide 2.47
+ * unidades y el total 2.70. Con 90 mm de alto total ⇒ 33.333 mm/unidad; el
+ * diámetro máximo (1.12 u) queda en 74.67 mm, la misma proporción que la foto.
+ */
+export const ACERO_MM_PER_UNIT = 90 / 2.7;
+
+const ACERO_UNIT = {
+  radius: 1.12,
+  baseBottom: -1.35,
+  bodyTop: 1.12,
+  rimTop: 1.35,
+  /**
+   * Zona segura del prototipo sobre la textura del cuerpo. El spline del
+   * prototipo se evalúa en V=0.255/0.775: esos cortes caen a 0.3134 u y
+   * 2.2286 u sobre la base, entre la curva inferior y la garganta del cuello.
+   */
+  engraveMinU: 0.3134,
+  engraveMaxU: 2.2286,
+  /** Radio del cuerpo a la altura del centro del grabado + 0.12 mm de lift. */
+  engraveRadius: 1.0416,
+  /** Frente fijo del prototipo: ±45° (90° en total). */
+  frontArcDeg: 90,
+} as const;
+
+const ACERO_SPEC: ThermoSpec = {
+  geometry: 'clasico',
+  radiusMm: ACERO_UNIT.radius * ACERO_MM_PER_UNIT,
+  // Radio interior de la virola (1.00 u): la boca de acero queda por dentro.
+  neckRadiusMm: 1.0 * ACERO_MM_PER_UNIT,
+  totalHeightMm: (ACERO_UNIT.rimTop - ACERO_UNIT.baseBottom) * ACERO_MM_PER_UNIT,
+  baseBottomMm: 0,
+  baseTopMm: 0,
+  // La base redondeada forma parte del cuerpo; no hay zócalo separado.
+  bodyBottomMm: 0,
+  bodyTopMm: (ACERO_UNIT.bodyTop - ACERO_UNIT.baseBottom) * ACERO_MM_PER_UNIT,
+  // Sin hombro ni collarín: la virola de acero ocupa el tramo superior.
+  shoulderTopMm: (ACERO_UNIT.bodyTop - ACERO_UNIT.baseBottom) * ACERO_MM_PER_UNIT,
+  collarBottomMm: (ACERO_UNIT.bodyTop - ACERO_UNIT.baseBottom) * ACERO_MM_PER_UNIT,
+  collarTopMm: (ACERO_UNIT.rimTop - ACERO_UNIT.baseBottom) * ACERO_MM_PER_UNIT,
+  // El mate no tiene tapa: las geometrías de tapa quedan vacías.
+  lidBottomMm: (ACERO_UNIT.rimTop - ACERO_UNIT.baseBottom) * ACERO_MM_PER_UNIT,
+  lidTopMm: (ACERO_UNIT.rimTop - ACERO_UNIT.baseBottom) * ACERO_MM_PER_UNIT,
+  engraveMinYMm: ACERO_UNIT.engraveMinU * ACERO_MM_PER_UNIT,
+  engraveMaxYMm: ACERO_UNIT.engraveMaxU * ACERO_MM_PER_UNIT,
+  // El "arco bloqueado" es todo el dorso: el diseño vive en el frente fijo.
+  handleAngleRad: Math.PI,
+  handleBlockedArcRad: ((360 - ACERO_UNIT.frontArcDeg) * Math.PI) / 180,
+  engraveRadiusMm: ACERO_UNIT.engraveRadius * ACERO_MM_PER_UNIT,
+  defaultScalePct: 65,
+  minScalePct: 15,
+  maxScalePct: 100,
+  // Producto sin capacidad declarada: la ficha imprime alto y diámetro.
+  capacityLabel: '—',
+};
+
 const RAW_CATALOG: MateCatalog = {
   catalogVersion: CATALOG_VERSION,
   products: [
@@ -563,6 +633,15 @@ const RAW_CATALOG: MateCatalog = {
       family: 'thermo',
       category: 'mates',
       thermo: RECTO_SPEC,
+    },
+    {
+      id: 'mate-acero-inoxidable',
+      label: 'Mate Térmico de Acero Inoxidable',
+      description: 'Cuerpo cónico, virola plateada y grabado frontal',
+      pro: false,
+      family: 'thermo',
+      category: 'mates',
+      thermo: ACERO_SPEC,
     },
     {
       id: 'termo-media-manija-1l',
@@ -719,6 +798,7 @@ export const THERMO_SYSTEM_MODEL_ID = 'termo-system-1l';
 export const BOTTLE_MODEL_ID = 'botella-bowling-500ml';
 export const SPORT_BOTTLE_MODEL_ID = 'botella-deportiva-500ml';
 export const RECTO_MATE_MODEL_ID = 'mate-recto-termico';
+export const ACERO_MATE_MODEL_ID = 'mate-acero-inoxidable';
 
 /**
  * Resuelve cualquier producto del catálogo. Un id de termo devuelve el termo;
@@ -852,6 +932,56 @@ function thermoSilhouette(product: ThermoProduct, width: number, height: number,
       [r * 0.62, t.totalHeightMm - 1.2],
       [0, t.totalHeightMm - 2.4],
     ];
+    const pts = [
+      ...right,
+      ...right.slice(1, -1).reverse().map(([x, y]) => [-x, y] as [number, number]),
+    ];
+    const path = `M ${pts.map(([x, y]) => `${xPx(x).toFixed(2)},${yPx(y).toFixed(2)}`).join(' L ')} Z`;
+    return { path, viewBox: `0 0 ${width} ${height}`, usedWidthPx: usableW };
+  }
+
+  if (t.geometry === 'clasico') {
+    const r = t.radiusMm;
+    // Unidades del prototipo: 1.12 u = radio máximo del cuerpo.
+    const S = r / 1.12;
+    const y0 = t.baseBottomMm;
+    /* Perfil del spline del prototipo, muestreado a 20 tramos. x ya está
+     * normalizado al radio máximo; y va en unidades desde la base. */
+    const bodyProfile: ReadonlyArray<readonly [number, number]> = [
+      [0.7679, 0.0],
+      [0.8063, 0.0196],
+      [0.86, 0.0522],
+      [0.9077, 0.1101],
+      [0.9505, 0.1912],
+      [0.9863, 0.2992],
+      [1.0014, 0.4476],
+      [0.9911, 0.6468],
+      [0.9683, 0.872],
+      [0.9458, 1.0966],
+      [0.9196, 1.3338],
+      [0.8934, 1.5623],
+      [0.8714, 1.758],
+      [0.85, 1.9299],
+      [0.8389, 2.0746],
+      [0.8494, 2.1837],
+      [0.8779, 2.2593],
+      [0.9074, 2.3211],
+      [0.9298, 2.3823],
+      [0.9502, 2.4345],
+      [0.9643, 2.47],
+    ];
+    const right: Array<[number, number]> = [[0, y0]];
+    for (const [xr, yu] of bodyProfile) right.push([xr * r, y0 + yu * S]);
+    // Virola de acero: banda exterior, borde superior y labio interior.
+    right.push(
+      [(1.095 / 1.12) * r, y0 + 2.48 * S],
+      [(1.095 / 1.12) * r, y0 + 2.68 * S],
+      [(1.075 / 1.12) * r, y0 + 2.7 * S],
+      [(1.02 / 1.12) * r, y0 + 2.7 * S],
+      [(1.0 / 1.12) * r, y0 + 2.67 * S],
+      [(0.85 / 1.12) * r, y0 + 2.55 * S],
+      [0, y0 + 2.51 * S],
+    );
     const pts = [
       ...right,
       ...right.slice(1, -1).reverse().map(([x, y]) => [-x, y] as [number, number]),

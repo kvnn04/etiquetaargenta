@@ -426,7 +426,7 @@ function renderThermoView(
 
   const isSystem = spec.geometry === 'system';
   const isSport = spec.geometry === 'sport';
-  const isRecto = isMateThermoGeometry(spec.geometry);
+  const isMateThermo = isMateThermoGeometry(spec.geometry);
   const isBottle = spec.geometry === 'bowling' || isSport;
   const pbr = thermoBodyPbr(config.finish, input.bodyColor, spec);
   const bodyMat = new THREE.MeshStandardMaterial({
@@ -481,11 +481,11 @@ function renderThermoView(
     roughness: 0.3,
     envMapIntensity: 1.1,
   });
-  if (!isBottle && !isRecto) group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
-  if (!isRecto) {
+  if (!isBottle && !isMateThermo) group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
+  if (!isMateThermo) {
     group.add(new THREE.Mesh(buildThermoLidGeometry(spec), isSport ? sportPlasticMat : steelMat));
   }
-  if (isRecto) {
+  if (isMateThermo) {
     group.add(new THREE.Mesh(buildThermoBaseDiscGeometry(spec), steelMat));
     group.add(new THREE.Mesh(buildThermoRimGeometry(spec), steelDoubleMat));
     group.add(new THREE.Mesh(buildThermoInnerGeometry(spec), steelDoubleMat));
@@ -508,9 +508,9 @@ function renderThermoView(
     group.add(new THREE.Mesh(buildThermoSportRingGeometry(spec), steelMat));
   }
 
-  if (isRecto) {
-    // El Mate Recto no tiene collarín: el labio y el interior de acero ya se
-    // agregaron arriba; el dorso queda libre para el grabado.
+  if (isMateThermo) {
+    // Los mates térmicos no tienen collarín: la virola y el interior de acero
+    // ya se agregaron arriba; el dorso queda libre para el grabado.
   } else if (isBottle) {
     // Aro de silicona (Bowling) o cuello de acero (Deportiva) bajo la tapa.
     group.add(
@@ -534,7 +534,7 @@ function renderThermoView(
     group.add(seam);
   }
 
-  if (!isBottle && !isRecto) {
+  if (!isBottle && !isMateThermo) {
     const handleGroup = new THREE.Group();
     handleGroup.rotation.y = spec.handleAngleRad;
     handleGroup.add(new THREE.Mesh(buildThermoHandleGeometry(spec), collarMat));

@@ -61,10 +61,10 @@ export const THERMO_PALETTE: readonly ThermoPaletteColor[] = [
   { name: 'Arena', hex: '#D5C7B2' },
 ];
 
-/** Color por defecto del Mate Recto Térmico (Negro Mate del prototipo). */
+/** Color por defecto de los mates térmicos (Negro Mate de los prototipos). */
 export const RECTO_DEFAULT_BODY_COLOR = '#1C1C1E';
 
-/** Paleta comercial del prototipo `3d_mate_recto.html` (mismos HEX). */
+/** Paleta comercial de los mates térmicos (mismos HEX que los prototipos). */
 export const RECTO_PALETTE: readonly ThermoPaletteColor[] = [
   { name: 'Negro Mate', hex: '#1C1C1E' },
   { name: 'Acero Inox', hex: '#D4D8DD', steel: true },

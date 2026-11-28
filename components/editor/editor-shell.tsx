@@ -576,7 +576,7 @@ export default function EditorShell({
                 </h3>
                 <p className="mt-1 text-[10px] leading-relaxed text-stone-600">
                   {thermo
-                    ? 'El termo o la botella conservan color, acabado, grabado y posición al cambiar de producto.'
+                    ? 'El termo, la botella o el mate conservan color, acabado, grabado y posición al cambiar de producto.'
                     : 'La virola conserva diámetros, guías y grabado al cambiar (R3 de '}
                   {!thermo && <span className="font-mono">spec_tipo_de_mate</span>}
                   {!thermo && ').'}

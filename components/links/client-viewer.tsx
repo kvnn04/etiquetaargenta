@@ -697,8 +697,8 @@ export default function ClientViewer({
   const virola = formatVirolaCard(view.mate.metal, view.mate.virolaColor);
   const cuerpo = formatCuerpoCard(view.mate.cupMaterial, view.mate.cupColor);
   /* R7: el acordeón NO expone escala/rotación/margen; el termo cambia virola
-   * por sus medidas fijas y su acabado propio. El Mate Recto no declara
-   * capacidad: imprime alto y diámetro, y suma su material. */
+   * por sus medidas fijas y su acabado propio. Los mates térmicos no declaran
+   * capacidad: imprimen alto y diámetro, y suman su material. */
   const thermoMedidas = isThermo
     ? `${isMateThermo ? '' : `${product.thermo.capacityLabel} · `}${
         formatMmCard(product.thermo.totalHeightMm) ?? '—'

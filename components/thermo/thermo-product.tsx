@@ -184,39 +184,39 @@ export default function ThermoProduct({
   const spec = product.thermo;
   const isSystem = spec.geometry === 'system';
   const isSport = spec.geometry === 'sport';
-  const isRecto = isMateThermoGeometry(spec.geometry);
+  const isMateThermo = isMateThermoGeometry(spec.geometry);
   /* Bowling y Deportiva comparten el contrato de botella: sin manija lateral,
    * sin zócalo de acero y con el diseño en el frente fijo. */
   const isBottle = spec.geometry === 'bowling' || isSport;
   const surface = useMemo(() => thermoSurface(spec), [spec]);
   const bodyGeo = useMemo(() => buildThermoBodyGeometry(spec), [spec]);
   const baseGeo = useMemo(
-    () => (isBottle || isRecto ? null : buildThermoBaseGeometry(spec)),
-    [isBottle, isRecto, spec],
+    () => (isBottle || isMateThermo ? null : buildThermoBaseGeometry(spec)),
+    [isBottle, isMateThermo, spec],
   );
   const baseDiscGeo = useMemo(
-    () => (isRecto ? buildThermoBaseDiscGeometry(spec) : null),
-    [isRecto, spec],
+    () => (isMateThermo ? buildThermoBaseDiscGeometry(spec) : null),
+    [isMateThermo, spec],
   );
   const rimGeo = useMemo(
-    () => (isRecto ? buildThermoRimGeometry(spec) : null),
-    [isRecto, spec],
+    () => (isMateThermo ? buildThermoRimGeometry(spec) : null),
+    [isMateThermo, spec],
   );
   const innerGeo = useMemo(
-    () => (isRecto ? buildThermoInnerGeometry(spec) : null),
-    [isRecto, spec],
+    () => (isMateThermo ? buildThermoInnerGeometry(spec) : null),
+    [isMateThermo, spec],
   );
   const collarGeo = useMemo(
-    () => (isSystem || isRecto ? null : buildThermoCollarGeometry(spec)),
-    [isSystem, isRecto, spec],
+    () => (isSystem || isMateThermo ? null : buildThermoCollarGeometry(spec)),
+    [isSystem, isMateThermo, spec],
   );
   const lidGeo = useMemo(
-    () => (isRecto ? null : buildThermoLidGeometry(spec)),
-    [isRecto, spec],
+    () => (isMateThermo ? null : buildThermoLidGeometry(spec)),
+    [isMateThermo, spec],
   );
   const handleGeo = useMemo(
-    () => (isBottle || isRecto ? null : buildThermoHandleGeometry(spec)),
-    [isBottle, isRecto, spec],
+    () => (isBottle || isMateThermo ? null : buildThermoHandleGeometry(spec)),
+    [isBottle, isMateThermo, spec],
   );
   const sportCapGeo = useMemo(
     () => (isSport ? buildThermoSportCapDetailsGeometry(spec) : null),
@@ -487,25 +487,25 @@ export default function ThermoProduct({
         />
       </mesh>
 
-      {/* Zócalo de acero (los termos; la botella y el Mate Recto lo integran) */}
-      {!isBottle && !isRecto && baseGeo && (
+      {/* Zócalo de acero (los termos; la botella y los mates lo integran) */}
+      {!isBottle && !isMateThermo && baseGeo && (
         <mesh geometry={baseGeo} castShadow receiveShadow>
           <SteelMaterial />
         </mesh>
       )}
 
-      {/* Mate Recto: disco de acero que cierra la base, labio e interior. */}
-      {isRecto && baseDiscGeo && (
+      {/* Mates térmicos: disco de acero que cierra la base, virola e interior. */}
+      {isMateThermo && baseDiscGeo && (
         <mesh geometry={baseDiscGeo} castShadow receiveShadow>
           <SteelMaterial />
         </mesh>
       )}
-      {isRecto && rimGeo && (
+      {isMateThermo && rimGeo && (
         <mesh geometry={rimGeo} castShadow receiveShadow>
           <SteelMaterial side={THREE.DoubleSide} />
         </mesh>
       )}
-      {isRecto && innerGeo && (
+      {isMateThermo && innerGeo && (
         <mesh geometry={innerGeo} receiveShadow>
           <SteelMaterial side={THREE.DoubleSide} />
         </mesh>
@@ -513,7 +513,7 @@ export default function ThermoProduct({
 
       {/* Collarín negro (Media Manija), aro de silicona (Bowling) o cuello de
        * acero (Deportiva). */}
-      {!isSystem && !isRecto && collarGeo && (
+      {!isSystem && !isMateThermo && collarGeo && (
         <mesh geometry={collarGeo} castShadow receiveShadow>
           {isSport ? <SteelMaterial /> : isBottle ? <SiliconeMaterial /> : <CollarMaterial />}
         </mesh>
@@ -531,9 +531,9 @@ export default function ThermoProduct({
           </mesh>
         ))}
 
-      {/* Tapa-vaso de acero (termos y Bowling) o tapa negra (Deportiva). El
-       * Mate Recto no tiene tapa: su boca de acero es el labio. */}
-      {!isRecto && lidGeo && (
+      {/* Tapa-vaso de acero (termos y Bowling) o tapa negra (Deportiva). Los
+       * mates térmicos no tienen tapa: su boca de acero es la virola. */}
+      {!isMateThermo && lidGeo && (
         <mesh geometry={lidGeo} castShadow receiveShadow>
           {isSport ? <SportPlasticMaterial /> : <SteelMaterial />}
         </mesh>
@@ -573,8 +573,8 @@ export default function ThermoProduct({
         </mesh>
       )}
 
-      {/* Manija lateral (los termos; botella y Mate Recto no tienen) */}
-      {!isBottle && !isRecto && handleGeo && (
+      {/* Manija lateral (los termos; botellas y mates no tienen) */}
+      {!isBottle && !isMateThermo && handleGeo && (
         <group rotation={[0, spec.handleAngleRad, 0]}>
           <mesh geometry={handleGeo} castShadow receiveShadow>
             <CollarMaterial />

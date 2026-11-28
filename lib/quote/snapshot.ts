@@ -155,7 +155,7 @@ export interface FichaSnapshot {
   thermo: {
     acabadoEtiqueta: string;
     posicionEtiqueta: string;
-    /** "Capacidad" en termos/botellas; "Material" en el Mate Recto Térmico. */
+    /** "Capacidad" en termos/botellas; "Material" en los mates térmicos. */
     capacidadTitulo: string;
     capacidadEtiqueta: string;
     altoEtiqueta: string;
