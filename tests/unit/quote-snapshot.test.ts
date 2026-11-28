@@ -23,7 +23,12 @@ import {
 import { evaluateOverflow } from '@/lib/overflow';
 import type { ResolvedBranding } from '@/lib/branding';
 import type { InkEnvelope } from '@/lib/overflow';
-import { BOTTLE_MODEL_ID, THERMO_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
+import {
+  BOTTLE_MODEL_ID,
+  SPORT_BOTTLE_MODEL_ID,
+  THERMO_MODEL_ID,
+  resolveThermoProduct,
+} from '@/lib/catalog';
 import { clampThermoRotation } from '@/lib/thermo';
 
 /* t0 fijo: 05-nov-2026 18:00 UTC — capturedAt determinista (el hash NO lo usa). */
@@ -358,6 +363,32 @@ describe('termo — la ficha etiqueta lo que realmente se dibuja', () => {
     expect(snap.thermo?.capacidadEtiqueta).toBe('500 ml');
     expect(snap.thermo?.altoEtiqueta).toBe(formatMmCard(bottle.totalHeightMm));
     expect(snap.thermo?.diametroEtiqueta).toBe(formatMmCard(bottle.radiusMm * 2));
+    expect(snap.escalaEtiqueta).toBe('72%');
+  });
+
+  it('la botella Deportiva imprime su propia etiqueta, capacidad y medidas', () => {
+    const sport = resolveThermoProduct(SPORT_BOTTLE_MODEL_ID).thermo;
+    const snap = captureFichaSnapshot(
+      baseInput({
+        state: {
+          mateModel: SPORT_BOTTLE_MODEL_ID,
+          extDiameter: null,
+          intDiameter: null,
+          bodyPreset: null,
+          metalPreset: null,
+          bodyColor: '#181A1F',
+          virolaColor: null,
+          design: { rotation: 0, scale: 72, mirror: false },
+          thermo: { offsetYPct: 0, invert: false, finish: 'matte' },
+        },
+        designAspect: 1,
+      }),
+    );
+    expect(snap.family).toBe('thermo');
+    expect(snap.modeloEtiqueta).toBe('Botella Deportiva con Pico y Mosquetón 500 ml');
+    expect(snap.thermo?.capacidadEtiqueta).toBe('500 ml');
+    expect(snap.thermo?.altoEtiqueta).toBe(formatMmCard(sport.totalHeightMm));
+    expect(snap.thermo?.diametroEtiqueta).toBe(formatMmCard(sport.radiusMm * 2));
     expect(snap.escalaEtiqueta).toBe('72%');
   });
 });

@@ -12,7 +12,7 @@
  * ============================================================================ */
 
 import type { MateProduct, ThermoSpec } from '@/lib/catalog';
-import { THERMO_MM_PER_UNIT } from '@/lib/catalog';
+import { THERMO_MM_PER_UNIT, isBottleGeometry } from '@/lib/catalog';
 
 export const CAMERA_FOV_DEG = 34;
 
@@ -91,8 +91,8 @@ export function thermoFramingMm(spec: ThermoSpec): {
 } {
   const centerYMm = spec.totalHeightMm / 2;
   const maxRadiusMm =
-    spec.geometry === 'bowling'
-      ? spec.radiusMm // sin manija: el cuerpo manda
+    isBottleGeometry(spec.geometry)
+      ? spec.radiusMm // sin manija lateral: el cuerpo manda
       : Math.max(
           spec.radiusMm + 0.55 * THERMO_MM_PER_UNIT, // manija lateral (X)
           spec.radiusMm,

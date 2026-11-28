@@ -12,6 +12,7 @@
  * ============================================================================ */
 
 import type { ThermoProduct, ThermoSpec } from '@/lib/catalog';
+import { isBottleGeometry } from '@/lib/catalog';
 import { normalizeRotation } from '@/lib/design';
 import { normalizeHex } from '@/lib/color';
 import type { OverflowCheck } from '@/lib/overflow';
@@ -330,7 +331,7 @@ export function thermoOverflowText(check: OverflowCheck, spec?: ThermoSpec): str
   const parts: string[] = [];
   if (check.overflowOuter) parts.push(`Excede ${check.overflowOuterMm.toFixed(1)} mm por arriba`);
   if (check.overflowInner) parts.push(`Excede ${check.overflowInnerMm.toFixed(1)} mm por abajo`);
-  const producto = spec?.geometry === 'bowling' ? 'la botella' : 'el termo';
+  const producto = spec && isBottleGeometry(spec.geometry) ? 'la botella' : 'el termo';
   return `El diseño sale de la zona de grabado de ${producto}. ${parts.join(' / ')}.`;
 }
 

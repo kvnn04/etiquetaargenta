@@ -12,7 +12,8 @@
  *
  * Coordenadas del termo/botella: mm absolutos desde la base apoyada en Y=0. Los
  * perfiles se derivan de `3d_termo_matero_media_manija.html`,
- * `termo_system_1L_3d.html` y `3d_botella_bowling.html` con escala 36 mm/unidad.
+ * `termo_system_1L_3d.html` y `3d_botella_bowling.html` con escala 36 mm/unidad;
+ * la Deportiva usa 49.08 mm/unidad (su prototipo declara 165 mm de zona útil).
  * ============================================================================ */
 
 export const CATALOG_VERSION = 4;
@@ -38,7 +39,7 @@ export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   { id: 'mates', label: 'Mates', description: 'Camionero e Imperial' },
   { id: 'termos', label: 'Termos', description: 'Acero, manija lateral y grabado' },
   { id: 'vasos', label: 'Vasos térmicos', description: 'Próximamente' },
-  { id: 'botellas', label: 'Botellas', description: 'Bowling 500 ml' },
+  { id: 'botellas', label: 'Botellas', description: 'Bowling y Deportiva 500 ml' },
   { id: 'tablas', label: 'Tablas de asado', description: 'Próximamente' },
   { id: 'cajas', label: 'Cajas de presentación', description: 'Próximamente' },
 ];
@@ -63,7 +64,12 @@ export interface MateShape {
 }
 
 /** Variante de geometría procedural del termo/botella. */
-export type ThermoGeometry = 'media-manija' | 'system' | 'bowling';
+export type ThermoGeometry = 'media-manija' | 'system' | 'bowling' | 'sport';
+
+/** Las botellas comparten el frente fijo y la ausencia de manija lateral. */
+export function isBottleGeometry(geometry: ThermoGeometry): boolean {
+  return geometry === 'bowling' || geometry === 'sport';
+}
 
 /** Contrato geométrico del termo/botella, en mm desde la base apoyada en Y=0. */
 export interface ThermoSpec {
@@ -71,7 +77,7 @@ export interface ThermoSpec {
   geometry: ThermoGeometry;
   /** Radio del cuerpo pintado. */
   radiusMm: number;
-  /** Radio del cuello (solo bowling: alimenta hombro, aro y tapa). */
+  /** Radio del cuello (botellas: alimenta hombro, aro y tapa). */
   neckRadiusMm: number;
   /** Altura total (base inferior → centro del domo de la tapa). */
   totalHeightMm: number;
@@ -82,7 +88,7 @@ export interface ThermoSpec {
   bodyBottomMm: number;
   bodyTopMm: number;
   shoulderTopMm: number;
-  /** Collarín negro (termos) o banda de silicona (botella). */
+  /** Collarín negro (termos), aro de silicona (Bowling) o cuello de acero (Deportiva). */
   collarBottomMm: number;
   collarTopMm: number;
   /** Tapa-vaso de acero. */
@@ -368,6 +374,92 @@ const BOTTLE_SPEC: ThermoSpec = {
   capacityLabel: '500 ml',
 };
 
+/* -------------------------------------------------------------------------- */
+/* Botella Deportiva con Pico y Mosquetón 500 ml                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Escala del prototipo `botella térmica deportiva ..._3d.html`.
+ * El HTML declara 165 mm de altura útil y el cuerpo abarca 4.1 unidades con
+ * márgenes V 0.09–0.91 (3.362 unidades): 165 / 3.362 = 49.08 mm/unidad.
+ * El resto de los prototipos usa 36 mm/unidad.
+ */
+export const SPORT_MM_PER_UNIT = 49.08;
+
+const SPORT_UNIT = {
+  /** Radio máximo del cuerpo (0.72 base + 0.0075 de conicidad). */
+  radiusMax: 0.7275,
+  bodyRadius: 0.72,
+  neckRadius: 0.635,
+  baseBottom: -2.35,
+  bodyTop: 1.75,
+  neckTop: 1.93,
+  capTop: 2.42,
+  /** Incluye el bisel del asa (0.028 u) sobre el arco de 1.01 u. */
+  handleTop: 2.97,
+  waist: 0.048,
+  taper: 0.015,
+  engraveVMin: 0.09,
+  engraveVMax: 0.91,
+  /** Frente fijo del prototipo: 114°. */
+  frontArcDeg: 114,
+} as const;
+
+const SPORT_BODY_HEIGHT_U = SPORT_UNIT.bodyTop - SPORT_UNIT.baseBottom; // 4.1 u
+
+/** Radio del cuerpo deportivo en unidades del prototipo (t=0 base, t=1 hombro). */
+export function sportUnitRadiusAt(t: number): number {
+  if (t < 0.03) {
+    const bt = t / 0.03;
+    return 0.65 + 0.07 * Math.sin(bt * Math.PI * 0.5);
+  }
+  if (t > 0.94) {
+    const tt = (t - 0.94) / 0.06;
+    return 0.72 - 0.09 * (1 - Math.cos(tt * Math.PI * 0.5));
+  }
+  const norm = (t - 0.03) / 0.91;
+  const waist = Math.sin(norm * Math.PI) * SPORT_UNIT.waist;
+  const slightTaper = (norm - 0.5) * SPORT_UNIT.taper;
+  return SPORT_UNIT.bodyRadius - waist + slightTaper;
+}
+
+const SPORT_ENGRAVE_MIN_U =
+  SPORT_UNIT.baseBottom + (1 - SPORT_UNIT.engraveVMax) * SPORT_BODY_HEIGHT_U;
+const SPORT_ENGRAVE_MAX_U =
+  SPORT_UNIT.baseBottom + (1 - SPORT_UNIT.engraveVMin) * SPORT_BODY_HEIGHT_U;
+const SPORT_ENGRAVE_CENTER_U = (SPORT_ENGRAVE_MIN_U + SPORT_ENGRAVE_MAX_U) / 2;
+const SPORT_ENGRAVE_RADIUS_U = sportUnitRadiusAt(
+  (SPORT_ENGRAVE_CENTER_U - SPORT_UNIT.baseBottom) / SPORT_BODY_HEIGHT_U,
+);
+
+const SPORT_SPEC: ThermoSpec = {
+  geometry: 'sport',
+  radiusMm: SPORT_UNIT.radiusMax * SPORT_MM_PER_UNIT,
+  neckRadiusMm: SPORT_UNIT.neckRadius * SPORT_MM_PER_UNIT,
+  totalHeightMm: (SPORT_UNIT.handleTop - SPORT_UNIT.baseBottom) * SPORT_MM_PER_UNIT,
+  baseBottomMm: 0,
+  baseTopMm: 0.03 * SPORT_BODY_HEIGHT_U * SPORT_MM_PER_UNIT,
+  bodyBottomMm: 0,
+  bodyTopMm: SPORT_BODY_HEIGHT_U * SPORT_MM_PER_UNIT,
+  // El hombro está incluido en el cuerpo; el cuello de acero arranca arriba.
+  shoulderTopMm: SPORT_BODY_HEIGHT_U * SPORT_MM_PER_UNIT,
+  collarBottomMm: SPORT_BODY_HEIGHT_U * SPORT_MM_PER_UNIT,
+  collarTopMm: (SPORT_UNIT.neckTop - SPORT_UNIT.baseBottom) * SPORT_MM_PER_UNIT,
+  lidBottomMm: (SPORT_UNIT.neckTop - SPORT_UNIT.baseBottom) * SPORT_MM_PER_UNIT,
+  lidTopMm: (SPORT_UNIT.capTop - SPORT_UNIT.baseBottom) * SPORT_MM_PER_UNIT,
+  engraveMinYMm: (SPORT_ENGRAVE_MIN_U - SPORT_UNIT.baseBottom) * SPORT_MM_PER_UNIT,
+  engraveMaxYMm: (SPORT_ENGRAVE_MAX_U - SPORT_UNIT.baseBottom) * SPORT_MM_PER_UNIT,
+  // El "arco bloqueado" es todo el dorso: el diseño vive en el frente fijo.
+  handleAngleRad: Math.PI,
+  handleBlockedArcRad: ((360 - SPORT_UNIT.frontArcDeg) * Math.PI) / 180,
+  // Radio del cuerpo a la altura del centro del grabado (cintura cóncava).
+  engraveRadiusMm: SPORT_ENGRAVE_RADIUS_U * SPORT_MM_PER_UNIT,
+  defaultScalePct: 72,
+  minScalePct: 15,
+  maxScalePct: 100,
+  capacityLabel: '500 ml',
+};
+
 const RAW_CATALOG: MateCatalog = {
   catalogVersion: CATALOG_VERSION,
   products: [
@@ -415,6 +507,15 @@ const RAW_CATALOG: MateCatalog = {
       family: 'thermo',
       category: 'botellas',
       thermo: BOTTLE_SPEC,
+    },
+    {
+      id: 'botella-deportiva-500ml',
+      label: 'Botella Deportiva con Pico y Mosquetón 500 ml',
+      description: 'Cintura deportiva, tapa negra, pico rebatible y mosquetón',
+      pro: false,
+      family: 'thermo',
+      category: 'botellas',
+      thermo: SPORT_SPEC,
     },
   ],
 };
@@ -533,6 +634,7 @@ export const DEFAULT_MATE_MODEL: MateModelId = 'camionero';
 export const THERMO_MODEL_ID = 'termo-media-manija-1l';
 export const THERMO_SYSTEM_MODEL_ID = 'termo-system-1l';
 export const BOTTLE_MODEL_ID = 'botella-bowling-500ml';
+export const SPORT_BOTTLE_MODEL_ID = 'botella-deportiva-500ml';
 
 /**
  * Resuelve cualquier producto del catálogo. Un id de termo devuelve el termo;
@@ -607,12 +709,45 @@ function thermoSilhouette(product: ThermoProduct, width: number, height: number,
   const t = product.thermo;
   const usableW = width - pad * 2;
   const usableH = height - pad * 2;
-  const maxR =
-    t.geometry === 'bowling' ? t.radiusMm * 1.06 : t.radiusMm * 1.32; // aire para la manija
+  const maxR = isBottleGeometry(t.geometry)
+    ? t.radiusMm * 1.06 // sin manija lateral: el cuerpo manda
+    : t.radiusMm * 1.32; // aire para la manija
   const yPx = (y: number) => pad + (1 - y / t.totalHeightMm) * usableH;
   const xPx = (x: number) => width / 2 + (x / maxR) * (usableW / 2);
   const r = t.radiusMm;
   const shoulder = t.bodyTopMm;
+
+  if (t.geometry === 'sport') {
+    const S = SPORT_MM_PER_UNIT;
+    const rn = t.neckRadiusMm;
+    const bodyH = t.bodyTopMm - t.baseBottomMm;
+    const right: Array<[number, number]> = [
+      [0, t.baseBottomMm],
+      [r * 0.9, t.baseBottomMm],
+    ];
+    // Cuerpo acinturado: muestrea el mismo perfil que la malla 3D.
+    for (let i = 0; i <= 20; i++) {
+      const u = i / 20;
+      right.push([
+        (sportUnitRadiusAt(u) / SPORT_UNIT.radiusMax) * r,
+        t.baseBottomMm + bodyH * u,
+      ]);
+    }
+    // Cuello de acero y tapa negra.
+    right.push(
+      [rn, t.collarTopMm],
+      [rn * 0.97, t.lidBottomMm],
+      [rn * 0.93, t.lidTopMm],
+      // Asa superior (arco macizo en la silueta).
+      [rn * 1.02, t.lidBottomMm + 0.78 * S],
+      [rn * 0.9, t.lidBottomMm + 0.98 * S],
+      [rn * 0.55, t.lidBottomMm + 1.03 * S],
+      [0, t.totalHeightMm],
+    );
+    const pts = [...right, ...right.slice(1, -1).reverse().map(([x, y]) => [-x, y] as [number, number])];
+    const path = `M ${pts.map(([x, y]) => `${xPx(x).toFixed(2)},${yPx(y).toFixed(2)}`).join(' L ')} Z`;
+    return { path, viewBox: `0 0 ${width} ${height}`, usedWidthPx: usableW };
+  }
 
   if (t.geometry === 'bowling') {
     const rn = t.neckRadiusMm;

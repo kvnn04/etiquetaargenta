@@ -10,8 +10,9 @@
  * ============================================================================ */
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ThermoSpec } from '@/lib/catalog';
-import { THERMO_MM_PER_UNIT } from '@/lib/catalog';
+import { THERMO_MM_PER_UNIT, sportUnitRadiusAt } from '@/lib/catalog';
 import { thermoSurface } from '@/lib/thermo';
 
 const U = THERMO_MM_PER_UNIT;
@@ -31,6 +32,38 @@ function lathe(points: Array<[number, number]>, segments = 96): THREE.BufferGeom
     points.map(([x, y]) => new THREE.Vector2(Math.max(0, x), y)),
     segments,
   );
+}
+
+/** mm por unidad del prototipo deportivo, derivados de su radio máximo. */
+function sportUnitMm(spec: ThermoSpec): number {
+  return spec.radiusMm / 0.7275;
+}
+
+/** Radio del cuerpo deportivo en mm a una altura absoluta (base Y=0). */
+function sportBodyRadiusMm(spec: ThermoSpec, yMm: number): number {
+  const bodyH = Math.max(1e-6, spec.bodyTopMm - spec.baseBottomMm);
+  const t = Math.min(1, Math.max(0, (yMm - spec.baseBottomMm) / bodyH));
+  return sportUnitRadiusAt(t) * sportUnitMm(spec);
+}
+
+/** Une geometrías y libera las piezas intermedias (nunca deja basura GPU). */
+function mergeOrEmpty(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const merged = mergeGeometries(parts, false);
+  for (const part of parts) part.dispose();
+  return merged ?? new THREE.BufferGeometry();
+}
+
+/** Matriz del grupo del mosquetón (posición, rotación y escala del prototipo). */
+function sportCarabinerMatrix(spec: ThermoSpec): THREE.Matrix4 {
+  const S = sportUnitMm(spec);
+  const euler = new THREE.Euler(0, -0.22, 0.38);
+  const local = new THREE.Matrix4()
+    .makeTranslation(0.47, 0.65, 0.03)
+    .multiply(new THREE.Matrix4().makeRotationFromEuler(euler));
+  return new THREE.Matrix4()
+    .makeTranslation(0, spec.lidBottomMm, 0)
+    .multiply(new THREE.Matrix4().makeScale(S, S, S))
+    .multiply(local);
 }
 
 /**
@@ -90,9 +123,37 @@ function bottleBodyProfile(spec: ThermoSpec): Array<[number, number]> {
   return pts;
 }
 
+/**
+ * Perfil de la Botella Deportiva: base redondeada, cintura cóncava y hombro
+ * superior que se estrecha hacia el cuello de acero. Sale del prototipo
+ * `botella térmica deportiva ..._3d.html` (1 unidad = 49.08 mm).
+ */
+function sportBodyProfile(spec: ThermoSpec): Array<[number, number]> {
+  const S = sportUnitMm(spec);
+  const y0 = spec.baseBottomMm;
+  const y1 = spec.bodyTopMm;
+  const pts: Array<[number, number]> = [
+    [0, y0],
+    [0.55 * S, y0],
+    [0.65 * S, y0],
+  ];
+  const segments = 96;
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    pts.push([sportUnitRadiusAt(t) * S, y0 + (y1 - y0) * t]);
+  }
+  return pts;
+}
+
 /** Cuerpo pintado: cilindro recto + hombro biselado (prototipo 5.1). */
 export function buildThermoBodyGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
+  if (spec.geometry === 'sport') {
+    return cached(
+      `thermo-body:sport:${spec.radiusMm}:${spec.bodyTopMm}`,
+      () => lathe(sportBodyProfile(spec), 128),
+    );
+  }
   if (spec.geometry === 'bowling') {
     return cached(
       `thermo-body:bowling:${spec.radiusMm}:${spec.neckRadiusMm}:${spec.totalHeightMm}`,
@@ -129,8 +190,8 @@ export function buildThermoBodyGeometry(spec: ThermoSpec): THREE.BufferGeometry 
 /** Zócalo de acero (prototipo 5.2). La botella no tiene zócalo separado. */
 export function buildThermoBaseGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
-  if (spec.geometry === 'bowling') {
-    return cached('thermo-base:bowling', () => new THREE.BufferGeometry());
+  if (spec.geometry === 'bowling' || spec.geometry === 'sport') {
+    return cached(`thermo-base:${spec.geometry}`, () => new THREE.BufferGeometry());
   }
   return cached(`thermo-base:${spec.geometry}:${spec.radiusMm}:${spec.baseTopMm}`, () =>
     spec.geometry === 'system'
@@ -165,6 +226,25 @@ export function buildThermoCollarGeometry(spec: ThermoSpec): THREE.BufferGeometr
   if (spec.geometry === 'system') {
     return cached('thermo-collar:system', () => new THREE.BufferGeometry());
   }
+  if (spec.geometry === 'sport') {
+    const S = sportUnitMm(spec);
+    const rn = spec.neckRadiusMm;
+    return cached(
+      `thermo-collar:sport:${rn}:${spec.collarBottomMm}:${spec.collarTopMm}`,
+      () =>
+        lathe(
+          [
+            [0, spec.collarBottomMm],
+            [rn - 0.01 * S, spec.collarBottomMm],
+            [rn, spec.collarBottomMm + 0.02 * S],
+            [rn, spec.collarTopMm - 0.02 * S],
+            [rn - 0.02 * S, spec.collarTopMm],
+            [0, spec.collarTopMm],
+          ],
+          96,
+        ),
+    );
+  }
   if (spec.geometry === 'bowling') {
     const rSeal = spec.neckRadiusMm + 0.018 * U;
     return cached(
@@ -196,6 +276,30 @@ export function buildThermoCollarGeometry(spec: ThermoSpec): THREE.BufferGeometr
 /** Tapa-vaso de acero con domo suave (Media Manija) o copa cónica (System). */
 export function buildThermoLidGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
+  if (spec.geometry === 'sport') {
+    return cached(
+      `thermo-lid:sport:${spec.neckRadiusMm}:${spec.lidBottomMm}:${spec.lidTopMm}`,
+      () => {
+        const S = sportUnitMm(spec);
+        const y0 = spec.lidBottomMm;
+        const y1 = spec.lidTopMm;
+        const rBottom = 0.635 * S;
+        const rBaseTop = 0.625 * S;
+        const rPlateTop = 0.59 * S;
+        const yBaseTop = y0 + 0.42 * S;
+        return lathe(
+          [
+            [0, y0],
+            [rBottom, y0],
+            [rBaseTop, yBaseTop],
+            [rPlateTop, y1],
+            [0, y1],
+          ],
+          128,
+        );
+      },
+    );
+  }
   if (spec.geometry === 'bowling') {
     return cached(
       `thermo-lid:bowling:${spec.neckRadiusMm}:${spec.lidBottomMm}:${spec.lidTopMm}`,
@@ -271,8 +375,8 @@ export function buildThermoLidGeometry(spec: ThermoSpec): THREE.BufferGeometry {
 
 /** Manija: media manija en L (prototipo 5.5) o manija táctica (System 5.4). */
 export function buildThermoHandleGeometry(spec: ThermoSpec): THREE.BufferGeometry {
-  if (spec.geometry === 'bowling') {
-    return cached('thermo-handle:bowling', () => new THREE.BufferGeometry());
+  if (spec.geometry === 'bowling' || spec.geometry === 'sport') {
+    return cached(`thermo-handle:${spec.geometry}`, () => new THREE.BufferGeometry());
   }
   return cached(
     `thermo-handle:${spec.geometry}:${spec.radiusMm}:${spec.handleAngleRad}`,
@@ -377,6 +481,169 @@ export function buildThermoHandleGeometry(spec: ThermoSpec): THREE.BufferGeometr
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Botella Deportiva — tapa negra, asa superior, pico y mosquetón             */
+/* -------------------------------------------------------------------------- */
+
+/** Estrías de la tapa + alojamiento de la bisagra (plástico negro). */
+export function buildThermoSportCapDetailsGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'sport') {
+    return cached('thermo-sport-cap:none', () => new THREE.BufferGeometry());
+  }
+  const S = sportUnitMm(spec);
+  return cached(
+    `thermo-sport-cap:${spec.radiusMm}:${spec.lidBottomMm}`,
+    () => {
+      const y0 = spec.lidBottomMm;
+      const parts: THREE.BufferGeometry[] = [];
+      const ribBase = new THREE.BoxGeometry(0.058 * S, 0.25 * S, 0.036 * S);
+      for (let i = 0; i < 24; i++) {
+        const angle = (i / 24) * Math.PI * 2;
+        const rib = ribBase.clone();
+        rib.rotateY(-angle + Math.PI / 2);
+        rib.translate(Math.cos(angle) * 0.631 * S, y0 + 0.2 * S, Math.sin(angle) * 0.631 * S);
+        parts.push(rib);
+      }
+      ribBase.dispose();
+      const hinge = new THREE.CylinderGeometry(0.13 * S, 0.14 * S, 0.26 * S, 24);
+      hinge.rotateX(Math.PI / 2);
+      hinge.translate(-0.08 * S, y0 + 0.52 * S, 0);
+      parts.push(hinge);
+      return mergeOrEmpty(parts);
+    },
+  );
+}
+
+/** Asa superior curva con hueco central (plástico negro). */
+export function buildThermoSportHandleGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'sport') {
+    return cached('thermo-sport-handle:none', () => new THREE.BufferGeometry());
+  }
+  const S = sportUnitMm(spec);
+  return cached(
+    `thermo-sport-handle:${spec.radiusMm}:${spec.lidBottomMm}`,
+    () => {
+      const shape = new THREE.Shape();
+      shape.moveTo(-0.56, 0.44);
+      shape.lineTo(-0.56, 0.56);
+      shape.bezierCurveTo(-0.54, 0.72, -0.14, 0.99, 0.34, 1.01);
+      shape.bezierCurveTo(0.58, 1.02, 0.67, 0.85, 0.56, 0.65);
+      shape.lineTo(0.43, 0.44);
+      shape.closePath();
+
+      const hole = new THREE.Path();
+      hole.moveTo(-0.18, 0.53);
+      hole.bezierCurveTo(-0.14, 0.73, 0.14, 0.88, 0.36, 0.88);
+      hole.bezierCurveTo(0.49, 0.88, 0.51, 0.76, 0.42, 0.63);
+      hole.lineTo(0.31, 0.5);
+      hole.bezierCurveTo(0.14, 0.5, -0.04, 0.5, -0.18, 0.53);
+      hole.closePath();
+      shape.holes.push(hole);
+
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        steps: 1,
+        depth: 0.25,
+        bevelEnabled: true,
+        bevelThickness: 0.032,
+        bevelSize: 0.028,
+        bevelSegments: 6,
+        curveSegments: 32,
+      });
+      geo.translate(0, 0, -0.125);
+      geo.scale(S, S, S);
+      geo.translate(0, spec.lidBottomMm, 0);
+      return geo;
+    },
+  );
+}
+
+/** Pico rebatible translúcido + lengüeta de agarre (cerrado, decorativo). */
+export function buildThermoSportSpoutGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'sport') {
+    return cached('thermo-sport-spout:none', () => new THREE.BufferGeometry());
+  }
+  const S = sportUnitMm(spec);
+  return cached(
+    `thermo-sport-spout:${spec.radiusMm}:${spec.lidBottomMm}`,
+    () => {
+      const shape = new THREE.Shape();
+      shape.moveTo(-0.06, -0.05);
+      shape.lineTo(0.34, 0.16);
+      shape.bezierCurveTo(0.39, 0.19, 0.38, 0.26, 0.32, 0.27);
+      shape.lineTo(-0.05, 0.08);
+      shape.bezierCurveTo(-0.09, 0.05, -0.09, -0.02, -0.06, -0.05);
+      shape.closePath();
+
+      const spout = new THREE.ExtrudeGeometry(shape, {
+        steps: 1,
+        depth: 0.13,
+        bevelEnabled: true,
+        bevelThickness: 0.018,
+        bevelSize: 0.016,
+        bevelSegments: 4,
+        curveSegments: 20,
+      });
+      spout.translate(0, 0, -0.065);
+      const lip = new THREE.BoxGeometry(0.06, 0.035, 0.12);
+      lip.rotateZ(0.45);
+      lip.translate(0.33, 0.24, 0);
+      // ExtrudeGeometry no está indexada y BoxGeometry sí: unificar antes de
+      // fusionar (mergeGeometries exige el mismo esquema de atributos).
+      const lipNI = lip.toNonIndexed();
+      lip.dispose();
+      const merged = mergeOrEmpty([spout, lipNI]);
+      merged.scale(S, S, S);
+      merged.translate(-0.08 * S, spec.lidBottomMm + 0.52 * S, 0);
+      return merged;
+    },
+  );
+}
+
+/** Mosquetón negro del asa (tubo cerrado). */
+export function buildThermoSportCarabinerGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'sport') {
+    return cached('thermo-sport-carabiner:none', () => new THREE.BufferGeometry());
+  }
+  return cached(
+    `thermo-sport-carabiner:${spec.radiusMm}:${spec.lidBottomMm}`,
+    () => {
+      const points = [
+        new THREE.Vector3(0, 0.08, 0),
+        new THREE.Vector3(0.085, 0.04, 0),
+        new THREE.Vector3(0.075, -0.36, 0),
+        new THREE.Vector3(0, -0.44, 0),
+        new THREE.Vector3(-0.075, -0.36, 0),
+        new THREE.Vector3(-0.085, 0.04, 0),
+      ];
+      const curve = new THREE.CatmullRomCurve3(points, true);
+      const geo = new THREE.TubeGeometry(curve, 48, 0.024, 16, true);
+      geo.applyMatrix4(sportCarabinerMatrix(spec));
+      return geo;
+    },
+  );
+}
+
+/** Argolla metálica + pasador del mosquetón (acero). */
+export function buildThermoSportRingGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'sport') {
+    return cached('thermo-sport-ring:none', () => new THREE.BufferGeometry());
+  }
+  return cached(
+    `thermo-sport-ring:${spec.radiusMm}:${spec.lidBottomMm}`,
+    () => {
+      const gate = new THREE.CylinderGeometry(0.015, 0.015, 0.24, 12);
+      gate.rotateZ(-0.06);
+      gate.translate(-0.072, -0.16, 0);
+      const ring = new THREE.TorusGeometry(0.165, 0.014, 16, 48);
+      ring.rotateY(0.35);
+      ring.translate(0.02, -0.58, 0);
+      const merged = mergeOrEmpty([gate, ring]);
+      merged.applyMatrix4(sportCarabinerMatrix(spec));
+      return merged;
+    },
+  );
+}
+
 export interface ThermoHandleMount {
   yMm: number;
   zMm: number;
@@ -456,11 +723,33 @@ export function buildThermoSeamGeometry(spec: ThermoSpec): THREE.BufferGeometry 
 }
 
 /**
- * Cilindro del grabado: costura en el DORSO y u=0.5 en el frente (+Z), para
+ * Superficie del grabado: costura en el DORSO y u=0.5 en el frente (+Z), para
  * que la composición `x = ancho·(0.5 + ángulo/360)` no corte el diseño.
+ * La botella deportiva tiene cintura cóncava: la malla sigue el perfil real
+ * (levantada 0.12 mm) en vez de flotar sobre un cilindro recto.
  */
 export function buildThermoEngravingGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const surface = thermoSurface(spec);
+  if (spec.geometry === 'sport') {
+    return cached(
+      `thermo-engrave:sport:${spec.radiusMm}:${spec.bodyTopMm}:${surface.heightMm}`,
+      () => {
+        const segments = 96;
+        const half = surface.heightMm / 2;
+        const pts: Array<[number, number]> = [];
+        for (let i = 0; i <= segments; i++) {
+          const localY = -half + (surface.heightMm * i) / segments;
+          const r = sportBodyRadiusMm(spec, surface.centerYMm + localY) + 0.12;
+          pts.push([r, localY]);
+        }
+        const geo = lathe(pts, 128);
+        // LatheGeometry arranca u=0 en +Z; girado π deja u=0.5 en +Z y la
+        // costura en el dorso, igual que el cilindro de los termos.
+        geo.rotateY(Math.PI);
+        return geo;
+      },
+    );
+  }
   return cached(
     `thermo-engrave:${spec.geometry}:${spec.engraveRadiusMm}:${surface.heightMm}`,
     () =>

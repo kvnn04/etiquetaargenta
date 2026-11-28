@@ -73,6 +73,11 @@ import {
   buildThermoHandleGeometry,
   buildThermoLidGeometry,
   buildThermoSeamGeometry,
+  buildThermoSportCapDetailsGeometry,
+  buildThermoSportCarabinerGeometry,
+  buildThermoSportHandleGeometry,
+  buildThermoSportRingGeometry,
+  buildThermoSportSpoutGeometry,
   thermoHandleLinks,
   thermoHandleMounts,
 } from '@/three/thermo-builder';
@@ -416,7 +421,8 @@ function renderThermoView(
   const disposables: Array<{ dispose(): void }> = [];
 
   const isSystem = spec.geometry === 'system';
-  const isBottle = spec.geometry === 'bowling';
+  const isSport = spec.geometry === 'sport';
+  const isBottle = spec.geometry === 'bowling' || isSport;
   const pbr = thermoBodyPbr(config.finish, input.bodyColor);
   const bodyMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(pbr.color),
@@ -442,13 +448,51 @@ function renderThermoView(
     metalness: 0.05,
     roughness: 0.85,
   });
+  const sportPlasticMat = new THREE.MeshStandardMaterial({
+    color: '#151619',
+    metalness: 0.08,
+    roughness: 0.3,
+    envMapIntensity: 0.95,
+  });
+  const spoutMat = new THREE.MeshStandardMaterial({
+    color: '#E4E9EF',
+    metalness: 0,
+    roughness: 0.14,
+    envMapIntensity: 1.3,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+  });
+  const carabinerMat = new THREE.MeshStandardMaterial({
+    color: '#18181B',
+    metalness: 0.65,
+    roughness: 0.3,
+    envMapIntensity: 1.1,
+  });
   if (!isBottle) group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
-  group.add(new THREE.Mesh(buildThermoLidGeometry(spec), steelMat));
-  disposables.push(steelMat, collarMat, siliconeMat);
+  group.add(new THREE.Mesh(buildThermoLidGeometry(spec), isSport ? sportPlasticMat : steelMat));
+  disposables.push(
+    steelMat,
+    collarMat,
+    siliconeMat,
+    sportPlasticMat,
+    spoutMat,
+    carabinerMat,
+  );
+
+  if (isSport) {
+    group.add(new THREE.Mesh(buildThermoSportCapDetailsGeometry(spec), sportPlasticMat));
+    group.add(new THREE.Mesh(buildThermoSportHandleGeometry(spec), sportPlasticMat));
+    group.add(new THREE.Mesh(buildThermoSportSpoutGeometry(spec), spoutMat));
+    group.add(new THREE.Mesh(buildThermoSportCarabinerGeometry(spec), carabinerMat));
+    group.add(new THREE.Mesh(buildThermoSportRingGeometry(spec), steelMat));
+  }
 
   if (isBottle) {
-    // Aro de silicona entre el cuello y la tapa de acero.
-    group.add(new THREE.Mesh(buildThermoCollarGeometry(spec), siliconeMat));
+    // Aro de silicona (Bowling) o cuello de acero (Deportiva) bajo la tapa.
+    group.add(
+      new THREE.Mesh(buildThermoCollarGeometry(spec), isSport ? steelMat : siliconeMat),
+    );
   } else if (!isSystem) {
     group.add(new THREE.Mesh(buildThermoCollarGeometry(spec), collarMat));
     const grooveGeo = buildThermoGrooveGeometry(spec);

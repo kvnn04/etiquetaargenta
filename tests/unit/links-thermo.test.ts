@@ -17,7 +17,11 @@ import {
   type LinkMateConfigBlock,
 } from '@/lib/links/payload';
 import { buildPublicView } from '@/lib/links/view-shape';
-import { BOTTLE_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
+import {
+  BOTTLE_MODEL_ID,
+  SPORT_BOTTLE_MODEL_ID,
+  resolveThermoProduct,
+} from '@/lib/catalog';
 
 const WORKSHOP = {
   name: 'Taller Karina',
@@ -234,6 +238,58 @@ describe('payload de la botella — escala 15–100 / default 72', () => {
       ],
       'thermo',
       bottleSpec,
+    );
+    expect(rows.map((r) => r.scalePct)).toEqual([15, 72, 100]);
+  });
+});
+
+/* ============================================================================
+ * BOTELLA DEPORTIVA — el link congela el modelo y el visor resuelve su spec
+ * ============================================================================ */
+
+const sportSpec = resolveThermoProduct(SPORT_BOTTLE_MODEL_ID).thermo;
+
+describe('payload de la botella Deportiva — misma escala, modelo propio', () => {
+  it('congela 0.72 y el visor resuelve la Deportiva con sus medidas', () => {
+    const payload = buildLinkPayload({
+      linkId: 'sport1',
+      nowMs: Date.UTC(2026, 0, 1),
+      expiresMs: Date.UTC(2026, 0, 31),
+      workshop: WORKSHOP,
+      mateConfig: {
+        ...THERMO_MATE,
+        model: SPORT_BOTTLE_MODEL_ID,
+        extDiameter: Number((sportSpec.radiusMm * 2).toFixed(2)),
+        intDiameter: Number((sportSpec.radiusMm * 2).toFixed(2)),
+      },
+      variants: [
+        {
+          id: 'A',
+          label: 'Diseño actual',
+          scalePct: 72,
+          rotationDeg: 0,
+          mirror: false,
+        },
+      ],
+      assetUrl: 'https://cdn.example.com/link-assets/sport1/design.png',
+    });
+    expect(payload.variants[0]!.scale).toBe(0.72);
+    const view = buildPublicView(payload);
+    expect(view.mate.modelId).toBe(SPORT_BOTTLE_MODEL_ID);
+    expect(view.mate.family).toBe('thermo');
+    expect(view.mate.extDiameter).toBeCloseTo(sportSpec.radiusMm * 2, 2);
+    expect(view.variants[0]!.scalePct).toBe(72);
+  });
+
+  it('el borrador de variantes usa el rango 15–100 de la botella', () => {
+    const rows = normalizeVariantRows(
+      [
+        { id: 'A', label: 'A', scalePct: 5, rotationDeg: 0, mirror: false },
+        { id: 'B', label: 'B', scalePct: 72, rotationDeg: 0, mirror: false },
+        { id: 'C', label: 'C', scalePct: 150, rotationDeg: 0, mirror: false },
+      ],
+      'thermo',
+      sportSpec,
     );
     expect(rows.map((r) => r.scalePct)).toEqual([15, 72, 100]);
   });

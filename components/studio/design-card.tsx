@@ -62,7 +62,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileImage, ImagePlus, Magnet, RotateCcw, X, FlipHorizontal2, MoveVertical } from 'lucide-react';
 import EngravingPreview from '@/components/studio/engraving-preview';
 import { useEditorStore } from '@/lib/store/editor';
-import { isThermoProduct, resolveProduct } from '@/lib/catalog';
+import { isBottleGeometry, isThermoProduct, resolveProduct } from '@/lib/catalog';
 import {
   clampThermoRotation,
   evaluateThermoOverflow,
@@ -138,7 +138,7 @@ export default function DesignCard() {
   const product = useMemo(() => resolveProduct(mateModel), [mateModel]);
   const thermoProduct = isThermoProduct(product) ? product : null;
   const thermoSpec = thermoProduct?.thermo ?? null;
-  const isBottle = thermoSpec?.geometry === 'bowling';
+  const isBottle = thermoSpec ? isBottleGeometry(thermoSpec.geometry) : false;
   const aspect = useMemo(() => thermoAssetAspect(designAsset?.canvas ?? null), [designAsset]);
   const angleBounds = useMemo(
     () => (thermoSpec ? thermoAngleBounds(thermoSpec, scale, aspect) : null),

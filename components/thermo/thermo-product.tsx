@@ -38,6 +38,11 @@ import {
   buildThermoHandleGeometry,
   buildThermoLidGeometry,
   buildThermoSeamGeometry,
+  buildThermoSportCapDetailsGeometry,
+  buildThermoSportCarabinerGeometry,
+  buildThermoSportHandleGeometry,
+  buildThermoSportRingGeometry,
+  buildThermoSportSpoutGeometry,
   thermoHandleLinks,
   thermoHandleMounts,
 } from '@/three/thermo-builder';
@@ -87,6 +92,45 @@ function SiliconeMaterial() {
   return <meshStandardMaterial color="#111317" metalness={0.05} roughness={0.85} />;
 }
 
+/** Plástico negro de la tapa deportiva (estriada, con bisagra y asa). */
+function SportPlasticMaterial() {
+  return (
+    <meshStandardMaterial
+      color="#151619"
+      metalness={0.08}
+      roughness={0.3}
+      envMapIntensity={0.95}
+    />
+  );
+}
+
+/** Pico rebatible translúcido: plástico claro, sin metal, con brillo suave. */
+function SportSpoutMaterial() {
+  return (
+    <meshStandardMaterial
+      color="#E4E9EF"
+      metalness={0}
+      roughness={0.14}
+      envMapIntensity={1.3}
+      transparent
+      opacity={0.5}
+      depthWrite={false}
+    />
+  );
+}
+
+/** Mosquetón: aluminio negro anodizado. */
+function SportCarabinerMaterial() {
+  return (
+    <meshStandardMaterial
+      color="#18181B"
+      metalness={0.65}
+      roughness={0.3}
+      envMapIntensity={1.1}
+    />
+  );
+}
+
 /**
  * R3F agrega `setPointerCapture`/`releasePointerCapture` al `target` del evento
  * en runtime, pero su tipo público lo declara como `EventTarget` pelado. Se
@@ -124,7 +168,10 @@ export default function ThermoProduct({
 }: ThermoProductProps) {
   const spec = product.thermo;
   const isSystem = spec.geometry === 'system';
-  const isBottle = spec.geometry === 'bowling';
+  const isSport = spec.geometry === 'sport';
+  /* Bowling y Deportiva comparten el contrato de botella: sin manija lateral,
+   * sin zócalo de acero y con el diseño en el frente fijo. */
+  const isBottle = spec.geometry === 'bowling' || isSport;
   const surface = useMemo(() => thermoSurface(spec), [spec]);
   const bodyGeo = useMemo(() => buildThermoBodyGeometry(spec), [spec]);
   const baseGeo = useMemo(
@@ -139,6 +186,26 @@ export default function ThermoProduct({
   const handleGeo = useMemo(
     () => (isBottle ? null : buildThermoHandleGeometry(spec)),
     [isBottle, spec],
+  );
+  const sportCapGeo = useMemo(
+    () => (isSport ? buildThermoSportCapDetailsGeometry(spec) : null),
+    [isSport, spec],
+  );
+  const sportHandleGeo = useMemo(
+    () => (isSport ? buildThermoSportHandleGeometry(spec) : null),
+    [isSport, spec],
+  );
+  const sportSpoutGeo = useMemo(
+    () => (isSport ? buildThermoSportSpoutGeometry(spec) : null),
+    [isSport, spec],
+  );
+  const sportCarabinerGeo = useMemo(
+    () => (isSport ? buildThermoSportCarabinerGeometry(spec) : null),
+    [isSport, spec],
+  );
+  const sportRingGeo = useMemo(
+    () => (isSport ? buildThermoSportRingGeometry(spec) : null),
+    [isSport, spec],
   );
   const grooveGeo = useMemo(
     () => (spec.geometry === 'media-manija' ? buildThermoGrooveGeometry(spec) : null),
@@ -393,10 +460,11 @@ export default function ThermoProduct({
         </mesh>
       )}
 
-      {/* Collarín negro (Media Manija) o aro de silicona (Botella) */}
+      {/* Collarín negro (Media Manija), aro de silicona (Bowling) o cuello de
+       * acero (Deportiva). */}
       {!isSystem && collarGeo && (
         <mesh geometry={collarGeo} castShadow receiveShadow>
-          {isBottle ? <SiliconeMaterial /> : <CollarMaterial />}
+          {isSport ? <SteelMaterial /> : isBottle ? <SiliconeMaterial /> : <CollarMaterial />}
         </mesh>
       )}
       {!isSystem &&
@@ -412,10 +480,37 @@ export default function ThermoProduct({
           </mesh>
         ))}
 
-      {/* Tapa-vaso de acero */}
+      {/* Tapa-vaso de acero (termos y Bowling) o tapa negra (Deportiva) */}
       <mesh geometry={lidGeo} castShadow receiveShadow>
-        <SteelMaterial />
+        {isSport ? <SportPlasticMaterial /> : <SteelMaterial />}
       </mesh>
+
+      {/* Deportiva: estrías + bisagra, asa superior, pico y mosquetón */}
+      {isSport && sportCapGeo && (
+        <mesh geometry={sportCapGeo} castShadow receiveShadow>
+          <SportPlasticMaterial />
+        </mesh>
+      )}
+      {isSport && sportHandleGeo && (
+        <mesh geometry={sportHandleGeo} castShadow receiveShadow>
+          <SportPlasticMaterial />
+        </mesh>
+      )}
+      {isSport && sportSpoutGeo && (
+        <mesh geometry={sportSpoutGeo} castShadow>
+          <SportSpoutMaterial />
+        </mesh>
+      )}
+      {isSport && sportCarabinerGeo && (
+        <mesh geometry={sportCarabinerGeo} castShadow>
+          <SportCarabinerMaterial />
+        </mesh>
+      )}
+      {isSport && sportRingGeo && (
+        <mesh geometry={sportRingGeo} castShadow>
+          <SteelMaterial />
+        </mesh>
+      )}
 
       {/* Junta tapa-vaso/cuerpo (System: sin collarín) */}
       {isSystem && seamGeo && (
