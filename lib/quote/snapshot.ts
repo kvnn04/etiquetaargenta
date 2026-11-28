@@ -39,7 +39,7 @@ import {
   evaluateThermoOverflow,
   formatThermoScaleLabel,
   normalizeThermoConfig,
-  normalizeThermoScale,
+  normalizeThermoScaleFor,
   thermoColorName,
   thermoFinishLabel,
 } from '@/lib/thermo';
@@ -269,7 +269,7 @@ export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
    * lo que realmente se ve, no el valor viejo que quedó fuera de rango al
    * cambiar escala/posición. */
   const scalePct = isThermo
-    ? normalizeThermoScale(rawScale)
+    ? normalizeThermoScaleFor(product.thermo, rawScale)
     : (rawScale ?? normalizeScale(undefined as unknown as number));
   const rotationDeg = isThermo
     ? clampThermoRotation(product.thermo, rawRotation ?? 0, scalePct, input.designAspect ?? 1)
@@ -314,7 +314,7 @@ export function captureFichaSnapshot(input: CaptureFichaInput): FichaSnapshot {
       ? {
           acabadoEtiqueta: thermoFinishLabel(thermoConfig.finish),
           posicionEtiqueta,
-          capacidadEtiqueta: '1.0 L',
+          capacidadEtiqueta: product.thermo.capacityLabel,
           altoEtiqueta: formatMmCard(product.thermo.totalHeightMm) ?? '—',
           diametroEtiqueta: formatMmCard(product.thermo.radiusMm * 2) ?? '—',
         }

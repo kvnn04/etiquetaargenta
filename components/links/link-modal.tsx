@@ -33,7 +33,7 @@ import {
   type LinkDecision,
 } from '@/lib/links/responses';
 import { useEditorStore } from '@/lib/store/editor';
-import { resolveProduct } from '@/lib/catalog';
+import { isThermoProduct, resolveProduct } from '@/lib/catalog';
 import { thermoAssetAspect } from '@/lib/compose-thermo-engraving';
 import { currentOverflowCheck } from '@/lib/quote/snapshot';
 import type { OverflowCheck } from '@/lib/overflow';
@@ -147,11 +147,13 @@ export default function LinkModal({
     }
 
     /* Variantes desactivadas: se publica el diseño VIGENTE como única opción. */
+    const activeProduct = resolveProduct(s.mateModel);
     const variant = buildPublishVariant({
       scale: s.design.scale,
       rotation: s.design.rotation,
       mirror: s.design.mirror,
-      family: resolveProduct(s.mateModel).family,
+      family: activeProduct.family,
+      spec: isThermoProduct(activeProduct) ? activeProduct.thermo : null,
     });
 
     setBusy(true);

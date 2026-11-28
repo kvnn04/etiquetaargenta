@@ -82,6 +82,11 @@ function CollarMaterial() {
   return <meshStandardMaterial color="#16181D" metalness={0.15} roughness={0.48} />;
 }
 
+/** Silicona del aro de la botella: oscura, mate y sin brillo metálico. */
+function SiliconeMaterial() {
+  return <meshStandardMaterial color="#111317" metalness={0.05} roughness={0.85} />;
+}
+
 /**
  * R3F agrega `setPointerCapture`/`releasePointerCapture` al `target` del evento
  * en runtime, pero su tipo público lo declara como `EventTarget` pelado. Se
@@ -119,18 +124,25 @@ export default function ThermoProduct({
 }: ThermoProductProps) {
   const spec = product.thermo;
   const isSystem = spec.geometry === 'system';
+  const isBottle = spec.geometry === 'bowling';
   const surface = useMemo(() => thermoSurface(spec), [spec]);
   const bodyGeo = useMemo(() => buildThermoBodyGeometry(spec), [spec]);
-  const baseGeo = useMemo(() => buildThermoBaseGeometry(spec), [spec]);
+  const baseGeo = useMemo(
+    () => (isBottle ? null : buildThermoBaseGeometry(spec)),
+    [isBottle, spec],
+  );
   const collarGeo = useMemo(
     () => (isSystem ? null : buildThermoCollarGeometry(spec)),
     [isSystem, spec],
   );
   const lidGeo = useMemo(() => buildThermoLidGeometry(spec), [spec]);
-  const handleGeo = useMemo(() => buildThermoHandleGeometry(spec), [spec]);
+  const handleGeo = useMemo(
+    () => (isBottle ? null : buildThermoHandleGeometry(spec)),
+    [isBottle, spec],
+  );
   const grooveGeo = useMemo(
-    () => (isSystem ? null : buildThermoGrooveGeometry(spec)),
-    [isSystem, spec],
+    () => (spec.geometry === 'media-manija' ? buildThermoGrooveGeometry(spec) : null),
+    [spec],
   );
   const seamGeo = useMemo(
     () => (isSystem ? buildThermoSeamGeometry(spec) : null),
@@ -374,15 +386,17 @@ export default function ThermoProduct({
         />
       </mesh>
 
-      {/* Zócalo de acero */}
-      <mesh geometry={baseGeo} castShadow receiveShadow>
-        <SteelMaterial />
-      </mesh>
+      {/* Zócalo de acero (los termos; la botella lo integra al cuerpo) */}
+      {!isBottle && baseGeo && (
+        <mesh geometry={baseGeo} castShadow receiveShadow>
+          <SteelMaterial />
+        </mesh>
+      )}
 
-      {/* Collarín negro + ranuras (Media Manija) */}
+      {/* Collarín negro (Media Manija) o aro de silicona (Botella) */}
       {!isSystem && collarGeo && (
         <mesh geometry={collarGeo} castShadow receiveShadow>
-          <CollarMaterial />
+          {isBottle ? <SiliconeMaterial /> : <CollarMaterial />}
         </mesh>
       )}
       {!isSystem &&
@@ -410,11 +424,12 @@ export default function ThermoProduct({
         </mesh>
       )}
 
-      {/* Manija lateral */}
-      <group rotation={[0, spec.handleAngleRad, 0]}>
-        <mesh geometry={handleGeo} castShadow receiveShadow>
-          <CollarMaterial />
-        </mesh>
+      {/* Manija lateral (los termos; la botella no tiene) */}
+      {!isBottle && handleGeo && (
+        <group rotation={[0, spec.handleAngleRad, 0]}>
+          <mesh geometry={handleGeo} castShadow receiveShadow>
+            <CollarMaterial />
+          </mesh>
 
         {/* Media Manija: perilla frontal */}
         {!isSystem && (
@@ -435,14 +450,15 @@ export default function ThermoProduct({
               <CollarMaterial />
             </mesh>
           ))}
-        {systemHandle &&
-          systemHandle.links.map((l, i) => (
-            <mesh key={`link-${i}`} position={l.mid} quaternion={l.quaternion} castShadow>
-              <cylinderGeometry args={[l.radiusMm, l.radiusMm, l.lengthMm, 16]} />
-              <SteelMaterial />
-            </mesh>
-          ))}
-      </group>
+          {systemHandle &&
+            systemHandle.links.map((l, i) => (
+              <mesh key={`link-${i}`} position={l.mid} quaternion={l.quaternion} castShadow>
+                <cylinderGeometry args={[l.radiusMm, l.radiusMm, l.lengthMm, 16]} />
+                <SteelMaterial />
+              </mesh>
+            ))}
+        </group>
+      )}
 
       {/* Grabado lateral (cilindro transparente) */}
       {asset && (

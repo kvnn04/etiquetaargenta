@@ -26,8 +26,8 @@ import {
 } from '@/lib/links/payload';
 import { normalizeScale } from '@/lib/overflow';
 import { normalizeRotation } from '@/lib/design';
-import { isThermoProduct, resolveProduct, resolveMateModel } from '@/lib/catalog';
-import { normalizeThermoConfig, normalizeThermoScale } from '@/lib/thermo';
+import { isThermoProduct, resolveProduct, resolveMateModel, type ThermoSpec } from '@/lib/catalog';
+import { normalizeThermoConfig, normalizeThermoScale, normalizeThermoScaleFor } from '@/lib/thermo';
 import type { BodyPresetId, MetalPresetId } from '@/lib/color';
 
 /* Diámetros de la spec geométrica (defaults si el jsonb trae basura). */
@@ -100,12 +100,18 @@ function bodyPresetOf(v: unknown): BodyPresetId {
     : 'algarrobo';
 }
 
-/** Fracción 0–1.10 del payload ⇒ % canónico de la FAMILIA. Basura ⇒ default. */
-function scalePctFromFraction(v: unknown, family: LinkProductFamily = 'mate'): number {
+/** Fracción 0–1.10 del payload ⇒ % canónico del producto. Basura ⇒ default. */
+function scalePctFromFraction(
+  v: unknown,
+  family: LinkProductFamily = 'mate',
+  spec?: ThermoSpec | null,
+): number {
   const valid = typeof v === 'number' && Number.isFinite(v);
   if (family === 'thermo') {
-    // Sin escala en el payload ⇒ default del termo (45 %), no el 100 % mate.
-    return normalizeThermoScale(valid ? (v as number) * 100 : undefined);
+    // Sin escala en el payload ⇒ default del producto (termo 45 % · botella 72 %).
+    return spec
+      ? normalizeThermoScaleFor(spec, valid ? (v as number) * 100 : undefined)
+      : normalizeThermoScale(valid ? (v as number) * 100 : undefined);
   }
   return normalizeScale(valid ? (v as number) * 100 : 100);
 }
@@ -129,6 +135,7 @@ function buildVariant(
   id: LinkVariantId,
   candidate: { label?: unknown; assetUrl?: unknown; scale?: unknown; rotation?: unknown; mirror?: unknown },
   family: LinkProductFamily = 'mate',
+  spec?: ThermoSpec | null,
 ): PublicVariantView {
   const assetUrl = typeof candidate.assetUrl === 'string' && /^https?:\/\//.test(candidate.assetUrl)
     ? candidate.assetUrl
@@ -138,7 +145,7 @@ function buildVariant(
     label: normalizeVariantLabel(candidate.label) || `Opción ${id}`,
     assetUrl,
     healthy: assetUrl.length > 0,
-    scalePct: scalePctFromFraction(candidate.scale, family),
+    scalePct: scalePctFromFraction(candidate.scale, family, spec),
     rotationDeg: normalizeRotation(candidate.rotation),
     mirror: Boolean(candidate.mirror),
   };
@@ -175,7 +182,7 @@ function fromModernPayload(payload: LinkPayload): PublicLinkView {
     };
     if (!isLinkVariantId(candidate.id) || seen.has(candidate.id)) continue;
     seen.add(candidate.id);
-    variants.push(buildVariant(candidate.id, candidate, family));
+    variants.push(buildVariant(candidate.id, candidate, family, thermo ? product.thermo : null));
   }
 
   const thermoConfig = normalizeThermoConfig(mc.thermo);

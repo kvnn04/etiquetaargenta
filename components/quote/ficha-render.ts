@@ -416,6 +416,7 @@ function renderThermoView(
   const disposables: Array<{ dispose(): void }> = [];
 
   const isSystem = spec.geometry === 'system';
+  const isBottle = spec.geometry === 'bowling';
   const pbr = thermoBodyPbr(config.finish, input.bodyColor);
   const bodyMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(pbr.color),
@@ -436,11 +437,19 @@ function renderThermoView(
     metalness: 0.15,
     roughness: 0.48,
   });
-  group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
+  const siliconeMat = new THREE.MeshStandardMaterial({
+    color: '#111317',
+    metalness: 0.05,
+    roughness: 0.85,
+  });
+  if (!isBottle) group.add(new THREE.Mesh(buildThermoBaseGeometry(spec), steelMat));
   group.add(new THREE.Mesh(buildThermoLidGeometry(spec), steelMat));
-  disposables.push(steelMat, collarMat);
+  disposables.push(steelMat, collarMat, siliconeMat);
 
-  if (!isSystem) {
+  if (isBottle) {
+    // Aro de silicona entre el cuello y la tapa de acero.
+    group.add(new THREE.Mesh(buildThermoCollarGeometry(spec), siliconeMat));
+  } else if (!isSystem) {
     group.add(new THREE.Mesh(buildThermoCollarGeometry(spec), collarMat));
     const grooveGeo = buildThermoGrooveGeometry(spec);
     const grooveMat = new THREE.MeshStandardMaterial({ color: '#0B0C0E', roughness: 0.7 });
@@ -458,42 +467,44 @@ function renderThermoView(
     group.add(seam);
   }
 
-  const handleGroup = new THREE.Group();
-  handleGroup.rotation.y = spec.handleAngleRad;
-  handleGroup.add(new THREE.Mesh(buildThermoHandleGeometry(spec), collarMat));
+  if (!isBottle) {
+    const handleGroup = new THREE.Group();
+    handleGroup.rotation.y = spec.handleAngleRad;
+    handleGroup.add(new THREE.Mesh(buildThermoHandleGeometry(spec), collarMat));
 
-  if (!isSystem) {
-    const knobGeo = new THREE.CylinderGeometry(0.11 * 36, 0.11 * 36, 0.24 * 36, 24);
-    const knob = new THREE.Mesh(knobGeo, collarMat);
-    knob.position.set(0, spec.collarBottomMm + 7.2, spec.radiusMm - 0.015 * 36);
-    knob.rotation.x = Math.PI / 2;
-    handleGroup.add(knob);
-    disposables.push(knobGeo);
-  } else {
-    const mounts = thermoHandleMounts(spec);
-    if (mounts.length > 0) {
-      const mountGeo = new THREE.BoxGeometry(...mounts[0]!.sizeMm);
-      disposables.push(mountGeo);
-      for (const m of mounts) {
-        const mount = new THREE.Mesh(mountGeo, collarMat);
-        mount.position.set(0, m.yMm, m.zMm);
-        handleGroup.add(mount);
+    if (!isSystem) {
+      const knobGeo = new THREE.CylinderGeometry(0.11 * 36, 0.11 * 36, 0.24 * 36, 24);
+      const knob = new THREE.Mesh(knobGeo, collarMat);
+      knob.position.set(0, spec.collarBottomMm + 7.2, spec.radiusMm - 0.015 * 36);
+      knob.rotation.x = Math.PI / 2;
+      handleGroup.add(knob);
+      disposables.push(knobGeo);
+    } else {
+      const mounts = thermoHandleMounts(spec);
+      if (mounts.length > 0) {
+        const mountGeo = new THREE.BoxGeometry(...mounts[0]!.sizeMm);
+        disposables.push(mountGeo);
+        for (const m of mounts) {
+          const mount = new THREE.Mesh(mountGeo, collarMat);
+          mount.position.set(0, m.yMm, m.zMm);
+          handleGroup.add(mount);
+        }
+      }
+      const up = new THREE.Vector3(0, 1, 0);
+      for (const l of thermoHandleLinks(spec)) {
+        const start = new THREE.Vector3(l.xMm, l.y1Mm, l.z1Mm);
+        const end = new THREE.Vector3(l.xMm, l.y2Mm, l.z2Mm);
+        const dir = end.clone().sub(start);
+        const rodGeo = new THREE.CylinderGeometry(l.radiusMm, l.radiusMm, dir.length(), 16);
+        const rod = new THREE.Mesh(rodGeo, steelMat);
+        rod.position.copy(start).addScaledVector(dir, 0.5);
+        rod.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+        handleGroup.add(rod);
+        disposables.push(rodGeo);
       }
     }
-    const up = new THREE.Vector3(0, 1, 0);
-    for (const l of thermoHandleLinks(spec)) {
-      const start = new THREE.Vector3(l.xMm, l.y1Mm, l.z1Mm);
-      const end = new THREE.Vector3(l.xMm, l.y2Mm, l.z2Mm);
-      const dir = end.clone().sub(start);
-      const rodGeo = new THREE.CylinderGeometry(l.radiusMm, l.radiusMm, dir.length(), 16);
-      const rod = new THREE.Mesh(rodGeo, steelMat);
-      rod.position.copy(start).addScaledVector(dir, 0.5);
-      rod.quaternion.setFromUnitVectors(up, dir.clone().normalize());
-      handleGroup.add(rod);
-      disposables.push(rodGeo);
-    }
+    group.add(handleGroup);
   }
-  group.add(handleGroup);
 
   if (input.designAsset) {
     const burn = thermoLaserBurn(input.bodyColor);

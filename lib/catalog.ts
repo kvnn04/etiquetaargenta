@@ -10,12 +10,12 @@
  *   x = radio relativo a la boca (x=1.00 ⇒ R_boca = D_int/2)
  *   y = altura absoluta en mm desde la costura de la boca (0) a la base.
  *
- * Coordenadas del termo: mm absolutos desde la base apoyada en Y=0. Los perfiles
- * se derivan de `3d_termo_matero_media_manija.html` y `termo_system_1L_3d.html`
- * con escala 36 mm/unidad.
+ * Coordenadas del termo/botella: mm absolutos desde la base apoyada en Y=0. Los
+ * perfiles se derivan de `3d_termo_matero_media_manija.html`,
+ * `termo_system_1L_3d.html` y `3d_botella_bowling.html` con escala 36 mm/unidad.
  * ============================================================================ */
 
-export const CATALOG_VERSION = 3;
+export const CATALOG_VERSION = 4;
 
 export type ProductFamily = 'mate' | 'thermo';
 
@@ -38,7 +38,7 @@ export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   { id: 'mates', label: 'Mates', description: 'Camionero e Imperial' },
   { id: 'termos', label: 'Termos', description: 'Acero, manija lateral y grabado' },
   { id: 'vasos', label: 'Vasos térmicos', description: 'Próximamente' },
-  { id: 'botellas', label: 'Botellas', description: 'Próximamente' },
+  { id: 'botellas', label: 'Botellas', description: 'Bowling 500 ml' },
   { id: 'tablas', label: 'Tablas de asado', description: 'Próximamente' },
   { id: 'cajas', label: 'Cajas de presentación', description: 'Próximamente' },
 ];
@@ -62,15 +62,17 @@ export interface MateShape {
   points: MateShapePoint[];
 }
 
-/** Variante de geometría procedural del termo. */
-export type ThermoGeometry = 'media-manija' | 'system';
+/** Variante de geometría procedural del termo/botella. */
+export type ThermoGeometry = 'media-manija' | 'system' | 'bowling';
 
-/** Contrato geométrico del termo, en mm desde la base apoyada en Y=0. */
+/** Contrato geométrico del termo/botella, en mm desde la base apoyada en Y=0. */
 export interface ThermoSpec {
   /** Variante de perfil/manija que construye `three/thermo-builder`. */
   geometry: ThermoGeometry;
   /** Radio del cuerpo pintado. */
   radiusMm: number;
+  /** Radio del cuello (solo bowling: alimenta hombro, aro y tapa). */
+  neckRadiusMm: number;
   /** Altura total (base inferior → centro del domo de la tapa). */
   totalHeightMm: number;
   /** Zócalo de acero: base apoyada y unión con el cuerpo. */
@@ -80,7 +82,7 @@ export interface ThermoSpec {
   bodyBottomMm: number;
   bodyTopMm: number;
   shoulderTopMm: number;
-  /** Collarín negro. */
+  /** Collarín negro (termos) o banda de silicona (botella). */
   collarBottomMm: number;
   collarTopMm: number;
   /** Tapa-vaso de acero. */
@@ -91,7 +93,7 @@ export interface ThermoSpec {
   engraveMaxYMm: number;
   /** Ángulo del centro de la media manija (-π/2 = -X). */
   handleAngleRad: number;
-  /** Arco bloqueado por la manija (~37°). */
+  /** Arco bloqueado por la manija (~37°). En la botella: el dorso (246°). */
   handleBlockedArcRad: number;
   /** Radio de la malla de grabado (cuerpo + ε). */
   engraveRadiusMm: number;
@@ -99,6 +101,8 @@ export interface ThermoSpec {
   defaultScalePct: number;
   minScalePct: number;
   maxScalePct: number;
+  /** Capacidad comercial impresa en la ficha y el visor. */
+  capacityLabel: string;
 }
 
 export interface CatalogProductBase {
@@ -119,7 +123,7 @@ export interface MateProduct extends CatalogProductBase {
 
 export interface ThermoProduct extends CatalogProductBase {
   family: 'thermo';
-  category: 'termos';
+  category: 'termos' | 'botellas';
   thermo: ThermoSpec;
 }
 
@@ -234,6 +238,7 @@ const THERMO_ENGRAVE_MAX_U = THERMO_UNIT.bodyTop - THERMO_UNIT.marginY;
 const THERMO_SPEC: ThermoSpec = {
   geometry: 'media-manija',
   radiusMm: THERMO_UNIT.radius * THERMO_MM_PER_UNIT,
+  neckRadiusMm: (THERMO_UNIT.radius - 0.035) * THERMO_MM_PER_UNIT,
   totalHeightMm: (THERMO_UNIT.lidTop - THERMO_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
   baseBottomMm: 0,
   baseTopMm: (THERMO_UNIT.baseTop - THERMO_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
@@ -252,6 +257,7 @@ const THERMO_SPEC: ThermoSpec = {
   defaultScalePct: 45,
   minScalePct: 10,
   maxScalePct: 100,
+  capacityLabel: '1.0 L',
 };
 
 /* -------------------------------------------------------------------------- */
@@ -280,6 +286,7 @@ const THERMO_SYSTEM_ENGRAVE_MAX_U = THERMO_SYSTEM_UNIT.bodyTop - THERMO_SYSTEM_U
 const THERMO_SYSTEM_SPEC: ThermoSpec = {
   geometry: 'system',
   radiusMm: THERMO_SYSTEM_UNIT.radius * THERMO_MM_PER_UNIT,
+  neckRadiusMm: (THERMO_SYSTEM_UNIT.radius - 0.19) * THERMO_MM_PER_UNIT,
   totalHeightMm: (THERMO_SYSTEM_UNIT.lidTop - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
   baseBottomMm: 0,
   baseTopMm: (THERMO_SYSTEM_UNIT.baseTop - THERMO_SYSTEM_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
@@ -306,6 +313,59 @@ const THERMO_SYSTEM_SPEC: ThermoSpec = {
   defaultScalePct: 45,
   minScalePct: 10,
   maxScalePct: 100,
+  capacityLabel: '1.0 L',
+};
+
+/* -------------------------------------------------------------------------- */
+/* Botella Térmica Bowling 500 ml                                             */
+/* -------------------------------------------------------------------------- */
+
+/** Misma escala del prototipo `3d_botella_bowling.html`: 1 unidad = 36 mm. */
+const BOTTLE_UNIT = {
+  radius: 1.08,
+  neckRadius: 0.56,
+  baseBottom: -3.95,
+  baseTop: -3.4,
+  bodyBottom: -3.32,
+  bodyTop: 0.82,
+  neckStart: 2.78,
+  neckEnd: 3.24,
+  capStart: 3.32,
+  capTop: 4.1,
+  marginY: 0.22,
+  engraveRadius: 1.0825,
+  /** Frente fijo del prototipo: 114°. */
+  frontArcDeg: 114,
+} as const;
+
+const BOTTLE_ENGRAVE_MIN_U = BOTTLE_UNIT.bodyBottom + BOTTLE_UNIT.marginY;
+const BOTTLE_ENGRAVE_MAX_U = BOTTLE_UNIT.bodyTop - BOTTLE_UNIT.marginY;
+
+const BOTTLE_SPEC: ThermoSpec = {
+  geometry: 'bowling',
+  radiusMm: BOTTLE_UNIT.radius * THERMO_MM_PER_UNIT,
+  neckRadiusMm: BOTTLE_UNIT.neckRadius * THERMO_MM_PER_UNIT,
+  totalHeightMm: (BOTTLE_UNIT.capTop - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  baseBottomMm: 0,
+  baseTopMm: (BOTTLE_UNIT.baseTop - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  bodyBottomMm: (BOTTLE_UNIT.bodyBottom - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  bodyTopMm: (BOTTLE_UNIT.bodyTop - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  shoulderTopMm: (BOTTLE_UNIT.neckStart - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  // La botella no tiene collarín: esta banda es el aro de silicona.
+  collarBottomMm: (BOTTLE_UNIT.neckEnd - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  collarTopMm: (BOTTLE_UNIT.capStart - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  lidBottomMm: (BOTTLE_UNIT.capStart - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  lidTopMm: (BOTTLE_UNIT.capTop - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  engraveMinYMm: (BOTTLE_ENGRAVE_MIN_U - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  engraveMaxYMm: (BOTTLE_ENGRAVE_MAX_U - BOTTLE_UNIT.baseBottom) * THERMO_MM_PER_UNIT,
+  // El "arco bloqueado" es todo el dorso: el diseño vive en el frente fijo.
+  handleAngleRad: Math.PI,
+  handleBlockedArcRad: ((360 - BOTTLE_UNIT.frontArcDeg) * Math.PI) / 180,
+  engraveRadiusMm: BOTTLE_UNIT.engraveRadius * THERMO_MM_PER_UNIT,
+  defaultScalePct: 72,
+  minScalePct: 15,
+  maxScalePct: 100,
+  capacityLabel: '500 ml',
 };
 
 const RAW_CATALOG: MateCatalog = {
@@ -347,6 +407,15 @@ const RAW_CATALOG: MateCatalog = {
       category: 'termos',
       thermo: THERMO_SYSTEM_SPEC,
     },
+    {
+      id: 'botella-bowling-500ml',
+      label: 'Botella Térmica Bowling 500 ml',
+      description: 'Hombro bowling, aro de silicona y tapa de acero',
+      pro: false,
+      family: 'thermo',
+      category: 'botellas',
+      thermo: BOTTLE_SPEC,
+    },
   ],
 };
 
@@ -379,11 +448,18 @@ function isValidThermoProduct(p: ThermoProduct): boolean {
   if (!t || typeof t !== 'object') return false;
   return (
     isPositiveNumber(t.radiusMm) &&
+    isPositiveNumber(t.neckRadiusMm) &&
+    t.neckRadiusMm < t.radiusMm &&
     isPositiveNumber(t.totalHeightMm) &&
     isPositiveNumber(t.engraveRadiusMm) &&
     isPositiveNumber(t.minScalePct) &&
     isPositiveNumber(t.maxScalePct) &&
     t.maxScalePct > t.minScalePct &&
+    isPositiveNumber(t.defaultScalePct) &&
+    t.defaultScalePct >= t.minScalePct &&
+    t.defaultScalePct <= t.maxScalePct &&
+    typeof t.capacityLabel === 'string' &&
+    t.capacityLabel.trim().length > 0 &&
     t.engraveMaxYMm > t.engraveMinYMm &&
     t.engraveMinYMm >= 0 &&
     t.engraveMaxYMm <= t.totalHeightMm
@@ -453,9 +529,10 @@ export function getProduct(id: MateModelId): MateProduct | null {
 /** Fallback del catálogo: producto por defecto de un proyecto nuevo. */
 export const DEFAULT_MATE_MODEL: MateModelId = 'camionero';
 
-/** Ids de los termos (atajo para el editor y la UI). */
+/** Ids de los termos/botella (atajo para el editor y la UI). */
 export const THERMO_MODEL_ID = 'termo-media-manija-1l';
 export const THERMO_SYSTEM_MODEL_ID = 'termo-system-1l';
+export const BOTTLE_MODEL_ID = 'botella-bowling-500ml';
 
 /**
  * Resuelve cualquier producto del catálogo. Un id de termo devuelve el termo;
@@ -530,11 +607,44 @@ function thermoSilhouette(product: ThermoProduct, width: number, height: number,
   const t = product.thermo;
   const usableW = width - pad * 2;
   const usableH = height - pad * 2;
-  const maxR = t.radiusMm * 1.32; // deja aire para la manija
+  const maxR =
+    t.geometry === 'bowling' ? t.radiusMm * 1.06 : t.radiusMm * 1.32; // aire para la manija
   const yPx = (y: number) => pad + (1 - y / t.totalHeightMm) * usableH;
   const xPx = (x: number) => width / 2 + (x / maxR) * (usableW / 2);
   const r = t.radiusMm;
   const shoulder = t.bodyTopMm;
+
+  if (t.geometry === 'bowling') {
+    const rn = t.neckRadiusMm;
+    const capR = rn + 1.008;
+    const right: Array<[number, number]> = [
+      [0, t.baseBottomMm],
+      [r * 0.78, t.baseBottomMm],
+      [r, t.baseTopMm],
+      [r, t.bodyTopMm],
+    ];
+    for (let i = 1; i <= 6; i++) {
+      const s = i / 6;
+      const ease = 0.5 - 0.5 * Math.cos(Math.PI * s);
+      right.push([
+        r - (r - rn) * Math.pow(ease, 0.92),
+        t.bodyTopMm + (t.shoulderTopMm - t.bodyTopMm) * s,
+      ]);
+    }
+    right.push(
+      [rn, t.shoulderTopMm + 5.4],
+      [rn + 0.54, t.shoulderTopMm + 10.8],
+      [rn + 0.54, t.collarBottomMm],
+      [capR, t.lidBottomMm],
+      [capR, t.lidTopMm - 6.48],
+      [capR * 0.7, t.lidTopMm],
+      [0, t.lidTopMm],
+    );
+    const pts = [...right, ...right.slice(1, -1).reverse().map(([x, y]) => [-x, y] as [number, number])];
+    const path = `M ${pts.map(([x, y]) => `${xPx(x).toFixed(2)},${yPx(y).toFixed(2)}`).join(' L ')} Z`;
+    return { path, viewBox: `0 0 ${width} ${height}`, usedWidthPx: usableW };
+  }
+
   const pts: Array<[number, number]> =
     t.geometry === 'system'
       ? [

@@ -90,10 +90,13 @@ export function thermoFramingMm(spec: ThermoSpec): {
   sphereRadiusMm: number;
 } {
   const centerYMm = spec.totalHeightMm / 2;
-  const maxRadiusMm = Math.max(
-    spec.radiusMm + 0.55 * THERMO_MM_PER_UNIT, // manija lateral (X)
-    spec.radiusMm,
-  );
+  const maxRadiusMm =
+    spec.geometry === 'bowling'
+      ? spec.radiusMm // sin manija: el cuerpo manda
+      : Math.max(
+          spec.radiusMm + 0.55 * THERMO_MM_PER_UNIT, // manija lateral (X)
+          spec.radiusMm,
+        );
   const halfSpanY = spec.totalHeightMm / 2;
   return {
     centerYMm,

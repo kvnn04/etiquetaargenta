@@ -22,7 +22,8 @@ export const LINK_VARIANTS_MAX = 3;
 
 import { normalizeRotation } from '@/lib/design';
 import { normalizeScale } from '@/lib/overflow';
-import { normalizeThermoScale, type ThermoFinish } from '@/lib/thermo';
+import { normalizeThermoScale, normalizeThermoScaleFor, type ThermoFinish } from '@/lib/thermo';
+import { isThermoProduct, resolveProduct, type ThermoSpec } from '@/lib/catalog';
 
 export type LinkProductFamily = 'mate' | 'thermo';
 
@@ -136,15 +137,27 @@ export function normalizeVariantLabel(raw: unknown): string {
   return (lastSpace > LINK_LABEL_MAX * 0.5 ? cut.slice(0, lastSpace) : cut).trim();
 }
 
-/** % del editor ⇒ FRACCIÓN 0–1.10 (R4) con 3 decimales (0.925 exacto). */
-export function scaleFractionFromPct(pct: unknown, family: LinkProductFamily = 'mate'): number {
+/**
+ * % del editor ⇒ FRACCIÓN 0–1.10 (R4) con 3 decimales (0.925 exacto).
+ * `spec` (opcional) manda el default/rango del producto thermo vigente; sin
+ * spec se conserva el contrato legacy del termo (45 %, [10,100]).
+ */
+export function scaleFractionFromPct(
+  pct: unknown,
+  family: LinkProductFamily = 'mate',
+  spec?: ThermoSpec | null,
+): number {
   const v =
     typeof pct === 'number' && Number.isFinite(pct)
       ? family === 'thermo'
-        ? normalizeThermoScale(pct)
+        ? spec
+          ? normalizeThermoScaleFor(spec, pct)
+          : normalizeThermoScale(pct)
         : normalizeScale(pct)
       : family === 'thermo'
-        ? 45
+        ? spec
+          ? spec.defaultScalePct
+          : 45
         : 100;
   return Math.round((v / 100) * 1000) / 1000;
 }
@@ -186,13 +199,17 @@ export function buildPublishVariant(design: {
   rotation: number;
   mirror: boolean;
   family?: LinkProductFamily;
+  /** Spec del producto thermo: default/rango propios (botella 72 %, [15,100]). */
+  spec?: ThermoSpec | null;
 }): LinkVariantDraft {
   return {
     id: 'A',
     label: SINGLE_PUBLISH_VARIANT_LABEL,
     scalePct:
       design.family === 'thermo'
-        ? normalizeThermoScale(design.scale)
+        ? design.spec
+          ? normalizeThermoScaleFor(design.spec, design.scale)
+          : normalizeThermoScale(design.scale)
         : normalizeScale(design.scale),
     rotationDeg: rotationDegPayload(design.rotation),
     mirror: Boolean(design.mirror),
@@ -211,6 +228,9 @@ export function buildLinkPayload(input: {
   /** R7 10A: margen congelado por variante (el editor lo calcula por escala). */
   riskByVariant?: Partial<Record<LinkVariantId, LinkVariantRisk>>;
 }): LinkPayload {
+  const family = input.mateConfig.family ?? 'mate';
+  const product = family === 'thermo' ? resolveProduct(input.mateConfig.model) : null;
+  const spec = product && isThermoProduct(product) ? product.thermo : null;
   return {
     schemaVersion: LINK_SCHEMA_VERSION,
     linkId: input.linkId,
@@ -222,7 +242,7 @@ export function buildLinkPayload(input: {
       id: v.id,
       label: normalizeVariantLabel(v.label),
       assetUrl: input.assetUrl,
-      scale: scaleFractionFromPct(v.scalePct, input.mateConfig.family ?? 'mate'),
+      scale: scaleFractionFromPct(v.scalePct, family, spec),
       rotation: rotationDegPayload(v.rotationDeg),
       mirror: v.mirror,
       risk: input.riskByVariant?.[v.id] ?? null,
@@ -253,6 +273,7 @@ export interface StoredVariantRow extends LinkVariantDraft {
 export function normalizeVariantRows(
   raw: unknown,
   family: LinkProductFamily = 'mate',
+  spec?: ThermoSpec | null,
 ): StoredVariantRow[] {
   if (!Array.isArray(raw)) return [];
   const rows: StoredVariantRow[] = [];
@@ -266,7 +287,9 @@ export function normalizeVariantRows(
       label: normalizeVariantLabel(candidate.label),
       scalePct:
         family === 'thermo'
-          ? normalizeThermoScale(candidate.scalePct)
+          ? spec
+            ? normalizeThermoScaleFor(spec, candidate.scalePct)
+            : normalizeThermoScale(candidate.scalePct)
           : normalizeScale(candidate.scalePct),
       rotationDeg: rotationDegPayload(candidate.rotationDeg),
       mirror: Boolean(candidate.mirror),

@@ -31,7 +31,7 @@ import type { DesignSourceRef } from '@/lib/design';
 import {
   DEFAULT_THERMO_CONFIG,
   normalizeThermoConfig,
-  normalizeThermoScale,
+  normalizeThermoScaleFor,
 } from '@/lib/thermo';
 import { normalizeVariantRows } from '@/lib/links/payload';
 
@@ -167,13 +167,13 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
   const design = normalizeDesignState(rawDesign);
   if (isThermoProduct(product)) {
     /* OJO: `normalizeDesignState` clampa al rango del MATE [70,110]; leer la
-     * escala CRUDA para no convertir el 45 % del termo en 70 % al recargar.
-     * Ausente/basura ⇒ default del termo (45 %), nunca el 100 % del mate. */
+     * escala CRUDA para no convertir el 45 % del termo (o el 72 % de la
+     * botella) al 70 % al recargar. Ausente/basura ⇒ default del producto. */
     const rawScale =
       rawDesign !== null && typeof rawDesign === 'object' && !Array.isArray(rawDesign)
         ? (rawDesign as { scale?: unknown }).scale
         : undefined;
-    design.scale = normalizeThermoScale(rawScale);
+    design.scale = normalizeThermoScaleFor(product.thermo, rawScale);
   }
 
   // Termo: posición vertical, invertido y acabado (los mates lo ignoran).
@@ -184,6 +184,7 @@ export function normalizeState(raw: unknown): EditorStateSnapshot {
   const linkDraft = normalizeVariantRows(
     (raw as Record<string, unknown>).linkDraft,
     isThermoProduct(product) ? 'thermo' : 'mate',
+    isThermoProduct(product) ? product.thermo : null,
   );
 
   return {

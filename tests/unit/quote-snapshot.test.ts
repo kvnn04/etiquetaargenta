@@ -23,7 +23,7 @@ import {
 import { evaluateOverflow } from '@/lib/overflow';
 import type { ResolvedBranding } from '@/lib/branding';
 import type { InkEnvelope } from '@/lib/overflow';
-import { THERMO_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
+import { BOTTLE_MODEL_ID, THERMO_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
 import { clampThermoRotation } from '@/lib/thermo';
 
 /* t0 fijo: 05-nov-2026 18:00 UTC — capturedAt determinista (el hash NO lo usa). */
@@ -333,5 +333,31 @@ describe('termo — la ficha etiqueta lo que realmente se dibuja', () => {
     expect(snap.family).toBe('thermo');
     expect(snap.thermo?.posicionEtiqueta).toBe(`${formatDegCard(dibujado)} · 0%`);
     expect(snap.escalaEtiqueta).toBe('100%');
+  });
+
+  it('la botella imprime su capacidad, medidas y escala default (72 %)', () => {
+    const bottle = resolveThermoProduct(BOTTLE_MODEL_ID).thermo;
+    const snap = captureFichaSnapshot(
+      baseInput({
+        state: {
+          mateModel: BOTTLE_MODEL_ID,
+          extDiameter: null,
+          intDiameter: null,
+          bodyPreset: null,
+          metalPreset: null,
+          bodyColor: '#181A1F',
+          virolaColor: null,
+          design: { rotation: 0, scale: 72, mirror: false },
+          thermo: { offsetYPct: 0, invert: false, finish: 'matte' },
+        },
+        designAspect: 1,
+      }),
+    );
+    expect(snap.family).toBe('thermo');
+    expect(snap.modeloEtiqueta).toBe('Botella Térmica Bowling 500 ml');
+    expect(snap.thermo?.capacidadEtiqueta).toBe('500 ml');
+    expect(snap.thermo?.altoEtiqueta).toBe(formatMmCard(bottle.totalHeightMm));
+    expect(snap.thermo?.diametroEtiqueta).toBe(formatMmCard(bottle.radiusMm * 2));
+    expect(snap.escalaEtiqueta).toBe('72%');
   });
 });

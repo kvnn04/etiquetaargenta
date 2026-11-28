@@ -702,7 +702,7 @@ export default function ClientViewer({
         { title: 'Modelo', body: modelo.etiqueta },
         {
           title: 'Medidas',
-          body: `1.0 L · ${formatMmCard(product.thermo.totalHeightMm) ?? '—'} de alto · Ø ${formatMmCard(product.thermo.radiusMm * 2) ?? '—'} de cuerpo`,
+          body: `${product.thermo.capacityLabel} · ${formatMmCard(product.thermo.totalHeightMm) ?? '—'} de alto · Ø ${formatMmCard(product.thermo.radiusMm * 2) ?? '—'} de cuerpo`,
         },
         {
           title: 'Acabado',

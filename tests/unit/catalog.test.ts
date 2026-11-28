@@ -26,6 +26,7 @@ describe('catálogo R1 (registro central)', () => {
       'imperial',
       'termo-media-manija-1l',
       'termo-system-1l',
+      'botella-bowling-500ml',
     ]);
     expect(CATALOG.every((p) => !p.pro)).toBe(true); // ambos demos FREE
   });

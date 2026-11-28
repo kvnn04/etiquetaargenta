@@ -122,6 +122,21 @@ export function normalizeThermoScale(raw: unknown): number {
   );
 }
 
+/**
+ * Escala canónica del spec vigente: usa SU default y SU rango (el termo
+ * 10–100 / 45 %, la botella 15–100 / 72 %). Sin esto un proyecto de botella
+ * sin escala arrancaría en 45 % y un valor viejo de 10 % quedaría fuera del
+ * mínimo del prototipo.
+ */
+export function normalizeThermoScaleFor(spec: ThermoSpec, raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return spec.defaultScalePct;
+  const clamped = Math.min(Math.max(raw, spec.minScalePct), spec.maxScalePct);
+  const stepped = Math.round(clamped / THERMO_SCALE_STEP_PCT) * THERMO_SCALE_STEP_PCT;
+  return Number(
+    Math.min(Math.max(stepped, spec.minScalePct), spec.maxScalePct).toFixed(2),
+  );
+}
+
 export function normalizeThermoOffset(raw: unknown): number {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return 0;
   const clamped = Math.min(100, Math.max(-100, raw));
@@ -193,7 +208,7 @@ export function thermoDesignSizeMm(
   let maxH = surface.heightMm * 0.96;
   if (maxW / maxH > a) maxW = maxH * a;
   else maxH = maxW / a;
-  const k = normalizeThermoScale(scalePct) / 100;
+  const k = normalizeThermoScaleFor(spec, scalePct) / 100;
   return { widthMm: maxW * k, heightMm: maxH * k };
 }
 
@@ -310,12 +325,13 @@ export function evaluateThermoOverflow(
   };
 }
 
-/** Texto propio del banner del termo (la ficha reusa el genérico). */
-export function thermoOverflowText(check: OverflowCheck): string {
+/** Texto propio del banner del termo/botella (la ficha reusa el genérico). */
+export function thermoOverflowText(check: OverflowCheck, spec?: ThermoSpec): string {
   const parts: string[] = [];
   if (check.overflowOuter) parts.push(`Excede ${check.overflowOuterMm.toFixed(1)} mm por arriba`);
   if (check.overflowInner) parts.push(`Excede ${check.overflowInnerMm.toFixed(1)} mm por abajo`);
-  return `El diseño sale de la zona de grabado del termo. ${parts.join(' / ')}.`;
+  const producto = spec?.geometry === 'bowling' ? 'la botella' : 'el termo';
+  return `El diseño sale de la zona de grabado de ${producto}. ${parts.join(' / ')}.`;
 }
 
 export function resolveThermoSpec(product: ThermoProduct): ThermoSpec {

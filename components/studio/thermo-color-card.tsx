@@ -80,7 +80,7 @@ export default function ThermoColorCard() {
         <h2 className="text-sm font-semibold tracking-wide text-cream">Materiales y Acabados</h2>
       </div>
       <p className="text-[10px] leading-relaxed text-stone-600">
-        Color del cuerpo pintado y acabado del termo. El acero inoxidable se aplica siempre con
+        Color del cuerpo pintado y acabado del producto. El acero inoxidable se aplica siempre con
         acabado metálico, sin importar la opción elegida.
       </p>
 
@@ -141,7 +141,7 @@ export default function ThermoColorCard() {
           <span className="text-[10px] text-stone-500">{thermoColorName(currentHex)}</span>
           <button
             type="button"
-            title="Volver al Negro Mate del termo"
+            title="Volver al Negro Mate del producto"
             onClick={() => {
               setBodyColor(THERMO_DEFAULT_BODY_COLOR);
               addRecentColor('body', THERMO_DEFAULT_BODY_COLOR);

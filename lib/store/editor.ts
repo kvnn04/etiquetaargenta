@@ -72,7 +72,7 @@ import {
   normalizeThermoConfig,
   normalizeThermoFinish,
   normalizeThermoOffset,
-  normalizeThermoScale,
+  normalizeThermoScaleFor,
   type ThermoConfig,
   type ThermoFinish,
 } from '@/lib/thermo';
@@ -236,22 +236,29 @@ export const useEditorStore = create<EditorStore>((set) => ({
   setMateModel: (id) =>
     set((prev) => {
       const next = resolveProduct(id);
-      const wasThermo = isThermoProduct(resolveProduct(prev.mateModel));
+      const previous = resolveProduct(prev.mateModel);
+      const wasThermo = isThermoProduct(previous);
       const isThermo = isThermoProduct(next);
-      // Escala por familia: los rangos NO son compatibles (mate 70–110,
-      // termo 10–100). Al cruzar de familia se parte del default de la nueva.
-      const scale =
-        isThermo && !wasThermo
+      // Escala por producto: los rangos NO son compatibles (mate 70–110,
+      // termo 10–100, botella 15–100). Al cruzar de familia —o de geometría
+      // dentro de thermo— se parte del default del producto nuevo.
+      const thermoGeometryChanged =
+        wasThermo && isThermo && previous.thermo.geometry !== next.thermo.geometry;
+      const scale = isThermo
+        ? !wasThermo || thermoGeometryChanged
           ? next.thermo.defaultScalePct
-          : !isThermo && wasThermo
-            ? DEFAULT_DESIGN_STATE.scale
-            : prev.design.scale;
+          : prev.design.scale
+        : wasThermo
+          ? DEFAULT_DESIGN_STATE.scale
+          : prev.design.scale;
       return {
         ...prev,
         mateModel: next.id,
         design: {
           ...prev.design,
-          scale: isThermo ? normalizeThermoScale(scale) : normalizeScale(scale),
+          scale: isThermo
+            ? normalizeThermoScaleFor(next.thermo, scale)
+            : normalizeScale(scale),
         },
         dirty: true,
       };
@@ -296,13 +303,13 @@ export const useEditorStore = create<EditorStore>((set) => ({
       dirty: true,
     })),
 
-  // pos 7 (R8): SIEMPRE la representación canónica de la FAMILIA vigente
-  // (mate [70,110] · termo [10,100]) paso 0.5%.
+  // pos 7 (R8): SIEMPRE la representación canónica del producto vigente
+  // (mate [70,110] · termo [10,100] · botella [15,100]) paso 0.5%.
   setDesignScale: (scalePct) =>
     set((prev) => {
       const product = resolveProduct(prev.mateModel);
       const scale = isThermoProduct(product)
-        ? normalizeThermoScale(scalePct)
+        ? normalizeThermoScaleFor(product.thermo, scalePct)
         : normalizeScale(scalePct);
       return {
         ...prev,

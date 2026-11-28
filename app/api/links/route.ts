@@ -3,7 +3,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { planOf, type ExportsPlan } from '@/lib/exports/ticket-server';
 import { normalizeScale } from '@/lib/overflow';
-import { normalizeThermoConfig, normalizeThermoScale } from '@/lib/thermo';
+import { normalizeThermoConfig, normalizeThermoScale, normalizeThermoScaleFor } from '@/lib/thermo';
 import { isThermoProduct, resolveProduct } from '@/lib/catalog';
 import {
   PUBLISH_VARIANTS_MAX,
@@ -328,11 +328,14 @@ export async function POST(request: NextRequest) {
   /* ── Payload R4 + fila inmutable ──────────────────────────────────────── */
   const nowMs = Date.now();
   const mateConfig = buildMateConfigFromState(owned.data.state); // desde la DB, jamás del cliente
-  const family = mateConfig.family ?? 'mate';
+  const product = resolveProduct(mateConfig.model);
+  const family = product.family;
+  const thermoSpec = isThermoProduct(product) ? product.thermo : null;
   const normalizedDrafts = drafts.map((draft) => ({
     ...draft,
-    scalePct:
-      family === 'thermo'
+    scalePct: thermoSpec
+      ? normalizeThermoScaleFor(thermoSpec, draft.scalePct)
+      : family === 'thermo'
         ? normalizeThermoScale(draft.scalePct)
         : normalizeScale(draft.scalePct),
   }));

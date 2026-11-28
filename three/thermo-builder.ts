@@ -33,9 +33,72 @@ function lathe(points: Array<[number, number]>, segments = 96): THREE.BufferGeom
   );
 }
 
+/**
+ * Perfil completo de la Botella Bowling: base cóncava, costura, cuerpo recto,
+ * hombro sigmoide y cuello corto. Sale del prototipo `3d_botella_bowling.html`
+ * (1 unidad = 36 mm) y usa las alturas absolutas del spec.
+ */
+function bottleBodyProfile(spec: ThermoSpec): Array<[number, number]> {
+  const R = spec.radiusMm;
+  const rn = spec.neckRadiusMm;
+  const yBottom = spec.baseBottomMm;
+  const ySeam = spec.baseTopMm;
+  const yCylStart = spec.bodyBottomMm;
+  const yCylEnd = spec.bodyTopMm;
+  const yNeckStart = spec.shoulderTopMm;
+  const yNeckEnd = spec.collarBottomMm;
+  const pts: Array<[number, number]> = [
+    // 1. Centro inferior cóncavo (base típica de termo inoxidable).
+    [0, yBottom + 0.08 * U],
+    [0.55 * U, yBottom + 0.06 * U],
+    [0.78 * U, yBottom],
+  ];
+
+  // 2. Curva redondeada inferior hacia la costura de la base.
+  for (let i = 1; i <= 10; i++) {
+    const t = i / 10;
+    const rad = 0.78 * U + (R - 0.78 * U) * Math.sin(t * Math.PI * 0.5);
+    pts.push([rad, yBottom + (ySeam - yBottom) * t]);
+  }
+
+  // 3. Costura / hendidura sutil de la base.
+  pts.push([R - 0.018 * U, ySeam + 0.025 * U], [R, yCylStart]);
+
+  // 4. Cuerpo principal cilíndrico recto (zona de grabado).
+  for (let i = 1; i <= 24; i++) {
+    const t = i / 24;
+    pts.push([R, yCylStart + (yCylEnd - yCylStart) * t]);
+  }
+
+  // 5. Hombro curvo tipo "bowling" (R=1.08 → rNeck=0.56).
+  for (let i = 1; i <= 32; i++) {
+    const t = i / 32;
+    const ease = 0.5 - 0.5 * Math.cos(Math.PI * t);
+    pts.push([
+      R - (R - rn) * Math.pow(ease, 0.92),
+      yCylEnd + (yNeckStart - yCylEnd) * t,
+    ]);
+  }
+
+  // 6. Cuello cilíndrico corto con ligero labio superior.
+  pts.push(
+    [rn, yNeckStart + 0.15 * U],
+    [rn + 0.015 * U, yNeckStart + 0.30 * U],
+    [rn + 0.015 * U, yNeckEnd],
+    [rn - 0.04 * U, yNeckEnd],
+  );
+  return pts;
+}
+
 /** Cuerpo pintado: cilindro recto + hombro biselado (prototipo 5.1). */
 export function buildThermoBodyGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
+  if (spec.geometry === 'bowling') {
+    return cached(
+      `thermo-body:bowling:${spec.radiusMm}:${spec.neckRadiusMm}:${spec.totalHeightMm}`,
+      () => lathe(bottleBodyProfile(spec), 128),
+    );
+  }
   return cached(
     `thermo-body:${spec.geometry}:${spec.radiusMm}:${spec.bodyBottomMm}:${spec.bodyTopMm}`,
     () =>
@@ -63,9 +126,12 @@ export function buildThermoBodyGeometry(spec: ThermoSpec): THREE.BufferGeometry 
   );
 }
 
-/** Zócalo de acero (prototipo 5.2). */
+/** Zócalo de acero (prototipo 5.2). La botella no tiene zócalo separado. */
 export function buildThermoBaseGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
+  if (spec.geometry === 'bowling') {
+    return cached('thermo-base:bowling', () => new THREE.BufferGeometry());
+  }
   return cached(`thermo-base:${spec.geometry}:${spec.radiusMm}:${spec.baseTopMm}`, () =>
     spec.geometry === 'system'
       ? lathe([
@@ -91,10 +157,26 @@ export function buildThermoBaseGeometry(spec: ThermoSpec): THREE.BufferGeometry 
   );
 }
 
-/** Collarín negro (solo Media Manija; el System apoya la tapa en el hombro). */
+/**
+ * Collarín negro de la Media Manija, aro de silicona de la Botella Bowling
+ * (cilindro oscuro entre cuello y tapa) o nada en el System.
+ */
 export function buildThermoCollarGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   if (spec.geometry === 'system') {
     return cached('thermo-collar:system', () => new THREE.BufferGeometry());
+  }
+  if (spec.geometry === 'bowling') {
+    const rSeal = spec.neckRadiusMm + 0.018 * U;
+    return cached(
+      `thermo-collar:bowling:${rSeal}:${spec.collarBottomMm}:${spec.collarTopMm}`,
+      () =>
+        lathe([
+          [0, spec.collarBottomMm],
+          [rSeal, spec.collarBottomMm],
+          [rSeal, spec.collarTopMm],
+          [0, spec.collarTopMm],
+        ], 64),
+    );
   }
   const r = spec.radiusMm;
   const rCollar = r - 0.035 * U;
@@ -114,6 +196,48 @@ export function buildThermoCollarGeometry(spec: ThermoSpec): THREE.BufferGeometr
 /** Tapa-vaso de acero con domo suave (Media Manija) o copa cónica (System). */
 export function buildThermoLidGeometry(spec: ThermoSpec): THREE.BufferGeometry {
   const r = spec.radiusMm;
+  if (spec.geometry === 'bowling') {
+    return cached(
+      `thermo-lid:bowling:${spec.neckRadiusMm}:${spec.lidBottomMm}:${spec.lidTopMm}`,
+      () => {
+        const rCap = spec.neckRadiusMm + 0.028 * U;
+        const y0 = spec.lidBottomMm;
+        const y1 = spec.lidTopMm;
+        const pts: Array<[number, number]> = [
+          [rCap - 0.05 * U, y0],
+          [rCap, y0 + 0.03 * U],
+          [rCap, y1 - 0.18 * U],
+        ];
+        // Borde superior redondeado (domo) como la foto de referencia.
+        for (let i = 1; i <= 14; i++) {
+          const t = i / 14;
+          const angle = t * (Math.PI / 2);
+          const rad = rCap * Math.cos(angle);
+          const y = y1 - 0.18 * U + 0.18 * U * Math.sin(angle);
+          pts.push([Math.max(0, rad), y]);
+        }
+        const geo = lathe(pts, 128);
+        // Estrías verticales sutiles en la corona de la tapa (28 alrededor).
+        const pos = geo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          const x = pos.getX(i);
+          const y = pos.getY(i);
+          const z = pos.getZ(i);
+          const radius = Math.hypot(x, z);
+          if (radius > 0.15 * U && y > y1 - 0.24 * U && y < y1 - 0.03 * U) {
+            const angle = Math.atan2(z, x);
+            const flute = Math.sin(angle * 28) * 0.0045 * U;
+            const factor = (radius + flute) / radius;
+            pos.setX(i, x * factor);
+            pos.setZ(i, z * factor);
+          }
+        }
+        pos.needsUpdate = true;
+        geo.computeVertexNormals();
+        return geo;
+      },
+    );
+  }
   return cached(`thermo-lid:${spec.geometry}:${spec.radiusMm}:${spec.lidTopMm}`, () => {
     if (spec.geometry === 'system') {
       return lathe([
@@ -147,6 +271,9 @@ export function buildThermoLidGeometry(spec: ThermoSpec): THREE.BufferGeometry {
 
 /** Manija: media manija en L (prototipo 5.5) o manija táctica (System 5.4). */
 export function buildThermoHandleGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry === 'bowling') {
+    return cached('thermo-handle:bowling', () => new THREE.BufferGeometry());
+  }
   return cached(
     `thermo-handle:${spec.geometry}:${spec.radiusMm}:${spec.handleAngleRad}`,
     () => {
@@ -308,8 +435,8 @@ export function thermoHandleLinks(spec: ThermoSpec): ThermoHandleLink[] {
 
 /** Ranuras decorativas del collarín (solo Media Manija). */
 export function buildThermoGrooveGeometry(spec: ThermoSpec): THREE.BufferGeometry {
-  if (spec.geometry === 'system') {
-    return cached('thermo-groove:system', () => new THREE.BufferGeometry());
+  if (spec.geometry !== 'media-manija') {
+    return cached(`thermo-groove:${spec.geometry}`, () => new THREE.BufferGeometry());
   }
   const rCollar = spec.radiusMm - 0.035 * U;
   return cached(`thermo-groove:${spec.geometry}:${rCollar}`, () =>
@@ -319,6 +446,9 @@ export function buildThermoGrooveGeometry(spec: ThermoSpec): THREE.BufferGeometr
 
 /** Aro de junta entre tapa-vaso y cuerpo (solo System). */
 export function buildThermoSeamGeometry(spec: ThermoSpec): THREE.BufferGeometry {
+  if (spec.geometry !== 'system') {
+    return cached(`thermo-seam:${spec.geometry}`, () => new THREE.BufferGeometry());
+  }
   const r = spec.radiusMm;
   return cached(`thermo-seam:${spec.geometry}:${r}`, () =>
     new THREE.TorusGeometry(r - 0.16 * U, 0.011 * U, 12, 96),

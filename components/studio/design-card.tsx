@@ -67,7 +67,7 @@ import {
   clampThermoRotation,
   evaluateThermoOverflow,
   formatThermoScaleLabel,
-  normalizeThermoScale,
+  normalizeThermoScaleFor,
   thermoAngleBounds,
   thermoContinuousAngle,
   thermoOverflowText,
@@ -138,6 +138,7 @@ export default function DesignCard() {
   const product = useMemo(() => resolveProduct(mateModel), [mateModel]);
   const thermoProduct = isThermoProduct(product) ? product : null;
   const thermoSpec = thermoProduct?.thermo ?? null;
+  const isBottle = thermoSpec?.geometry === 'bowling';
   const aspect = useMemo(() => thermoAssetAspect(designAsset?.canvas ?? null), [designAsset]);
   const angleBounds = useMemo(
     () => (thermoSpec ? thermoAngleBounds(thermoSpec, scale, aspect) : null),
@@ -246,7 +247,9 @@ export default function DesignCard() {
 
   /* R8 escala: mismo patrón WYSIWYG del ángulo — clamp por FAMILIA paso 0.5%. */
   function applyScale(value: number): void {
-    const normalized = thermoSpec ? normalizeThermoScale(value) : normalizeScale(value);
+    const normalized = thermoSpec
+      ? normalizeThermoScaleFor(thermoSpec, value)
+      : normalizeScale(value);
     setDesignScale(normalized);
     if (thermoSpec) {
       // El ancho del diseño cambia con la escala: re-clamp del arco libre.
@@ -329,11 +332,18 @@ export default function DesignCard() {
   const snapped = thermoSpec ? null : magnetSnappedPreset(rotation, snapMagnet);
   const rotationPresets = thermoSpec && angleBounds
     ? [
-        { angle: angleBounds.minDeg, label: 'Borde Frente' },
+        { angle: angleBounds.minDeg, label: isBottle ? 'Borde Izq' : 'Borde Frente' },
         { angle: angleBounds.centerDeg, label: 'Centro' },
-        { angle: angleBounds.maxDeg, label: 'Borde Dorso' },
+        { angle: angleBounds.maxDeg, label: isBottle ? 'Borde Der' : 'Borde Dorso' },
       ]
     : ROTATION_PRESETS;
+  /* La botella no tiene manija: sus presets acompañan el frente fijo (el
+   * default del prototipo es 72 %). Los termos conservan 25/45/70/100. */
+  const scalePresets = thermoSpec
+    ? isBottle
+      ? [50, 72, 100]
+      : [25, 45, 70, 100]
+    : SCALE_PRESETS.map((p) => p.pct);
 
   /* ─────── R4/R5/R7 — chequeo, banner y Auto del margen ─────── */
   const rExtMm = extDiameter / 2;
@@ -430,7 +440,7 @@ export default function DesignCard() {
         {!designAsset && !fileError && (
           <p className="text-[10px] leading-relaxed text-stone-600">
             {thermoSpec
-              ? 'Sin diseño: el cuerpo sale liso. SVG o PNG con trazado; al cargar se ajusta a la zona lateral y se puede mover con el dedo sobre el termo.'
+              ? `Sin diseño: el cuerpo sale liso. SVG o PNG con trazado; al cargar se ajusta a la zona lateral y se puede mover con el dedo sobre ${isBottle ? 'la botella' : 'el termo'}.`
               : 'Sin diseño: la corona sale lisa. SVG o PNG con trazado tocando el anillo; al cargar se congela el 100 % (R1) y la vista previa es en vivo en el 3D y en el anillo de arriba.'}
           </p>
         )}
@@ -445,7 +455,11 @@ export default function DesignCard() {
             {thermoSpec ? 'Posición Angular del Grabado' : 'Rotación del Grabado (360°)'}
           </p>
           <span className="text-[9px] text-stone-600">
-            {thermoSpec ? 'arco libre (sin manija)' : 'paso 0.5° (R3)'}
+            {isBottle
+              ? 'frente fijo de 114°'
+              : thermoSpec
+                ? 'arco libre (sin manija)'
+                : 'paso 0.5° (R3)'}
           </span>
         </div>
 
@@ -522,10 +536,11 @@ export default function DesignCard() {
         <div className="flex items-center justify-between gap-2">
           {thermoSpec ? (
             <span className="text-[10px] text-stone-600">
-              {thermoSpec.geometry === 'system'
-                ? 'La manija táctica bloquea el costado derecho'
-                : 'La media manija bloquea el costado izquierdo'}
-              : el diseño se mueve dentro del arco libre.
+              {isBottle
+                ? 'El frente fijo de 114° limita el grabado; el dorso queda libre.'
+                : thermoSpec.geometry === 'system'
+                  ? 'La manija táctica bloquea el costado derecho; el diseño se mueve dentro del arco libre.'
+                  : 'La media manija bloquea el costado izquierdo; el diseño se mueve dentro del arco libre.'}
             </span>
           ) : (
             <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-stone-300">
@@ -650,7 +665,7 @@ export default function DesignCard() {
           >
             <span>⚠️</span>
             <span aria-live="polite">
-              {thermoSpec ? thermoOverflowText(check) : overflowBannerText(check)}
+              {thermoSpec ? thermoOverflowText(check, thermoSpec) : overflowBannerText(check)}
             </span>
           </p>
         )}
@@ -658,9 +673,9 @@ export default function DesignCard() {
         <p className="text-[10px] leading-relaxed text-stone-600">
           {thermoSpec ? (
             <>
-              El diseño se ajusta a la zona lateral del cuerpo y se mueve con el dedo sobre el
-              termo. La escala va de {thermoSpec.minScalePct}% a {thermoSpec.maxScalePct}% y el
-              margen se recalcula al instante.
+              El diseño se ajusta a la zona lateral del cuerpo y se mueve con el dedo sobre{' '}
+              {isBottle ? 'la botella' : 'el termo'}. La escala va de {thermoSpec.minScalePct}% a{' '}
+              {thermoSpec.maxScalePct}% y el margen se recalcula al instante.
             </>
           ) : (
             <>
@@ -697,7 +712,7 @@ export default function DesignCard() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
-            placeholder={thermoSpec ? '45' : '100'}
+            placeholder={thermoSpec ? String(thermoSpec.defaultScalePct) : '100'}
             maxLength={7}
             spellCheck={false}
             className={[
@@ -713,9 +728,9 @@ export default function DesignCard() {
           </span>
         </div>
 
-        {/* Presets de escala por familia (termo 25/45/70 · mate 85/90/100). */}
+        {/* Presets de escala por producto (botella 50/72/100 · termo 25/45/70/100 · mate 85/90/100). */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {(thermoSpec ? [25, 45, 70, 100] : SCALE_PRESETS.map((p) => p.pct)).map((pct) => (
+          {scalePresets.map((pct) => (
             <button
               key={pct}
               type="button"

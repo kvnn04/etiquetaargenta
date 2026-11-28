@@ -17,6 +17,7 @@ import {
   type LinkMateConfigBlock,
 } from '@/lib/links/payload';
 import { buildPublicView } from '@/lib/links/view-shape';
+import { BOTTLE_MODEL_ID, resolveThermoProduct } from '@/lib/catalog';
 
 const WORKSHOP = {
   name: 'Taller Karina',
@@ -152,5 +153,88 @@ describe('borrador de variantes del termo', () => {
       'thermo',
     );
     expect(rows.map((r) => r.scalePct)).toEqual([45, 100, 10]);
+  });
+});
+
+/* ============================================================================
+ * BOTELLA BOWLING — el spec del producto manda sobre el default del termo
+ * ============================================================================ */
+
+const bottleSpec = resolveThermoProduct(BOTTLE_MODEL_ID).thermo;
+
+function bottlePayload(scalePct = 72) {
+  return buildLinkPayload({
+    linkId: 'b0ttl3',
+    nowMs: Date.UTC(2026, 0, 1),
+    expiresMs: Date.UTC(2026, 0, 31),
+    workshop: WORKSHOP,
+    mateConfig: {
+      ...THERMO_MATE,
+      model: BOTTLE_MODEL_ID,
+      extDiameter: 77.76,
+      intDiameter: 77.76,
+    },
+    variants: [
+      {
+        id: 'A',
+        label: 'Diseño actual',
+        scalePct,
+        rotationDeg: 0,
+        mirror: false,
+      },
+    ],
+    assetUrl: 'https://cdn.example.com/link-assets/b0ttl3/design.png',
+  });
+}
+
+describe('payload de la botella — escala 15–100 / default 72', () => {
+  it('usa el default y el rango del SPEC, no los del termo', () => {
+    expect(scaleFractionFromPct(undefined, 'thermo', bottleSpec)).toBe(0.72);
+    expect(scaleFractionFromPct(5, 'thermo', bottleSpec)).toBe(0.15);
+    expect(scaleFractionFromPct(150, 'thermo', bottleSpec)).toBe(1);
+    expect(scaleFractionFromPct(72, 'thermo', bottleSpec)).toBe(0.72);
+  });
+
+  it('buildPublishVariant respeta el spec del producto', () => {
+    const bottle = buildPublishVariant({
+      scale: 5,
+      rotation: 0,
+      mirror: false,
+      family: 'thermo',
+      spec: bottleSpec,
+    });
+    expect(bottle.scalePct).toBe(15);
+  });
+
+  it('el payload congela 0.72 y el visor lo re-arbitra a 72 %', () => {
+    const payload = bottlePayload();
+    expect(payload.variants[0]!.scale).toBe(0.72);
+    const view = buildPublicView(payload);
+    expect(view.mate.modelId).toBe(BOTTLE_MODEL_ID);
+    expect(view.mate.family).toBe('thermo');
+    expect(view.mate.extDiameter).toBeCloseTo(77.76, 2);
+    expect(view.variants[0]!.scalePct).toBe(72);
+  });
+
+  it('escala ausente ⇒ 72 % (no el 45 % del termo ni el 100 % del mate)', () => {
+    const payload = bottlePayload();
+    const withoutScale = {
+      ...payload,
+      variants: [{ ...payload.variants[0]!, scale: undefined as unknown as number }],
+    };
+    expect(buildPublicView(withoutScale).variants[0]!.scalePct).toBe(72);
+  });
+
+  it('el borrador de variantes clampea al rango de la botella', () => {
+    const rows = normalizeVariantRows(
+      [
+        { id: 'A', label: 'A', scalePct: 5, rotationDeg: 0, mirror: false },
+        { id: 'B', label: 'B', scalePct: 72, rotationDeg: 0, mirror: false },
+        { id: 'C', label: 'C', scalePct: 150, rotationDeg: 0, mirror: false },
+      ],
+      'thermo',
+      bottleSpec,
+    );
+    expect(rows.map((r) => r.scalePct)).toEqual([15, 72, 100]);
   });
 });
